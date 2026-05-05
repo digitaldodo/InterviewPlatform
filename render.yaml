@@ -15,7 +15,7 @@ services:
     runtime: static
     rootDir: frontend
     buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\n" "$INTERVIEW_API_BASE" > js/env.js
-    staticPublishPath: frontend
+    staticPublishPath: .
     envVars:
       - key: INTERVIEW_API_BASE
         sync: false
