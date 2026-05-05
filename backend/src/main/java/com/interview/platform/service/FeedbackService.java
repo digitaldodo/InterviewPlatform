@@ -14,6 +14,9 @@ public class FeedbackService {
     private FeedbackRepository feedbackRepository;
 
     public Feedback submitFeedback(Feedback feedback) {
+        if (feedback.getRating() <= 0 || feedback.getComments() == null || feedback.getComments().trim().isEmpty()) {
+            throw new IllegalArgumentException("Feedback must include both rating and comments.");
+        }
         return feedbackRepository.save(feedback);
     }
 

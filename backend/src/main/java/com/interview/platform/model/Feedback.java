@@ -11,6 +11,8 @@ public class Feedback {
     private String reviewerId;
     private String comments;
     private int rating;
+    private String strengths;
+    private String weaknesses;
 
     public Feedback() {}
 
@@ -19,6 +21,15 @@ public class Feedback {
         this.reviewerId = reviewerId;
         this.comments = comments;
         this.rating = rating;
+    }
+
+    public Feedback(String sessionId, String reviewerId, String comments, int rating, String strengths, String weaknesses) {
+        this.sessionId = sessionId;
+        this.reviewerId = reviewerId;
+        this.comments = comments;
+        this.rating = rating;
+        this.strengths = strengths;
+        this.weaknesses = weaknesses;
     }
 
     public String getId() { return id; }
@@ -31,4 +42,8 @@ public class Feedback {
     public void setComments(String comments) { this.comments = comments; }
     public int getRating() { return rating; }
     public void setRating(int rating) { this.rating = rating; }
+    public String getStrengths() { return strengths; }
+    public void setStrengths(String strengths) { this.strengths = strengths; }
+    public String getWeaknesses() { return weaknesses; }
+    public void setWeaknesses(String weaknesses) { this.weaknesses = weaknesses; }
 }
