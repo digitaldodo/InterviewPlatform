@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -23,6 +24,17 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<User> login(@RequestBody Map<String, String> credentials) {
+        String email = credentials.get("email");
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        Optional<User> user = userService.loginUser(email);
+        return user.map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(401).build());
     }
 
     @GetMapping("/{id}")
