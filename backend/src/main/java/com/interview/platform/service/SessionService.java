@@ -15,6 +15,9 @@ public class SessionService {
     private SessionRepository sessionRepository;
 
     public Session createSession(Session session) {
+        if (session != null && session.getStatus() == null) {
+            session.setStatus("SCHEDULED");
+        }
         return sessionRepository.save(session);
     }
 
