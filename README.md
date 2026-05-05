@@ -3,7 +3,7 @@
 A full-stack platform connecting interviewees with experienced interviewers for structured mock interview sessions.
 
 ## Tech Stack
-| Layer     | Technology                         |
+| Layer     | Technology                       |
 |-----------|------------------------------------|
 | Frontend  | HTML · CSS (Vanilla) · JavaScript  |
 | Backend   | Spring Boot 3 (Java 17)            |
@@ -86,6 +86,6 @@ Make sure MongoDB is running on `localhost:27017`.
 
 ### Frontend
 Open `frontend/index.html` directly in a browser, or serve with:
-```bash
+```bas
 npx serve frontend
 ```
