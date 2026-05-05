@@ -13,7 +13,6 @@ services:
   - type: web
     name: interview-platform-frontend
     runtime: static
-    plan: free
     rootDir: frontend
     buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\n" "$INTERVIEW_API_BASE" > js/env.js
     staticPublishPath: frontend
