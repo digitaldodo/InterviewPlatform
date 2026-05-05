@@ -14,8 +14,11 @@ services:
     name: interview-platform-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\n" "$INTERVIEW_API_BASE" > js/env.js
+    buildCommand: printf "window.INTERVIEW_API_BASE = 'https://%s';\n" "$INTERVIEW_API_HOST" > js/env.js
     staticPublishPath: .
     envVars:
-      - key: INTERVIEW_API_BASE
-        sync: false
+      - key: INTERVIEW_API_HOST
+        fromService:
+          type: web
+          name: interview-platform-api
+          property: host

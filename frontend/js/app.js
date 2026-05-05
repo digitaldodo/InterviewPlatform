@@ -73,6 +73,16 @@ function unwrapApiResponse(payload) {
   return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function readApiError(res, fallback) {
   try {
     const payload = await res.json();
@@ -103,7 +113,7 @@ document.getElementById('login-form').addEventListener('submit', async function 
   setLoading(btn, true);
 
   try {
-    const res = await fetch(`${API_BASE}/api/users/login`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/users/login`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ email, password }),
@@ -159,7 +169,7 @@ document.getElementById('register-form').addEventListener('submit', async functi
   setLoading(btn, true);
 
   try {
-    const res = await fetch(`${API_BASE}/api/users/register`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/users/register`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
@@ -174,7 +184,7 @@ document.getElementById('register-form').addEventListener('submit', async functi
       showAlert('register-alert', await readApiError(res, 'Registration failed. Please try again.'));
     }
   } catch (err) {
-    showAlert('register-alert', 'Could not connect to the server. Is the backend running?');
+    showAlert('register-alert', 'Could not connect to the backend. Check that the API service is deployed and MONGO_URI is set.');
     console.error('Register error:', err);
   } finally {
     setLoading(btn, false);

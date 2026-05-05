@@ -117,6 +117,16 @@ function setLoading(btn, loading, label = 'Please wait...') {
   }
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 /* ============================================================
    STATUS BADGE helper
    ============================================================ */
@@ -183,7 +193,7 @@ async function loadUsers() {
   grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
 
   try {
-    const res = await fetch(`${API}/api/users`);
+    const res = await fetchWithTimeout(`${API}/api/users`);
     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
     displayedUsers = unwrapApiResponse(await res.json());
@@ -206,7 +216,7 @@ async function loadInterviewers(skill = '') {
       ? `${API}/api/users/interviewers?skill=${encodeURIComponent(skill)}`
       : `${API}/api/users/interviewers`;
 
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
 
     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
@@ -303,7 +313,7 @@ document.getElementById('session-form').addEventListener('submit', async functio
   setLoading(btn, true, 'Requesting…');
 
   try {
-    const res = await fetch(`${API}/api/sessions`, {
+    const res = await fetchWithTimeout(`${API}/api/sessions`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
@@ -333,7 +343,7 @@ async function fetchMySessions() {
     ? `${API}/api/sessions/interviewer/${currentUser.id}`
     : `${API}/api/sessions/interviewee/${currentUser.id}`;
 
-  const res = await fetch(endpoint);
+  const res = await fetchWithTimeout(endpoint);
   if (!res.ok) throw new Error(`Server error ${res.status}`);
   return unwrapApiResponse(await res.json());
 }
@@ -450,7 +460,7 @@ document.getElementById('action-confirm-btn').addEventListener('click', async ()
   closeModal();
 
   try {
-    const res = await fetch(`${API}/api/sessions/${sessionId}/${action}`, {
+    const res = await fetchWithTimeout(`${API}/api/sessions/${sessionId}/${action}`, {
       method: 'PATCH',
     });
 
@@ -496,7 +506,7 @@ document.getElementById('feedback-form')?.addEventListener('submit', async funct
   setLoading(btn, true, 'Submitting...');
 
   try {
-    const res = await fetch(`${API}/api/feedback`, {
+    const res = await fetchWithTimeout(`${API}/api/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -531,7 +541,7 @@ async function loadFeedback() {
   wrapper.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading feedback...</p></div>`;
 
   try {
-    const res = await fetch(`${API}/api/feedback`);
+    const res = await fetchWithTimeout(`${API}/api/feedback`);
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     const feedback = unwrapApiResponse(await res.json());
 
