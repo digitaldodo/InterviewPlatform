@@ -82,10 +82,24 @@ Interview/
 cd backend
 mvn spring-boot:run
 ```
-Make sure MongoDB is running on `localhost:27017`.
+Set `MONGO_URI` before starting the backend. The backend listens on `PORT` when provided, otherwise `8080`.
 
 ### Frontend
 Open `frontend/index.html` directly in a browser, or serve with:
 ```bas
 npx serve frontend
 ```
+
+For local frontend testing against a separate backend, set `window.INTERVIEW_API_BASE` in `frontend/js/env.js`. Render writes this file automatically during the static site build.
+
+## Render Deployment
+
+This repo includes `render.yaml` with two services:
+
+- `interview-platform-api`: Dockerized Spring Boot backend from `backend/`
+- `interview-platform-frontend`: Static frontend from `frontend/`
+
+Required Render environment variables:
+
+- Backend: `MONGO_URI`
+- Frontend: `INTERVIEW_API_BASE`, for example `https://interview-platform-api.onrender.com`

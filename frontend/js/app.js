@@ -1,9 +1,9 @@
 /* ============================================================
    app.js – Landing page logic (Login + Register)
-   Backend base URL: http://localhost:8080
+   Backend base URL comes from window.INTERVIEW_API_BASE when deployed separately.
    ============================================================ */
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = window.INTERVIEW_API_BASE || '';
 
 /* ── Tab switching ── */
 function switchTab(tab) {
@@ -69,10 +69,24 @@ function getStoredUser() {
   }
 }
 
+function unwrapApiResponse(payload) {
+  return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+}
+
+async function readApiError(res, fallback) {
+  try {
+    const payload = await res.json();
+    return payload.message || fallback;
+  } catch {
+    const text = await res.text();
+    return text || fallback;
+  }
+}
+
 /* ============================================================
    LOGIN
    POST /api/users/login  { email, password }
-   Response: user object { id, name, email, role, skills, … }
+   Response: user object { id, name, email, role, skills, ... }
    ============================================================ */
 document.getElementById('login-form').addEventListener('submit', async function (e) {
   e.preventDefault();
@@ -96,13 +110,12 @@ document.getElementById('login-form').addEventListener('submit', async function 
     });
 
     if (res.ok) {
-      const user = await res.json();
+      const user = unwrapApiResponse(await res.json());
       storeUser(user);
-      showAlert('login-alert', 'Login successful! Redirecting…', 'success');
+      showAlert('login-alert', 'Login successful! Redirecting...', 'success');
       setTimeout(goToDashboard, 800);
     } else {
-      const errText = await res.text();
-      showAlert('login-alert', errText || 'Invalid credentials. Please try again.');
+      showAlert('login-alert', await readApiError(res, 'Invalid credentials. Please try again.'));
     }
   } catch (err) {
     showAlert('login-alert', 'Could not connect to the server. Is the backend running?');
@@ -141,7 +154,7 @@ document.getElementById('register-form').addEventListener('submit', async functi
     ? skillsRaw.split(',').map(s => s.trim()).filter(Boolean)
     : [];
 
-  const payload = { name, email, password, role, skills };
+  const payload = { name, username: name, email, password, role, skills };
 
   setLoading(btn, true);
 
@@ -153,13 +166,12 @@ document.getElementById('register-form').addEventListener('submit', async functi
     });
 
     if (res.ok) {
-      const user = await res.json();
+      const user = unwrapApiResponse(await res.json());
       storeUser(user);
-      showAlert('register-alert', 'Account created! Redirecting…', 'success');
+      showAlert('register-alert', 'Account created! Redirecting...', 'success');
       setTimeout(goToDashboard, 800);
     } else {
-      const errText = await res.text();
-      showAlert('register-alert', errText || 'Registration failed. Please try again.');
+      showAlert('register-alert', await readApiError(res, 'Registration failed. Please try again.'));
     }
   } catch (err) {
     showAlert('register-alert', 'Could not connect to the server. Is the backend running?');

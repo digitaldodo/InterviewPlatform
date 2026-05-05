@@ -1,12 +1,12 @@
 /* ============================================================
    dashboard.js – Dashboard logic & API integration
-   All API calls use fetch() against http://localhost:8080
+   API base comes from window.INTERVIEW_API_BASE when deployed separately.
    ============================================================ */
 
-const API = 'http://localhost:8080';
+const API = window.INTERVIEW_API_BASE || '';
 
 let currentUser  = null;
-let allInterviewers = [];  // cache for client-side filter
+let displayedUsers = [];  // cache for client-side filter
 
 /* ============================================================
    INIT – guard auth, bootstrap UI
@@ -39,14 +39,16 @@ function logout() {
 function initUI() {
   document.getElementById('welcome-heading').textContent =
     `Welcome back, ${currentUser.name || currentUser.email}!`;
+  const role = (currentUser.role || '').toLowerCase();
+
   document.getElementById('welcome-sub').textContent =
-    currentUser.role === 'interviewer'
+    role === 'interviewer'
       ? 'Manage your upcoming interview sessions.'
       : 'Find interviewers and schedule practice sessions.';
 
   document.getElementById('sidebar-user-info').innerHTML =
     `<strong>${currentUser.name || '—'}</strong><br/>${currentUser.email}<br/>
-     <span class="badge badge-purple" style="margin-top:0.3rem;">${currentUser.role || 'user'}</span>`;
+     <span class="badge badge-purple" style="margin-top:0.3rem;">${role || 'user'}</span>`;
 
   // Pre-fill interviewee ID in schedule form
   if (document.getElementById('ses-interviewer')) {
@@ -84,6 +86,7 @@ function showSection(name) {
   // Lazy-load section data
   if (name === 'interviewers') loadInterviewers();
   if (name === 'sessions')     loadMySessions();
+  if (name === 'feedback')     loadFeedback();
 }
 
 /* ============================================================
@@ -102,7 +105,7 @@ function hideAlert(id) {
   if (el) el.classList.remove('show');
 }
 
-function setLoading(btn, loading, label = 'Please wait…') {
+function setLoading(btn, loading, label = 'Please wait...') {
   if (!btn) return;
   if (loading) {
     btn.disabled = true;
@@ -170,14 +173,33 @@ async function loadOverview() {
 }
 
 /* ============================================================
-   INTERVIEWERS
+   USERS / INTERVIEWERS
    GET /api/users/interviewers?skill=
    ============================================================ */
+async function loadUsers() {
+  const grid  = document.getElementById('interviewers-grid');
+  const alert = 'interviewers-alert';
+  hideAlert(alert);
+  grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/users`);
+    if (!res.ok) throw new Error(`Server responded with ${res.status}`);
+
+    displayedUsers = unwrapApiResponse(await res.json());
+    renderUsers(displayedUsers);
+  } catch (err) {
+    grid.innerHTML = '';
+    showAlert(alert, 'Could not load users. Is the backend running?');
+    console.error(err);
+  }
+}
+
 async function loadInterviewers(skill = '') {
   const grid  = document.getElementById('interviewers-grid');
   const alert = 'interviewers-alert';
   hideAlert(alert);
-  grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div>`;
+  grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
 
   try {
     const url = skill
@@ -188,8 +210,8 @@ async function loadInterviewers(skill = '') {
 
     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
-    allInterviewers = await res.json();
-    renderInterviewers(allInterviewers);
+    displayedUsers = unwrapApiResponse(await res.json());
+    renderUsers(displayedUsers);
   } catch (err) {
     grid.innerHTML = '';
     showAlert(alert, 'Could not load interviewers. Is the backend running?');
@@ -199,41 +221,43 @@ async function loadInterviewers(skill = '') {
 
 function filterInterviewers(query) {
   if (!query.trim()) {
-    renderInterviewers(allInterviewers);
+    renderUsers(displayedUsers);
     return;
   }
   const q = query.toLowerCase();
-  const filtered = allInterviewers.filter(u =>
+  const filtered = displayedUsers.filter(u =>
     (u.name  || '').toLowerCase().includes(q) ||
+    (u.username || '').toLowerCase().includes(q) ||
+    (u.role || '').toLowerCase().includes(q) ||
     (u.email || '').toLowerCase().includes(q) ||
     (u.skills || []).some(s => s.toLowerCase().includes(q))
   );
-  renderInterviewers(filtered);
+  renderUsers(filtered);
 }
 
-function renderInterviewers(list) {
+function renderUsers(list) {
   const grid = document.getElementById('interviewers-grid');
 
   if (!list || list.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>No interviewers found.</p></div>`;
+    grid.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>No users found.</p></div>`;
     return;
   }
 
   grid.innerHTML = list.map(u => `
     <div class="user-card">
       <div class="user-card-info">
-        <div class="name">${escHtml(u.name || '—')}</div>
+        <div class="name">${escHtml(u.name || u.username || '-')}</div>
         <div class="email">${escHtml(u.email || '—')}</div>
+        <div class="email">${escHtml((u.role || 'USER').toLowerCase())}</div>
         ${u.skills && u.skills.length
           ? `<div class="skills">${u.skills.map(s => escHtml(s)).join(' · ')}</div>`
           : ''}
       </div>
       <div style="display:flex; flex-direction:column; gap:0.4rem; align-items:flex-end;">
         <small style="color:var(--text-muted); font-size:0.72rem; word-break:break-all;">ID: ${escHtml(u.id || u._id || '?')}</small>
-        <button class="btn btn-primary btn-sm"
-          onclick="prefillSchedule('${escHtml(u.id || u._id || '')}')">
-          Book Session
-        </button>
+        ${(u.role || '').toLowerCase() === 'interviewer'
+          ? `<button class="btn btn-primary btn-sm" onclick="prefillSchedule('${escHtml(u.id || u._id || '')}')">Book Session</button>`
+          : ''}
       </div>
     </div>
   `).join('');
@@ -269,8 +293,10 @@ document.getElementById('session-form').addEventListener('submit', async functio
   const payload = {
     interviewerId,
     intervieweeId: currentUser.id,
+    title: topic,
     topic,
-    scheduledAt:   new Date(scheduledAt).toISOString(),
+    startTime: scheduledAt,
+    scheduledAt,
     notes,
   };
 
@@ -287,8 +313,7 @@ document.getElementById('session-form').addEventListener('submit', async functio
       showAlert('schedule-alert', 'Session request sent! Check "My Sessions" for updates.', 'success');
       document.getElementById('session-form').reset();
     } else {
-      const errText = await res.text();
-      showAlert('schedule-alert', errText || 'Failed to create session. Please try again.');
+      showAlert('schedule-alert', await readApiError(res, 'Failed to create session. Please try again.'));
     }
   } catch (err) {
     showAlert('schedule-alert', 'Could not connect to the server. Is the backend running?');
@@ -310,7 +335,7 @@ async function fetchMySessions() {
 
   const res = await fetch(endpoint);
   if (!res.ok) throw new Error(`Server error ${res.status}`);
-  return await res.json();
+  return unwrapApiResponse(await res.json());
 }
 
 async function loadMySessions() {
@@ -339,8 +364,8 @@ function buildSessionTable(sessions, { compact = false } = {}) {
   const rows = sessions.map(s => {
     const id     = s.id || s._id || '—';
     const other  = isInterviewer
-      ? (s.intervieweeName || s.intervieweeId || '—')
-      : (s.interviewerName || s.interviewerId || '—');
+      ? (s.intervieweeName || s.intervieweeId || s.candidateId || '-')
+      : (s.interviewerName || s.interviewerId || '-');
     const label  = isInterviewer ? 'Interviewee' : 'Interviewer';
 
     let actions = '';
@@ -361,10 +386,10 @@ function buildSessionTable(sessions, { compact = false } = {}) {
       <tr>
         <td><small style="color:var(--text-muted); font-size:0.72rem;">${escHtml(String(id))}</small></td>
         <td>${escHtml(String(other))}</td>
-        <td>${escHtml(s.topic || '—')}</td>
-        <td>${fmtDate(s.scheduledAt)}</td>
+        <td>${escHtml(s.topic || s.title || '-')}</td>
+        <td>${fmtDate(s.scheduledAt || s.startTime)}</td>
         <td>${statusBadge(s.status)}</td>
-        ${!compact ? `<td>${actions || '—'}</td>` : ''}
+        ${!compact ? `<td>${actions || '-'}</td>` : ''}
       </tr>
     `;
   }).join('');
@@ -434,8 +459,7 @@ document.getElementById('action-confirm-btn').addEventListener('click', async ()
       loadMySessions();
       loadOverview();
     } else {
-      const errText = await res.text();
-      showAlert('sessions-alert', errText || `Failed to ${action} session.`);
+      showAlert('sessions-alert', await readApiError(res, `Failed to ${action} session.`));
     }
   } catch (err) {
     showAlert('sessions-alert', 'Could not connect to the server.');
@@ -449,10 +473,110 @@ document.getElementById('action-overlay').addEventListener('click', function (e)
 });
 
 /* ============================================================
+   FEEDBACK
+   POST /api/feedback, GET /api/feedback
+   ============================================================ */
+document.getElementById('feedback-form')?.addEventListener('submit', async function (e) {
+  e.preventDefault();
+
+  const sessionId = document.getElementById('fb-session').value.trim();
+  const rating = Number(document.getElementById('fb-rating').value);
+  const comments = document.getElementById('fb-comments').value.trim();
+  const strengths = document.getElementById('fb-strengths').value.trim();
+  const weaknesses = document.getElementById('fb-weaknesses').value.trim();
+  const btn = document.getElementById('feedback-submit');
+
+  hideAlert('feedback-alert');
+
+  if (!sessionId || !rating || !comments) {
+    showAlert('feedback-alert', 'Session ID, rating, and comments are required.');
+    return;
+  }
+
+  setLoading(btn, true, 'Submitting...');
+
+  try {
+    const res = await fetch(`${API}/api/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        reviewerId: currentUser.id,
+        rating,
+        comments,
+        strengths,
+        weaknesses,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await readApiError(res, 'Feedback submission failed.'));
+    }
+
+    showAlert('feedback-alert', 'Feedback submitted successfully.', 'success');
+    document.getElementById('feedback-form').reset();
+    loadFeedback();
+  } catch (err) {
+    showAlert('feedback-alert', err.message || 'Could not submit feedback.');
+    console.error(err);
+  } finally {
+    setLoading(btn, false);
+  }
+});
+
+async function loadFeedback() {
+  const wrapper = document.getElementById('feedback-list');
+  if (!wrapper) return;
+
+  wrapper.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading feedback...</p></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/feedback`);
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+    const feedback = unwrapApiResponse(await res.json());
+
+    if (!feedback.length) {
+      wrapper.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No feedback yet.</p></div>`;
+      return;
+    }
+
+    wrapper.innerHTML = feedback.map(item => `
+      <div class="user-card">
+        <div class="user-card-info">
+          <div class="name">Session ${escHtml(item.sessionId || '-')} · ${escHtml(String(item.rating || '-'))}/5</div>
+          <div class="email">Reviewer: ${escHtml(item.reviewerId || '-')}</div>
+          <div class="skills">${escHtml(item.comments || '')}</div>
+          ${item.strengths ? `<small>Strengths: ${escHtml(item.strengths)}</small>` : ''}
+          ${item.weaknesses ? `<small>Needs work: ${escHtml(item.weaknesses)}</small>` : ''}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    wrapper.innerHTML = '';
+    showAlert('feedback-alert', 'Could not load feedback.');
+    console.error(err);
+  }
+}
+
+/* ============================================================
    UTILITIES
    ============================================================ */
 function escHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+function unwrapApiResponse(payload) {
+  return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
+}
+
+async function readApiError(res, fallback) {
+  try {
+    const payload = await res.json();
+    return payload.message || fallback;
+  } catch {
+    const text = await res.text();
+    return text || fallback;
+  }
 }

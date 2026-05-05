@@ -2,31 +2,50 @@ package com.interview.platform.service;
 
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
+import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class SessionService {
 
-    @Autowired
-    private SessionRepository sessionRepository;
+    private static final Set<String> VALID_STATUSES = new HashSet<>(Arrays.asList(
+            "PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"
+    ));
 
-    @Autowired
-    private UserRepository userRepository;
+    private final SessionRepository sessionRepository;
+    private final UserRepository userRepository;
+
+    public SessionService(SessionRepository sessionRepository, UserRepository userRepository) {
+        this.sessionRepository = sessionRepository;
+        this.userRepository = userRepository;
+    }
 
     public Session createSession(Session session) {
+        if (session == null) {
+            throw new IllegalArgumentException("Session details are required");
+        }
+        if (session.getCandidateId() == null || session.getCandidateId().isBlank()) {
+            throw new IllegalArgumentException("Interviewee ID is required");
+        }
+        if (session.getTitle() == null || session.getTitle().isBlank()) {
+            throw new IllegalArgumentException("Session topic is required");
+        }
+        session.setTitle(session.getTitle().trim());
 
-        // ── Set default status ────────────────────────────────────────────────
         if (session.getStatus() == null) {
-            session.setStatus("SCHEDULED");
+            session.setStatus("PENDING");
+        } else {
+            session.setStatus(normalizeStatus(session.getStatus()));
         }
 
-        // ── Auto-match interviewer if none provided ───────────────────────────
         if (session.getInterviewerId() == null || session.getInterviewerId().isBlank()) {
 
             List<User> interviewers = userRepository.findByRole("INTERVIEWER");
@@ -45,8 +64,12 @@ public class SessionService {
                 User assigned = skillMatch.orElse(interviewers.get(0));
                 session.setInterviewerId(assigned.getId());
             }
-            // If no interviewers exist at all, leave interviewerId null —
-            // controller/caller can handle this scenario.
+        } else if (!userRepository.existsById(session.getInterviewerId())) {
+            throw new IllegalArgumentException("Interviewer does not exist");
+        }
+
+        if (!userRepository.existsById(session.getCandidateId())) {
+            throw new IllegalArgumentException("Interviewee does not exist");
         }
 
         return sessionRepository.save(session);
@@ -57,16 +80,36 @@ public class SessionService {
     }
 
     public Optional<Session> getById(String id) {
+        if (id == null || id.isBlank()) {
+            return Optional.empty();
+        }
         return sessionRepository.findById(id);
     }
+
+    public List<Session> getByInterviewerId(String interviewerId) {
+        return sessionRepository.findByInterviewerId(interviewerId);
+    }
+
+    public List<Session> getByIntervieweeId(String intervieweeId) {
+        return sessionRepository.findByCandidateId(intervieweeId);
+    }
+
     public Session updateSessionStatus(String id, String status) {
-        Optional<Session> sessionOpt = sessionRepository.findById(id);
-        if (sessionOpt.isPresent()) {
-            Session session = sessionOpt.get();
-            session.setStatus(status);
-            return sessionRepository.save(session);
+        Session session = sessionRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+        session.setStatus(normalizeStatus(status));
+        return sessionRepository.save(session);
+    }
+
+    private String normalizeStatus(String status) {
+        if (status == null || status.isBlank()) {
+            throw new IllegalArgumentException("Status is required");
         }
-        return null;
+        String normalized = status.trim().toUpperCase();
+        if (!VALID_STATUSES.contains(normalized)) {
+            throw new IllegalArgumentException("Status must be PENDING, CONFIRMED, COMPLETED, or CANCELLED");
+        }
+        return normalized;
     }
 }
 

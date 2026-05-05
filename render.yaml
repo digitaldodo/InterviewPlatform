@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: interview-platform-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/health
+    envVars:
+      - key: MONGO_URI
+        sync: false
+
+  - type: web
+    name: interview-platform-frontend
+    runtime: static
+    plan: free
+    rootDir: frontend
+    buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\n" "$INTERVIEW_API_BASE" > js/env.js
+    staticPublishPath: frontend
+    envVars:
+      - key: INTERVIEW_API_BASE
+        sync: false

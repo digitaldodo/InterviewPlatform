@@ -1,51 +1,57 @@
 package com.interview.platform.controller;
 
+import com.interview.platform.api.ApiResponse;
+import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.User;
 import com.interview.platform.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @RestController
-@RequestMapping("/users")
+@RequestMapping("/api/users")
 public class UserController {
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+
+    public UserController(UserService userService) {
+        this.userService = userService;
+    }
 
     @PostMapping("/register")
-    public ResponseEntity<User> register(@RequestBody User user) {
-        try {
-            return ResponseEntity.ok(userService.register(user));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+    public ResponseEntity<ApiResponse<User>> register(@RequestBody User user) {
+        return ResponseEntity.ok(ApiResponse.success("User registered successfully", userService.register(user)));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<User> login(@RequestBody Map<String, String> credentials) {
-        String email = credentials.get("email");
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.badRequest().build();
+    public ResponseEntity<ApiResponse<User>> login(@RequestBody Map<String, String> credentials) {
+        if (credentials == null) {
+            throw new IllegalArgumentException("Email and password are required");
         }
-        Optional<User> user = userService.loginUser(email);
-        return user.map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.status(401).build());
+        String email = credentials.get("email");
+        String password = credentials.get("password");
+        User user = userService.loginUser(email, password)
+                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+        return ResponseEntity.ok(ApiResponse.success("Login successful", user));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<User> getUserById(@PathVariable String id) {
-        Optional<User> user = userService.getById(id);
-        return user.map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+    public ResponseEntity<ApiResponse<User>> getUserById(@PathVariable String id) {
+        User user = userService.getById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return ResponseEntity.ok(ApiResponse.success("User fetched successfully", user));
     }
 
     @GetMapping
-    public ResponseEntity<List<User>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<ApiResponse<List<User>>> getAllUsers() {
+        return ResponseEntity.ok(ApiResponse.success("Users fetched successfully", userService.getAllUsers()));
+    }
+
+    @GetMapping("/interviewers")
+    public ResponseEntity<ApiResponse<List<User>>> getInterviewers(@RequestParam(required = false) String skill) {
+        return ResponseEntity.ok(ApiResponse.success("Interviewers fetched successfully", userService.getInterviewers(skill)));
     }
 }

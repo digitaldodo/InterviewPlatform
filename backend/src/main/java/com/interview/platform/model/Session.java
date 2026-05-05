@@ -2,7 +2,6 @@ package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
-import java.time.LocalDateTime;
 
 @Document(collection = "sessions")
 public class Session {
@@ -11,11 +10,13 @@ public class Session {
     private String title;
     private String interviewerId;
     private String candidateId;
-    private LocalDateTime startTime;
+    private String startTime;
+    private String status;
+    private String notes;
 
     public Session() {}
 
-    public Session(String title, String interviewerId, String candidateId, LocalDateTime startTime) {
+    public Session(String title, String interviewerId, String candidateId, String startTime) {
         this.title = title;
         this.interviewerId = interviewerId;
         this.candidateId = candidateId;
@@ -30,6 +31,16 @@ public class Session {
     public void setInterviewerId(String interviewerId) { this.interviewerId = interviewerId; }
     public String getCandidateId() { return candidateId; }
     public void setCandidateId(String candidateId) { this.candidateId = candidateId; }
-    public LocalDateTime getStartTime() { return startTime; }
-    public void setStartTime(LocalDateTime startTime) { this.startTime = startTime; }
+    public String getIntervieweeId() { return candidateId; }
+    public void setIntervieweeId(String intervieweeId) { this.candidateId = intervieweeId; }
+    public String getStartTime() { return startTime; }
+    public void setStartTime(String startTime) { this.startTime = startTime; }
+    public String getTopic() { return title; }
+    public void setTopic(String topic) { this.title = topic; }
+    public String getScheduledAt() { return startTime; }
+    public void setScheduledAt(String scheduledAt) { this.startTime = scheduledAt; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
 }
