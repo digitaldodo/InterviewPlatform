@@ -23,15 +23,6 @@ public class Feedback {
         this.rating = rating;
     }
 
-    public Feedback(String sessionId, String reviewerId, String comments, int rating, String strengths, String weaknesses) {
-        this.sessionId = sessionId;
-        this.reviewerId = reviewerId;
-        this.comments = comments;
-        this.rating = rating;
-        this.strengths = strengths;
-        this.weaknesses = weaknesses;
-    }
-
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getSessionId() { return sessionId; }
