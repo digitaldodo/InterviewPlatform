@@ -13,7 +13,7 @@ A full-stack platform connecting interviewees with experienced interviewers for 
 ```
 Interview/
 ├── frontend/
-│   ├── index.html          # Landing page
+│   ├── inde.html          # Landing page
 │   ├── css/
 │   │   └── style.css       # Design system (dark mode)
 │   ├── js/
