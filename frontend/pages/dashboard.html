@@ -1,1 +1,172 @@
-# placeholder
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard – InterviewPrep</title>
+  <meta name="description" content="Manage your mock interview sessions, browse interviewers, and track feedback." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+<div class="dashboard-wrapper">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="logo">Interview<span>Prep</span></div>
+
+    <ul class="nav-menu" role="navigation" aria-label="Dashboard navigation">
+      <li>
+        <button class="nav-link active" id="nav-overview" onclick="showSection('overview')" aria-current="page">
+          📊 Overview
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" id="nav-interviewers" onclick="showSection('interviewers')">
+          👥 Interviewers
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" id="nav-schedule" onclick="showSection('schedule')">
+          📅 Schedule Session
+        </button>
+      </li>
+      <li>
+        <button class="nav-link" id="nav-sessions" onclick="showSection('sessions')">
+          🗂️ My Sessions
+        </button>
+      </li>
+    </ul>
+
+    <div class="sidebar-bottom">
+      <div class="sidebar-user-info" id="sidebar-user-info">Not logged in</div>
+      <button class="btn btn-outline btn-sm btn-full" id="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </aside>
+
+  <!-- ── Main Content ── -->
+  <main class="dashboard-main" id="main-content">
+
+    <!-- ════ OVERVIEW SECTION ════ -->
+    <section id="section-overview" class="dashboard-section">
+      <div class="dashboard-header">
+        <h1 id="welcome-heading">Welcome back!</h1>
+        <p id="welcome-sub">Here's your activity at a glance.</p>
+      </div>
+
+      <div class="grid-3 mb-3" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-number" id="stat-sessions">–</div>
+          <div class="stat-label">Total Sessions</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-confirmed">–</div>
+          <div class="stat-label">Confirmed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number" id="stat-completed">–</div>
+          <div class="stat-label">Completed</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Recent Sessions</div>
+        <div id="overview-sessions-list">
+          <div class="empty-state"><div class="icon">📭</div><p>No sessions yet.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ════ INTERVIEWERS SECTION ════ -->
+    <section id="section-interviewers" class="dashboard-section" style="display:none;">
+      <div class="dashboard-header">
+        <h1>Browse Interviewers</h1>
+        <p>Find the right interviewer for your skill area.</p>
+      </div>
+
+      <div class="card mb-3">
+        <div style="display:flex; gap:0.75rem; align-items:center;">
+          <input id="skill-filter" type="text" placeholder="Filter by skill (e.g. Java, DSA)" style="flex:1;" oninput="filterInterviewers(this.value)" />
+          <button class="btn btn-primary" onclick="loadInterviewers()">Refresh</button>
+        </div>
+      </div>
+
+      <div id="interviewers-alert" class="alert"></div>
+      <div id="interviewers-grid" style="display:flex; flex-direction:column; gap:0.75rem;">
+        <div class="empty-state"><div class="icon">⏳</div><p>Loading interviewers…</p></div>
+      </div>
+    </section>
+
+    <!-- ════ SCHEDULE SESSION SECTION ════ -->
+    <section id="section-schedule" class="dashboard-section" style="display:none;">
+      <div class="dashboard-header">
+        <h1>Schedule a Session</h1>
+        <p>Request a mock interview with an interviewer.</p>
+      </div>
+
+      <div class="card" style="max-width:560px;">
+        <div class="card-title">New Session Request</div>
+        <div id="schedule-alert" class="alert"></div>
+        <form id="session-form" novalidate>
+          <div class="form-group">
+            <label for="ses-interviewer">Interviewer ID</label>
+            <input id="ses-interviewer" type="text" name="interviewerId" placeholder="Paste interviewer's ID" required />
+            <small>You can copy the ID from the Interviewers list.</small>
+          </div>
+          <div class="form-group">
+            <label for="ses-topic">Topic / Focus Area</label>
+            <input id="ses-topic" type="text" name="topic" placeholder="e.g. System Design, Java, Behavioural" required />
+          </div>
+          <div class="form-group">
+            <label for="ses-date">Preferred Date &amp; Time</label>
+            <input id="ses-date" type="datetime-local" name="scheduledAt" required />
+          </div>
+          <div class="form-group">
+            <label for="ses-notes">Additional Notes <small>(optional)</small></label>
+            <textarea id="ses-notes" name="notes" placeholder="Anything specific you want to cover…"></textarea>
+          </div>
+          <button id="session-submit" type="submit" class="btn btn-primary btn-full">Request Session</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ════ MY SESSIONS SECTION ════ -->
+    <section id="section-sessions" class="dashboard-section" style="display:none;">
+      <div class="dashboard-header">
+        <h1>My Sessions</h1>
+        <p>View and manage all your interview sessions.</p>
+      </div>
+
+      <div id="sessions-alert" class="alert"></div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+          <span class="card-title" style="margin:0; border:none; padding:0;">All Sessions</span>
+          <button class="btn btn-outline btn-sm" onclick="loadMySessions()">↻ Refresh</button>
+        </div>
+        <div id="sessions-table-wrapper">
+          <div class="empty-state"><div class="icon">⏳</div><p>Loading sessions…</p></div>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- /.dashboard-main -->
+</div><!-- /.dashboard-wrapper -->
+
+<!-- ── Session Action Modal (simple inline) ── -->
+<div id="action-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="max-width:380px; width:90%;">
+    <div class="card-title" id="action-modal-title">Session Action</div>
+    <p id="action-modal-body" style="margin-bottom:1rem;"></p>
+    <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
+      <button class="btn btn-outline btn-sm" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="action-confirm-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/dashboard.js"></script>
+</body>
+</html>
