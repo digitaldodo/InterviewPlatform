@@ -9,5 +9,6 @@ import java.util.List;
 @Repository
 public interface UserRepository extends MongoRepository<User, String> {
 
+    // Used by SessionService to find interviewers for auto-matching
     List<User> findByRole(String role);
 }

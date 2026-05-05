@@ -25,4 +25,11 @@ public class UserService {
     public List<User> getAllUsers() {
         return userRepository.findAll();
     }
+
+    public Optional<User> loginUser(String email) {
+        return userRepository.findAll()
+                .stream()
+                .filter(user -> user.getEmail() != null && user.getEmail().equals(email))
+                .findFirst();
+    }
 }
