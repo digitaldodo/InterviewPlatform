@@ -36,4 +36,16 @@ public class SessionController {
         return session.map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
+    @PutMapping("/{id}/status")
+    public ResponseEntity<Session> updateSessionStatus(@PathVariable String id, @RequestBody java.util.Map<String, String> request) {
+        try {
+            Session updatedSession = sessionService.updateSessionStatus(id, request.get("status"));
+            if (updatedSession != null) {
+                return ResponseEntity.ok(updatedSession);
+            }
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
 }
