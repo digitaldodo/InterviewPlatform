@@ -1,1 +1,102 @@
-# placeholder
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InterviewPrep – Practice Mock Interviews</title>
+  <meta name="description" content="Connect with experienced interviewers for structured mock interview sessions. Register or log in to get started." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="landing-wrapper">
+
+  <!-- ── Hero ── -->
+  <div class="landing-hero">
+    <p class="tagline">Practice interviews.<br /><span>Land your dream job.</span></p>
+    <p>Connect with experienced interviewers for realistic, structured mock interview sessions — whenever you need.</p>
+    <ul class="feature-list">
+      <li>Browse verified interviewers by skill</li>
+      <li>Schedule sessions at your convenience</li>
+      <li>Get actionable feedback after every session</li>
+      <li>Track your progress over time</li>
+    </ul>
+  </div>
+
+  <!-- ── Auth Forms ── -->
+  <div class="landing-forms">
+    <h1 style="margin-bottom:0.3rem;">Welcome</h1>
+    <p style="margin-bottom:1.5rem; font-size:0.92rem;">Sign in or create a new account to get started.</p>
+
+    <!-- Tab Toggle -->
+    <div class="form-toggle" role="tablist">
+      <button id="tab-login" class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-login" onclick="switchTab('login')">Login</button>
+      <button id="tab-register" class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-register" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="panel-login" class="tab-panel active" role="tabpanel">
+      <div id="login-alert" class="alert" role="alert"></div>
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="login-email">Email address</label>
+          <input id="login-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input id="login-password" type="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
+        </div>
+        <div class="form-group" style="margin-top:0.5rem;">
+          <button id="login-submit" type="submit" class="btn btn-primary btn-full">Login</button>
+        </div>
+      </form>
+      <p style="text-align:center; font-size:0.85rem; margin-top:0.75rem;">
+        Don't have an account? <a href="#" onclick="switchTab('register'); return false;">Register here</a>
+      </p>
+    </div>
+
+    <!-- Register Form -->
+    <div id="panel-register" class="tab-panel" role="tabpanel">
+      <div id="register-alert" class="alert" role="alert"></div>
+      <form id="register-form" novalidate>
+        <div class="form-group">
+          <label for="reg-name">Full name</label>
+          <input id="reg-name" type="text" name="name" placeholder="Jane Doe" required autocomplete="name" />
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Email address</label>
+          <input id="reg-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <input id="reg-password" type="password" name="password" placeholder="Min. 6 characters" required autocomplete="new-password" />
+        </div>
+        <div class="form-group">
+          <label for="reg-role">I am a…</label>
+          <select id="reg-role" name="role" required>
+            <option value="">Select role</option>
+            <option value="interviewee">Interviewee (seeking practice)</option>
+            <option value="interviewer">Interviewer (offering sessions)</option>
+          </select>
+        </div>
+        <div class="form-group" id="skills-group">
+          <label for="reg-skills">Skills / Expertise <small>(comma-separated)</small></label>
+          <input id="reg-skills" type="text" name="skills" placeholder="e.g. Java, System Design, DSA" autocomplete="off" />
+        </div>
+        <div class="form-group" style="margin-top:0.5rem;">
+          <button id="register-submit" type="submit" class="btn btn-primary btn-full">Create Account</button>
+        </div>
+      </form>
+      <p style="text-align:center; font-size:0.85rem; margin-top:0.75rem;">
+        Already have an account? <a href="#" onclick="switchTab('login'); return false;">Login here</a>
+      </p>
+    </div>
+
+  </div><!-- /.landing-forms -->
+</div><!-- /.landing-wrapper -->
+
+<script src="js/app.js"></script>
+</body>
+</html>
