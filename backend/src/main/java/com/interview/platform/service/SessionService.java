@@ -28,4 +28,13 @@ public class SessionService {
     public Optional<Session> getById(String id) {
         return sessionRepository.findById(id);
     }
+    public Session updateSessionStatus(String id, String status) {
+        Optional<Session> sessionOpt = sessionRepository.findById(id);
+        if (sessionOpt.isPresent()) {
+            Session session = sessionOpt.get();
+            session.setStatus(status);
+            return sessionRepository.save(session);
+        }
+        return null;
+    }
 }
