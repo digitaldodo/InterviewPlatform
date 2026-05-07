@@ -329,6 +329,13 @@ function rememberInterviewers(list) {
   });
 }
 
+function refreshSessionSurfaces() {
+  if (document.getElementById('upcoming-list')) renderOverview();
+  if (document.getElementById('sessions-list') && !document.getElementById('section-sessions')?.hidden) {
+    renderSessions('upcoming');
+  }
+}
+
 async function loadInterviewers() {
   const grid = document.getElementById('interviewer-grid');
   if (!grid) return;
@@ -356,6 +363,7 @@ async function loadInterviewers() {
     rememberInterviewers(interviewers);
     interviewerTotalPages = Math.max(1, page.totalPages || 1);
     renderInterviewerGrid(interviewers);
+    refreshSessionSurfaces();
     document.getElementById('page-label').textContent = `Page ${interviewerPage + 1} of ${interviewerTotalPages}`;
   } catch (err) {
     grid.innerHTML = emptyState('Could not load interviewers.');
@@ -379,6 +387,7 @@ async function loadRecommended() {
       'No interviewer recommendations yet',
       'We will show recommended interviewers here as soon as matching profiles are available.'
     );
+    refreshSessionSurfaces();
   } catch {
     list.innerHTML = interviewerEmptyState(
       'Recommendations are unavailable right now',
@@ -398,30 +407,54 @@ function renderInterviewerGrid(list) {
     return;
   }
   grid.classList.remove('skeleton-grid');
-  grid.innerHTML = list.map(interviewer => `
+  grid.innerHTML = list.map(renderInterviewerCard).join('');
+}
+
+function renderInterviewerCard(interviewer) {
+  const skills = Array.isArray(interviewer.skills) ? interviewer.skills.slice(0, 5) : [];
+  return `
     <article class="interviewer-card">
-      <div class="card-top">
-        ${avatarMarkup(interviewer)}
-        <button class="icon-btn" title="Save favorite" onclick="favoriteInterviewer('${interviewer.id}')">♡</button>
+      <div class="interviewer-card-main">
+        <div class="interviewer-avatar-shell">
+          ${avatarMarkup(interviewer, 'avatar avatar-profile')}
+        </div>
+        <div class="interviewer-card-copy">
+          <div class="interviewer-card-title-row">
+            <div class="interviewer-card-title">
+              <h3>${esc(interviewerName(interviewer))}</h3>
+              <p>${esc(interviewerRole(interviewer))}</p>
+              <span>${esc(interviewerCompany(interviewer))}</span>
+            </div>
+            <button class="icon-btn favorite-btn" title="Save favorite" aria-label="Save ${esc(interviewerName(interviewer))}" onclick="favoriteInterviewer('${interviewer.id}')">♡</button>
+          </div>
+          <div class="rating-row interviewer-stats">
+            <strong>${ratingLabel(interviewer)}</strong>
+            <span>${Number(interviewer.reviewCount || 0)} reviews</span>
+            <span>${Number(interviewer.completedInterviews || 0)} sessions</span>
+          </div>
+          <div class="tag-row">${skills.map(skill => `<span>${esc(skill)}</span>`).join('') || '<span>Interview coaching</span>'}</div>
+        </div>
       </div>
-      <h3>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h3>
-      <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
-      <div class="rating-row"><strong>${ratingLabel(interviewer)}</strong><span>${interviewer.reviewCount || 0} reviews</span><span>${interviewer.completedInterviews || 0} sessions</span></div>
-      <div class="tag-row">${(interviewer.skills || []).slice(0, 4).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
-      <p class="bio">${esc(interviewer.bio || 'No bio yet.')}</p>
-      <div class="card-actions">
-        <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
-        <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
+      <p class="bio interviewer-bio">${esc(bioPreview(interviewer.bio))}</p>
+      <div class="interviewer-card-footer">
+        <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
+        <div class="card-actions">
+          <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
+          <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
+        </div>
       </div>
     </article>
-  `).join('');
+  `;
 }
 
 function renderCompactInterviewer(interviewer) {
   return `
     <button class="mini-interviewer" onclick="selectInterviewer('${interviewer.id}')">
-      ${avatarMarkup(interviewer)}
-      <span class="mini-interviewer-copy"><strong>${esc(interviewer.name || interviewer.username || 'Interviewer')}</strong><small>${esc(interviewer.currentRole || 'Interview coach')}</small></span>
+      ${avatarMarkup(interviewer, 'avatar avatar-compact')}
+      <span class="mini-interviewer-copy">
+        <strong>${esc(interviewerName(interviewer))}</strong>
+        <small>${esc(interviewerRole(interviewer))} · ${esc(availabilityLabel(interviewer))}</small>
+      </span>
     </button>
   `;
 }
@@ -517,15 +550,7 @@ function renderBookingInterviewerStep() {
         <button class="btn btn-outline btn-sm" type="button" onclick="showSection('discover')">Open full search</button>
       </div>
       <div class="interviewer-grid compact">
-        ${available.map(item => `
-          <article class="mini-card booking-interviewer-card">
-            ${avatarMarkup(item)}
-            <strong>${esc(item.name || item.username || 'Interviewer')}</strong>
-            <small>${esc(item.currentRole || 'Interview coach')}</small>
-            <span class="booking-card-meta">${esc(item.company || 'Independent')}</span>
-            <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Select</button>
-          </article>
-        `).join('') || interviewerEmptyState(
+        ${available.map(renderBookingInterviewerCard).join('') || interviewerEmptyState(
           bookingState.interviewerQuery ? 'No interviewers match that search' : 'No interviewers available right now',
           bookingState.interviewerQuery
             ? 'Try a broader search by role, company, or skill.'
@@ -533,6 +558,32 @@ function renderBookingInterviewerStep() {
         )}
       </div>
     </div>
+  `;
+}
+
+function renderBookingInterviewerCard(interviewer) {
+  const skills = Array.isArray(interviewer.skills) ? interviewer.skills.slice(0, 3) : [];
+  return `
+    <article class="mini-card booking-interviewer-card">
+      <div class="booking-card-profile">
+        ${avatarMarkup(interviewer, 'avatar avatar-booking')}
+        <div class="booking-card-copy">
+          <strong>${esc(interviewerName(interviewer))}</strong>
+          <small>${esc(interviewerRole(interviewer))}</small>
+          <span class="booking-card-meta">${esc(interviewerCompany(interviewer))}</span>
+        </div>
+      </div>
+      <div class="rating-row">
+        <strong>${ratingLabel(interviewer)}</strong>
+        <span>${Number(interviewer.reviewCount || 0)} reviews</span>
+      </div>
+      <div class="tag-row">${skills.map(skill => `<span>${esc(skill)}</span>`).join('') || '<span>Interview coaching</span>'}</div>
+      <p class="bio">${esc(bioPreview(interviewer.bio, 118))}</p>
+      <div class="booking-card-actions">
+        <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
+        <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Select</button>
+      </div>
+    </article>
   `;
 }
 
@@ -707,6 +758,15 @@ function renderBookingConfirmationStep() {
         </div>
       </div>
       <div class="booking-success-card">
+        ${bookingState.interviewer ? `
+          <div class="session-participant-row">
+            ${avatarMarkup(bookingState.interviewer, 'avatar avatar-compact')}
+            <div>
+              <strong>${esc(interviewerName(bookingState.interviewer))}</strong>
+              <span>${esc(interviewerMetaLine(bookingState.interviewer))}</span>
+            </div>
+          </div>
+        ` : ''}
         <span class="badge badge-${statusClass((session?.status || 'PENDING').toUpperCase())}">${esc((session?.status || 'PENDING').toUpperCase())}</span>
         <h3>${esc(sessionTitle(session) || 'Interview request sent')}</h3>
         <div class="topic-chip-row">${topicTags(sessionTopics(session))}</div>
@@ -874,10 +934,10 @@ function renderBookingSelectionBanner() {
   const label = interviewer.name || interviewer.username || 'Selected interviewer';
   return `
     <div class="booking-selection-banner">
-      <div class="avatar">${initials(interviewer)}</div>
+      ${avatarMarkup(interviewer, 'avatar avatar-compact')}
       <div>
         <strong>${esc(label)}</strong>
-        <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
+        <p>${esc(interviewerMetaLine(interviewer))}</p>
       </div>
     </div>
   `;
@@ -1064,10 +1124,18 @@ function renderSessionCard(session) {
   const joinLabel = currentUser.id === session.interviewerId && meetingStatus !== 'LIVE' ? 'Start Meeting' : 'Join Meeting';
   const hasMeeting = Boolean(session.meetingId || session.joinUrl || session.meetingLink || session.meetingProvider);
   const summary = feedbackSummaryForSession(session.id);
+  const participant = sessionParticipant(session);
   return `
     <article class="session-card">
       <div class="session-card-head"><span class="badge badge-${statusClass(status)}">${status}</span><span>${countdown(session.startTime || session.scheduledAt)}</span></div>
       <h3>${esc(sessionTitle(session))}</h3>
+      <div class="session-participant-row">
+        ${avatarMarkup(participant, 'avatar avatar-compact')}
+        <div>
+          <strong>${esc(participant.name || participant.username || 'Interviewer')}</strong>
+          <span>${esc(interviewerMetaLine(participant))}</span>
+        </div>
+      </div>
       <div class="topic-chip-row">${topicTags(sessionTopics(session))}</div>
       <p>${fmtDate(session.startTime || session.scheduledAt)}</p>
       <div class="session-meta-row">
@@ -1083,6 +1151,26 @@ function renderSessionCard(session) {
       </div>
     </article>
   `;
+}
+
+function sessionParticipant(session) {
+  const isInterviewer = activeWorkspace === 'INTERVIEWER';
+  if (!isInterviewer) {
+    return interviewerDirectory.get(session?.interviewerId) || {
+      id: session?.interviewerId,
+      name: session?.interviewerName || session?.hostName || 'Interviewer',
+      currentRole: session?.interviewerRole || 'Interview coach',
+      company: session?.interviewerCompany,
+      avatarUrl: session?.interviewerAvatarUrl,
+    };
+  }
+  return {
+    id: session?.candidateId || session?.intervieweeId,
+    name: session?.candidateName || session?.intervieweeName || 'Interviewee',
+    currentRole: session?.candidateRole || session?.intervieweeRole || 'Candidate',
+    company: session?.candidateCompany || session?.intervieweeCompany,
+    avatarUrl: session?.candidateAvatarUrl || session?.intervieweeAvatarUrl,
+  };
 }
 
 function sessionTopics(session) {
@@ -2328,17 +2416,72 @@ function val(id) {
 }
 
 function initials(user) {
-  const name = user.name || user.username || user.email || 'IP';
+  const name = user?.name || user?.username || user?.email || 'IP';
   return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
+function interviewerName(interviewer) {
+  return interviewer?.name || interviewer?.username || 'Interviewer';
+}
+
+function interviewerRole(interviewer) {
+  return interviewer?.currentRole || interviewer?.roleTitle || interviewer?.title || 'Interview coach';
+}
+
+function interviewerCompany(interviewer) {
+  return interviewer?.company || 'Independent';
+}
+
+function interviewerMetaLine(interviewer) {
+  const role = interviewerRole(interviewer);
+  const company = interviewer?.company;
+  return company ? `${role} at ${company}` : role;
+}
+
+function availabilityLabel(interviewer) {
+  return interviewer?.acceptingBookings === false ? 'Not accepting bookings' : 'Available for booking';
+}
+
+function bioPreview(value, limit = 150) {
+  const text = String(value || 'No bio yet.').trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit - 1).trim()}...`;
+}
+
+function avatarSource(user, imageUrl = '', size = 96) {
+  const raw = imageUrl
+    || user?.avatarUrl
+    || user?.profileImageUrl
+    || user?.profilePhotoUrl
+    || user?.photoUrl
+    || user?.imageUrl
+    || '';
+  return optimizeAvatarUrl(raw, size);
+}
+
+function optimizeAvatarUrl(url, size = 96) {
+  const src = String(url || '').trim();
+  if (!src || src.startsWith('blob:') || src.startsWith('data:')) return src;
+  if (!src.includes('res.cloudinary.com') || !src.includes('/upload/')) return src;
+  if (/\/upload\/[^/]*(c_fill|w_\d+|h_\d+|q_auto|f_auto)[^/]*\//.test(src)) return src;
+  const dimension = Math.max(40, Math.min(Number(size) || 96, 240));
+  return src.replace('/upload/', `/upload/f_auto,q_auto,c_fill,g_auto,w_${dimension},h_${dimension}/`);
+}
+
+function avatarSizeForClass(className) {
+  if (String(className).includes('avatar-profile')) return 112;
+  if (String(className).includes('large')) return 152;
+  if (String(className).includes('avatar-booking')) return 96;
+  return 80;
+}
+
 function avatarMarkup(user, className = 'avatar', imageUrl = '') {
-  const src = imageUrl || user?.avatarUrl || '';
+  const src = avatarSource(user, imageUrl, avatarSizeForClass(className));
   const label = user?.name || user?.username || user?.email || 'InterviewPrep user';
   return `
     <div class="${className}${src ? ' has-image' : ''}">
       <span class="avatar-fallback">${initials(user || { name: label })}</span>
-      ${src ? `<img src="${esc(src)}" alt="${esc(label)} avatar" loading="lazy" onerror="this.remove()">` : ''}
+      ${src ? `<img src="${esc(src)}" alt="${esc(label)} avatar" loading="lazy" decoding="async" onerror="this.parentElement.classList.remove('has-image'); this.remove()">` : ''}
     </div>
   `;
 }
