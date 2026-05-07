@@ -1612,6 +1612,20 @@ textarea:focus-visible {
   text-align: center;
 }
 
+.empty-state-rich {
+  gap: 0.45rem;
+  padding: 1rem;
+}
+
+.empty-state-rich strong {
+  color: var(--text);
+}
+
+.empty-state-rich p {
+  margin: 0;
+  max-width: 32rem;
+}
+
 .skeleton-card {
   min-height: 186px;
   border-radius: var(--radius);

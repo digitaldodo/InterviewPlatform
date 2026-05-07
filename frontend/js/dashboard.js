@@ -259,7 +259,7 @@ function bindFilters() {
 }
 
 function rememberInterviewers(list) {
-  (Array.isArray(list) ? list : []).forEach(item => {
+  filterSelf(list || []).forEach(item => {
     if (item?.id) interviewerDirectory.set(item.id, item);
   });
 }
@@ -310,9 +310,15 @@ async function loadRecommended() {
     const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
     const recommendations = filterSelf(data || []).slice(0, 4);
     rememberInterviewers(recommendations);
-    list.innerHTML = recommendations.map(renderCompactInterviewer).join('') || emptyState('No other interviewers available yet.');
+    list.innerHTML = recommendations.map(renderCompactInterviewer).join('') || interviewerEmptyState(
+      'No interviewer recommendations yet',
+      'We will show recommended interviewers here as soon as matching profiles are available.'
+    );
   } catch {
-    list.innerHTML = emptyState('Recommendations will appear here.');
+    list.innerHTML = interviewerEmptyState(
+      'Recommendations are unavailable right now',
+      'Try refreshing in a moment or browse all interviewers from search.'
+    );
   }
 }
 
@@ -320,7 +326,10 @@ function renderInterviewerGrid(list) {
   const grid = document.getElementById('interviewer-grid');
   list = filterSelf(list || []);
   if (!list.length) {
-    grid.innerHTML = emptyState('No other interviewers available yet.');
+    grid.innerHTML = interviewerEmptyState(
+      'No interviewers available right now',
+      'Check back shortly or widen your search filters to see more profiles.'
+    );
     return;
   }
   grid.classList.remove('skeleton-grid');
@@ -393,10 +402,14 @@ async function favoriteInterviewer(id) {
 }
 
 function selectInterviewer(id) {
-  selectedInterviewer = filterSelf(interviewers).find(item => item.id === id) || interviewerDirectory.get(id) || selectedInterviewer;
+  selectedInterviewer = filterSelf(interviewers).find(item => item.id === id) || filterSelf([interviewerDirectory.get(id)])[0] || null;
+  if (!selectedInterviewer || selectedInterviewer.id === currentUser.id) {
+    toast('That interviewer is not available for booking.', 'error');
+    return;
+  }
   bookingState = {
     ...createBookingState(),
-    interviewer: selectedInterviewer || { id },
+    interviewer: selectedInterviewer,
     interviewType: bookingState.interviewType,
     meetingProvider: bookingState.meetingProvider || preferredMeetingProvider(),
   };
@@ -446,7 +459,12 @@ function renderBookingInterviewerStep() {
             <span class="booking-card-meta">${esc(item.company || 'Independent')}</span>
             <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Select</button>
           </article>
-        `).join('') || emptyState('No interviewers match that search yet.')}
+        `).join('') || interviewerEmptyState(
+          bookingState.interviewerQuery ? 'No interviewers match that search' : 'No interviewers available right now',
+          bookingState.interviewerQuery
+            ? 'Try a broader search by role, company, or skill.'
+            : 'Once interviewer profiles are available, you can book directly from this screen.'
+        )}
       </div>
     </div>
   `;
@@ -484,7 +502,7 @@ async function renderBookingDateStep() {
                   <small>${group.availableCount} open${group.bookedCount ? ` • ${group.bookedCount} booked` : ''}</small>
                 </button>
               `).join('')}</div>`
-            : emptyState(emptyBookingMessage())}
+            : slotEmptyState(emptyBookingMessage())}
     </div>
   `;
   if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
@@ -524,7 +542,9 @@ async function renderBookingSlotStep() {
         : bookingState.slotError
           ? `${emptyState(bookingState.slotError)}<div class="booking-flow-actions"><button class="btn btn-outline btn-sm" type="button" onclick="refreshBookingAvailability(true)">Retry</button></div>`
           : selectedDay
-            ? `
+            ? selectedDay.availableCount === 0
+              ? slotEmptyState('No open slots remain on this date. Choose another day to keep booking.')
+              : `
               <div class="booking-slot-day-card">
                 <div class="booking-slot-day-head">
                   <div>
@@ -549,7 +569,7 @@ async function renderBookingSlotStep() {
                 </div>
               </div>
             `
-            : emptyState('Choose a date to see generated slots.')}
+            : slotEmptyState('Choose a date to see available interview slots.')}
     </div>
   `;
   if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
@@ -781,7 +801,7 @@ function emptyBookingMessage() {
   if (bookingState.interviewer && bookingState.interviewer.acceptingBookings === false) {
     return 'This interviewer is not accepting bookings right now.';
   }
-  return 'No generated slots are available yet for this interviewer.';
+  return 'No available interview slots have been published for this interviewer yet.';
 }
 
 function formatSlotTime(value) {
@@ -1449,7 +1469,10 @@ function renderProfile() {
   const saved = document.getElementById('saved-interviewers');
   const ids = currentUser.favoriteInterviewerIds || [];
   const savedList = filterSelf(interviewers).filter(item => ids.includes(item.id));
-  saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
+  saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || interviewerEmptyState(
+    'No saved interviewers yet',
+    'Profiles you save for later will appear here for quick booking.'
+  );
   initProfileControls();
   renderProfileAvailabilityPanel();
 }
@@ -1461,6 +1484,24 @@ function initProfileControls() {
 
 function filterSelf(list) {
   return (list || []).filter(item => item?.id !== currentUser.id);
+}
+
+function interviewerEmptyState(title, message) {
+  return `
+    <div class="empty-state empty-state-rich">
+      <strong>${esc(title)}</strong>
+      <p>${esc(message)}</p>
+    </div>
+  `;
+}
+
+function slotEmptyState(message) {
+  return `
+    <div class="empty-state empty-state-rich">
+      <strong>No slots available</strong>
+      <p>${esc(message)}</p>
+    </div>
+  `;
 }
 
 async function resendProfileOtp() {
@@ -1937,7 +1978,10 @@ function renderSkillProgress() {
   const host = document.getElementById('skill-progress');
   const progressData = getProgressData();
   if (!progressData || progressData.length === 0) {
-    host.innerHTML = emptyState('No progress data available yet');
+    host.innerHTML = interviewerEmptyState(
+      'No practice analytics yet',
+      'Completed interview sessions and feedback will unlock real progress insights here.'
+    );
     return;
   }
   host.innerHTML = progressData.map(item => `
@@ -1951,6 +1995,9 @@ function renderSkillProgress() {
 
 function getProgressData() {
   const source = currentUser.progressData || currentUser.skillProgress || currentUser.analytics?.progress;
+  if (!source || (typeof source === 'object' && !Array.isArray(source) && Object.keys(source).length === 0)) {
+    return [];
+  }
   const entries = Array.isArray(source)
     ? source
     : Object.entries(source || {}).map(([label, value]) => ({ label, value }));
