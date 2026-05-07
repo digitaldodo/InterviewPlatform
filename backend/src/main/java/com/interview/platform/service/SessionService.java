@@ -139,6 +139,13 @@ public class SessionService {
         return sortSessions(sessionRepository.findAll());
     }
 
+    public List<Session> getSessionsForUser(User actor) {
+        if (actor == null || actor.getId() == null || actor.getId().isBlank()) {
+            throw new UnauthorizedException("Authentication required");
+        }
+        return sortSessions(sessionRepository.findByInterviewerIdOrCandidateId(actor.getId(), actor.getId()));
+    }
+
     public Optional<Session> getById(String id) {
         if (id == null || id.isBlank()) {
             return Optional.empty();
@@ -181,8 +188,15 @@ public class SessionService {
             if (session.getMeetingEndedAt() == null) {
                 session.setMeetingEndedAt(Instant.now());
             }
-        } else if ("CONFIRMED".equals(normalizedStatus) && session.getMeetingStatus() == null) {
-            session.setMeetingStatus("SCHEDULED");
+        } else if ("CONFIRMED".equals(normalizedStatus)) {
+            User interviewer = userRepository.findById(session.getInterviewerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+            User interviewee = userRepository.findById(session.getCandidateId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+            ensureMeetingProvisioned(session, interviewer, interviewee);
+            if (session.getMeetingStatus() == null) {
+                session.setMeetingStatus("SCHEDULED");
+            }
         }
         session.setUpdatedAt(Instant.now());
         Session saved = sessionRepository.save(session);
@@ -196,11 +210,17 @@ public class SessionService {
 
     public MeetingDtos.MeetingAccessResponse getMeetingAccess(String sessionId, User actor) {
         Session session = requireParticipant(sessionId, actor);
-        if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
-            throw new IllegalArgumentException("Cancelled sessions cannot be joined");
+        String status = normalizeStatusSafe(session.getStatus());
+        String meetingState = normalizeStatusSafe(session.getMeetingStatus());
+        if ("PENDING".equals(status)) {
+            throw new IllegalArgumentException("Session must be confirmed before joining");
+        }
+        if ("CANCELLED".equals(status) || "COMPLETED".equals(status) || "CANCELLED".equals(meetingState) || "COMPLETED".equals(meetingState)) {
+            throw new IllegalArgumentException("This session can no longer be joined");
         }
         User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
         User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        session = ensureMeetingProvisioned(session, interviewer, interviewee);
         return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
     }
 
@@ -209,23 +229,41 @@ public class SessionService {
         if (!actor.getId().equals(session.getInterviewerId())) {
             throw new UnauthorizedException("Only the assigned interviewer can start the meeting");
         }
-        if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus())) || "COMPLETED".equals(normalizeStatusSafe(session.getStatus()))) {
+        String meetingState = normalizeStatusSafe(session.getMeetingStatus());
+        if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus())) || "COMPLETED".equals(normalizeStatusSafe(session.getStatus()))
+                || "CANCELLED".equals(meetingState) || "COMPLETED".equals(meetingState)) {
             throw new IllegalArgumentException("This session is no longer active");
         }
+        if (!"CONFIRMED".equals(normalizeStatusSafe(session.getStatus()))) {
+            throw new IllegalArgumentException("Approve the session before starting the meeting");
+        }
+        User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        session = ensureMeetingProvisioned(session, interviewer, interviewee);
         boolean wasLive = "LIVE".equals(normalizeStatusSafe(session.getMeetingStatus()));
         if (!wasLive) {
             session.setMeetingStatus("LIVE");
             session.setMeetingStartedAt(session.getMeetingStartedAt() == null ? Instant.now() : session.getMeetingStartedAt());
-            if ("PENDING".equals(normalizeStatusSafe(session.getStatus()))) {
-                session.setStatus("CONFIRMED");
-            }
             session.setUpdatedAt(Instant.now());
             session = sessionRepository.save(session);
             notifyMeetingStarted(session);
         }
-        User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
-        User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
         return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
+    }
+
+    private Session ensureMeetingProvisioned(Session session, User interviewer, User interviewee) {
+        if (session == null) {
+            throw new ResourceNotFoundException("Session not found");
+        }
+        boolean missingMeeting = session.getMeetingProvider() == null || session.getMeetingProvider().isBlank()
+                || session.getMeetingId() == null || session.getMeetingId().isBlank()
+                || session.getJoinUrl() == null || session.getJoinUrl().isBlank();
+        if (!missingMeeting) {
+            return session;
+        }
+        meetingProviderService.provision(session, interviewer, interviewee);
+        session.setUpdatedAt(Instant.now());
+        return sessionRepository.save(session);
     }
 
     private String normalizeStatus(String status) {

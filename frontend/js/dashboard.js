@@ -1173,8 +1173,14 @@ function renderSessionCard(session) {
   const isInterviewer = activeWorkspace === 'INTERVIEWER';
   const canConfirm = isInterviewer && status === 'PENDING';
   const canComplete = status === 'CONFIRMED';
-  const joinLabel = currentUser.id === session.interviewerId && meetingStatus !== 'LIVE' ? 'Start Meeting' : 'Join Meeting';
+  const canOpenMeeting = ['CONFIRMED'].includes(status) && !['COMPLETED', 'CANCELLED'].includes(meetingStatus);
+  const joinLabel = currentUser.id === session.interviewerId && meetingStatus !== 'LIVE' ? 'Start Interview' : 'Join Interview';
   const hasMeeting = Boolean(session.meetingId || session.joinUrl || session.meetingLink || session.meetingProvider);
+  const meetingNote = status === 'PENDING'
+    ? 'Meeting room unlocks after interviewer approval.'
+    : !hasMeeting && ['CONFIRMED'].includes(status)
+      ? 'Meeting room is being prepared.'
+      : '';
   const summary = feedbackSummaryForSession(session.id);
   const participant = sessionParticipant(session);
   return `
@@ -1195,8 +1201,9 @@ function renderSessionCard(session) {
         <span>${esc(providerLabel(session.meetingProvider))}</span>
       </div>
       ${summary ? `<div class="feedback-summary"><strong>${esc(summary.rating)}/5 feedback</strong><span>${esc(summary.text)}</span></div>` : ''}
+      ${meetingNote ? `<p class="session-meeting-note">${esc(meetingNote)}</p>` : ''}
       <div class="session-actions">
-        ${hasMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}')">${joinLabel}</button>` : ''}
+        ${hasMeeting && canOpenMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}')">${joinLabel}</button>` : ''}
         ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
         ${canComplete ? `<button class="btn btn-outline btn-sm" onclick="updateSession('${session.id}','complete')">Complete</button>` : ''}
         ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-danger btn-sm" onclick="updateSession('${session.id}','cancel')">Cancel</button>` : ''}

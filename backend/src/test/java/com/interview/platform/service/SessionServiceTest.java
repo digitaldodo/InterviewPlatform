@@ -1,5 +1,7 @@
 package com.interview.platform.service;
 
+import com.interview.platform.dto.MeetingDtos;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.SessionRepository;
@@ -13,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -140,6 +143,104 @@ class SessionServiceTest {
         assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
         verify(availabilitySlotService, never()).resolveRequestedBooking(any(), any(), any());
         verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
+    void getMeetingAccessRejectsNonParticipant() {
+        Session session = session("session-1", "int-1", "cand-1", "CONFIRMED");
+        User stranger = candidate("other-user");
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+
+        assertThrows(UnauthorizedException.class, () -> sessionService.getMeetingAccess("session-1", stranger));
+        verify(meetingProviderService, never()).buildAccess(any(), any(), any(), any());
+    }
+
+    @Test
+    void getMeetingAccessRejectsPendingSessionUntilConfirmed() {
+        Session session = session("session-1", "int-1", "cand-1", "PENDING");
+        User candidate = candidate("cand-1");
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> sessionService.getMeetingAccess("session-1", candidate));
+
+        assertEquals("Session must be confirmed before joining", ex.getMessage());
+        verify(meetingProviderService, never()).buildAccess(any(), any(), any(), any());
+    }
+
+    @Test
+    void startMeetingRequiresConfirmedSession() {
+        Session session = session("session-1", "int-1", "cand-1", "PENDING");
+        User interviewer = interviewer("int-1");
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> sessionService.startMeeting("session-1", interviewer));
+
+        assertEquals("Approve the session before starting the meeting", ex.getMessage());
+        verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
+    void startMeetingProvisionsMissingMeetingForConfirmedHost() {
+        Session session = session("session-1", "int-1", "cand-1", "CONFIRMED");
+        User interviewer = interviewer("int-1");
+        User candidate = candidate("cand-1");
+        MeetingDtos.MeetingAccessResponse access = new MeetingDtos.MeetingAccessResponse(
+                "session-1",
+                "Backend",
+                "JITSI",
+                "In-platform meeting",
+                "room-1",
+                "LIVE",
+                "HOST",
+                "Interviewer",
+                "Candidate",
+                "https://meet.jit.si/room-1",
+                "https://meet.jit.si/room-1",
+                "https://meet.jit.si/room-1",
+                null,
+                session.getStartTime(),
+                60,
+                null,
+                null,
+                true,
+                false,
+                "https://meet.jit.si/external_api.js",
+                "meet.jit.si",
+                "room-1",
+                "Interviewer",
+                "interviewer@example.com",
+                null
+        );
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(meetingProviderService.buildAccess(any(Session.class), any(User.class), any(User.class), any(User.class))).thenReturn(access);
+
+        MeetingDtos.MeetingAccessResponse result = sessionService.startMeeting("session-1", interviewer);
+
+        assertEquals("room-1", result.meetingId());
+        verify(meetingProviderService).provision(any(Session.class), any(User.class), any(User.class));
+        verify(sessionRepository).save(any(Session.class));
+    }
+
+    private Session session(String id, String interviewerId, String candidateId, String status) {
+        Session session = new Session();
+        session.setId(id);
+        session.setInterviewerId(interviewerId);
+        session.setCandidateId(candidateId);
+        session.setTitle("Backend");
+        session.setInterviewType("Backend");
+        session.setStartTime("2026-05-11T10:00:00Z");
+        session.setDurationMinutes(60);
+        session.setStatus(status);
+        return session;
     }
 
     private User interviewer(String id) {

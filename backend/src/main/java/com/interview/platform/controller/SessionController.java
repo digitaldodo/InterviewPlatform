@@ -31,8 +31,8 @@ public class SessionController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Session>>> getAllSessions() {
-        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getAllSessions()));
+    public ResponseEntity<ApiResponse<List<Session>>> getAllSessions(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getSessionsForUser(currentUser(authentication))));
     }
 
     @GetMapping("/{id}")
