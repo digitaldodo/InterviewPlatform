@@ -2,6 +2,7 @@ package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -10,7 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Document(collection = "sessions")
-@CompoundIndex(name = "interviewer_time_status_idx", def = "{'interviewerId': 1, 'startTime': 1, 'status': 1}")
+@CompoundIndexes({
+        @CompoundIndex(name = "interviewer_time_status_idx", def = "{'interviewerId': 1, 'startTime': 1, 'status': 1}"),
+        @CompoundIndex(name = "reminder_status_sent_start_idx", def = "{'status': 1, 'preInterviewReminderSentAt': 1, 'startTime': 1}")
+})
 public class Session {
     @Id
     private String id;
@@ -36,6 +40,10 @@ public class Session {
     private String meetingStatus;
     private Instant meetingStartedAt;
     private Instant meetingEndedAt;
+    private Instant preInterviewReminderSentAt;
+    private Instant preInterviewReminderClaimedAt;
+    private Instant interviewerReminderSentAt;
+    private Instant intervieweeReminderSentAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -134,6 +142,14 @@ public class Session {
     public void setMeetingStartedAt(Instant meetingStartedAt) { this.meetingStartedAt = meetingStartedAt; }
     public Instant getMeetingEndedAt() { return meetingEndedAt; }
     public void setMeetingEndedAt(Instant meetingEndedAt) { this.meetingEndedAt = meetingEndedAt; }
+    public Instant getPreInterviewReminderSentAt() { return preInterviewReminderSentAt; }
+    public void setPreInterviewReminderSentAt(Instant preInterviewReminderSentAt) { this.preInterviewReminderSentAt = preInterviewReminderSentAt; }
+    public Instant getPreInterviewReminderClaimedAt() { return preInterviewReminderClaimedAt; }
+    public void setPreInterviewReminderClaimedAt(Instant preInterviewReminderClaimedAt) { this.preInterviewReminderClaimedAt = preInterviewReminderClaimedAt; }
+    public Instant getInterviewerReminderSentAt() { return interviewerReminderSentAt; }
+    public void setInterviewerReminderSentAt(Instant interviewerReminderSentAt) { this.interviewerReminderSentAt = interviewerReminderSentAt; }
+    public Instant getIntervieweeReminderSentAt() { return intervieweeReminderSentAt; }
+    public void setIntervieweeReminderSentAt(Instant intervieweeReminderSentAt) { this.intervieweeReminderSentAt = intervieweeReminderSentAt; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

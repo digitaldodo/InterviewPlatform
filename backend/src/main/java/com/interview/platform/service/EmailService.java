@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.util.List;
 
 @Service
 public class EmailService {
@@ -63,6 +64,15 @@ public class EmailService {
         log.info("Preparing meeting reminder email for {}", maskEmail(to));
         send(to, "Your interview room is live",
                 meetingReminderTemplate(title, startTime, meetingLink, counterpartName));
+    }
+
+    public void sendPreInterviewReminder(String to, String recipientName, String interviewerName, String intervieweeName,
+                                         List<String> topics, String scheduledDate, String scheduledTime,
+                                         String timezone, String meetingLink, Integer durationMinutes) {
+        log.info("Preparing pre-interview reminder email for {}", maskEmail(to));
+        send(to, "Your mock interview starts in 30 minutes",
+                preInterviewReminderTemplate(recipientName, interviewerName, intervieweeName, topics, scheduledDate,
+                        scheduledTime, timezone, meetingLink, durationMinutes));
     }
 
     public void sendSessionCancellation(String to, String title, String startTime, String counterpartName) {
@@ -209,7 +219,58 @@ public class EmailService {
                 """.formatted(safe(title), safe(status), safe(startTime), button);
     }
 
+    private String preInterviewReminderTemplate(String recipientName, String interviewerName, String intervieweeName,
+                                                List<String> topics, String scheduledDate, String scheduledTime,
+                                                String timezone, String meetingLink, Integer durationMinutes) {
+        String topicText = topics == null || topics.isEmpty() ? "Mock interview" : String.join(", ", topics);
+        String durationText = (durationMinutes == null || durationMinutes <= 0 ? 45 : durationMinutes) + " minutes";
+        String timezoneText = timezone == null || timezone.isBlank() ? "" : " (" + escape(timezone) + ")";
+        String button = meetingLink == null || meetingLink.isBlank() ? "" :
+                "<p><a href=\"%s\" style=\"display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none\">Join interview</a></p>"
+                        .formatted(escape(meetingLink));
+        return """
+                <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
+                  <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
+                    <h1 style="margin:0 0 12px">Your mock interview starts in 30 minutes.</h1>
+                    <p style="color:#a5adbd">Hi %s, this is a reminder for your upcoming interview session.</p>
+                    <div style="background:#11131c;border:1px solid #2e3350;border-radius:10px;padding:16px;margin:20px 0">
+                      <p style="margin:0 0 8px"><strong>Interviewer:</strong> %s</p>
+                      <p style="margin:0 0 8px"><strong>Interviewee:</strong> %s</p>
+                      <p style="margin:0 0 8px"><strong>Topics:</strong> %s</p>
+                      <p style="margin:0 0 8px"><strong>Date:</strong> %s</p>
+                      <p style="margin:0 0 8px"><strong>Time:</strong> %s%s</p>
+                      <p style="margin:0"><strong>Duration:</strong> %s</p>
+                    </div>
+                    %s
+                    <p style="color:#a5adbd">You can also join from your InterviewPrep dashboard.</p>
+                  </div>
+                </div>
+                """.formatted(
+                escape(recipientName),
+                escape(interviewerName),
+                escape(intervieweeName),
+                escape(topicText),
+                escape(scheduledDate),
+                escape(scheduledTime),
+                timezoneText,
+                escape(durationText),
+                button
+        );
+    }
+
     private String safe(String value) {
         return value == null ? "" : value;
+    }
+
+    private String escape(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 }
