@@ -1,1 +1,1 @@
-window.INTERVIEW_API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
+window.INTERVIEW_API_BASE = "https://interview-platform-api-iv6x.onrender.com";
