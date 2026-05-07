@@ -5,13 +5,15 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public class BookingRequest {
     @NotBlank
     private String interviewerId;
     @NotBlank
     private String intervieweeId;
-    @NotBlank
     private String interviewType;
+    private List<String> topics;
     @NotBlank
     private String startTime;
     @Min(15)
@@ -27,6 +29,8 @@ public class BookingRequest {
     public void setIntervieweeId(String intervieweeId) { this.intervieweeId = intervieweeId; }
     public String getInterviewType() { return interviewType; }
     public void setInterviewType(String interviewType) { this.interviewType = interviewType; }
+    public List<String> getTopics() { return topics; }
+    public void setTopics(List<String> topics) { this.topics = topics; }
     public String getStartTime() { return startTime; }
     public void setStartTime(String startTime) { this.startTime = startTime; }
     public Integer getDurationMinutes() { return durationMinutes; }

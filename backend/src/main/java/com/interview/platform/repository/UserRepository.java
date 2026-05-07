@@ -14,6 +14,8 @@ public interface UserRepository extends MongoRepository<User, String> {
     @Query("{ '$or': [ { 'roles': ?0 }, { 'role': ?0 } ] }")
     List<User> findByRole(String role);
     Optional<User> findByEmail(String email);
+    @Query("{ 'username': { '$regex': ?0, '$options': 'i' } }")
+    Optional<User> findFirstByUsernamePattern(String usernamePattern);
     boolean existsByEmail(String email);
     @Query(value = "{ '$or': [ { 'roles': ?0 }, { 'role': ?0 } ] }", sort = "{ 'averageRating': -1 }")
     List<User> findByRoleOrderByAverageRatingDesc(String role);

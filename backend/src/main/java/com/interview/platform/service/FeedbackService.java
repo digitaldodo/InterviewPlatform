@@ -44,6 +44,7 @@ public class FeedbackService {
             throw new IllegalArgumentException("Invalid or non-existent session ID");
         }
         feedback.setComments(feedback.getComments().trim());
+        normalizeStructuredFeedback(feedback);
         feedback.setCreatedAt(Instant.now());
         Feedback saved = feedbackRepository.save(feedback);
         updateInterviewerRating(feedback.getSessionId());
@@ -79,5 +80,34 @@ public class FeedbackService {
                 .filter(s -> "COMPLETED".equalsIgnoreCase(s.getStatus()))
                 .count());
         userRepository.save(interviewer);
+    }
+
+    private void normalizeStructuredFeedback(Feedback feedback) {
+        if ((feedback.getImprovementAreas() == null || feedback.getImprovementAreas().isBlank())
+                && feedback.getRecommendations() != null && !feedback.getRecommendations().isBlank()) {
+            feedback.setImprovementAreas(feedback.getRecommendations().trim());
+        }
+        if ((feedback.getRecommendations() == null || feedback.getRecommendations().isBlank())
+                && feedback.getImprovementAreas() != null && !feedback.getImprovementAreas().isBlank()) {
+            feedback.setRecommendations(feedback.getImprovementAreas().trim());
+        }
+        feedback.getTopicFeedback().forEach(topic -> {
+            if (topic.getTopic() == null || topic.getTopic().isBlank()) {
+                throw new IllegalArgumentException("Topic feedback requires a topic");
+            }
+            topic.setTopic(topic.getTopic().trim());
+            Integer rating = topic.getRating();
+            if (rating != null && rating != 0 && (rating < 1 || rating > 5)) {
+                throw new IllegalArgumentException("Topic ratings must be between 1 and 5");
+            }
+            topic.getSkillRatings().forEach((skill, value) -> {
+                if (skill == null || skill.isBlank()) {
+                    throw new IllegalArgumentException("Skill feedback requires a skill name");
+                }
+                if (value != null && value != 0 && (value < 1 || value > 5)) {
+                    throw new IllegalArgumentException("Skill ratings must be between 1 and 5");
+                }
+            });
+        });
     }
 }

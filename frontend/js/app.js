@@ -20,6 +20,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reset-password-group').style.display = 'none';
   document.getElementById('reset-resend').style.display = 'none';
   initRegisterControls();
+  FormUx.initPasswordToggles();
   updateRoleFields();
 });
 
@@ -99,6 +100,7 @@ document.getElementById('login-form').addEventListener('submit', async event => 
       method: 'POST',
       body: JSON.stringify({
         email: document.getElementById('login-email').value.trim(),
+        identifier: document.getElementById('login-email').value.trim(),
         password: document.getElementById('login-password').value,
       }),
     });

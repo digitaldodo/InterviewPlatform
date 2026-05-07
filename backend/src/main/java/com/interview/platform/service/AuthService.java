@@ -20,6 +20,8 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class AuthService {
@@ -96,10 +98,11 @@ public class AuthService {
     }
 
     public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
-        User user = userRepository.findByEmail(normalizeEmail(request.getEmail()))
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
+        String identifier = loginIdentifier(request);
+        User user = findLoginUser(identifier)
+                .orElseThrow(() -> new UnauthorizedException("Invalid username/email or password"));
         if (!matchesPassword(user, request.getPassword())) {
-            throw new UnauthorizedException("Invalid email or password");
+            throw new UnauthorizedException("Invalid username/email or password");
         }
         if (!Boolean.TRUE.equals(user.getIsVerified()) && user.getCreatedAt() == null) {
             user.setIsVerified(true);
@@ -110,6 +113,24 @@ public class AuthService {
         user.setLastLogin(Instant.now());
         userRepository.save(user);
         return authResponse(user);
+    }
+
+    private String loginIdentifier(AuthDtos.LoginRequest request) {
+        String value = trim(request.getIdentifier());
+        if (isBlank(value)) {
+            value = trim(request.getEmail());
+        }
+        if (isBlank(value)) {
+            throw new IllegalArgumentException("Username or email is required");
+        }
+        return value;
+    }
+
+    private Optional<User> findLoginUser(String identifier) {
+        if (looksLikeEmail(identifier)) {
+            return userRepository.findByEmail(normalizeEmail(identifier));
+        }
+        return userRepository.findFirstByUsernamePattern("^" + Pattern.quote(identifier.trim()) + "$");
     }
 
     public AuthDtos.AuthResponse refresh(String refreshToken) {
@@ -301,6 +322,10 @@ public class AuthService {
             throw new IllegalArgumentException("Valid email is required");
         }
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private boolean looksLikeEmail(String value) {
+        return value != null && value.trim().matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
     }
 
     private String trim(String value) {

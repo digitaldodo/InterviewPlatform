@@ -53,10 +53,19 @@ public class SessionService {
         if (session.getCandidateId() == null || session.getCandidateId().isBlank()) {
             throw new IllegalArgumentException("Interviewee ID is required");
         }
-        if (session.getTitle() == null || session.getTitle().isBlank()) {
-            throw new IllegalArgumentException("Session topic is required");
+        List<String> topics = normalizeTopics(session.getTopics());
+        if (topics.isEmpty() && session.getInterviewType() != null && !session.getInterviewType().isBlank()) {
+            topics = normalizeTopics(List.of(session.getInterviewType()));
         }
-        session.setTitle(session.getTitle().trim());
+        if (topics.isEmpty() && session.getTitle() != null && !session.getTitle().isBlank()) {
+            topics = normalizeTopics(List.of(session.getTitle()));
+        }
+        if (topics.isEmpty()) {
+            throw new IllegalArgumentException("At least one interview topic is required");
+        }
+        session.setTopics(topics);
+        session.setTitle(String.join(", ", topics));
+        session.setInterviewType(String.join(", ", topics));
 
         if (session.getStatus() == null) {
             session.setStatus("PENDING");
@@ -71,13 +80,13 @@ public class SessionService {
                     .toList();
 
             if (!interviewers.isEmpty()) {
-                // Preferred: find an interviewer whose skills overlap with the session title
-                String title = (session.getTitle() != null) ? session.getTitle().toLowerCase() : "";
+                // Preferred: find an interviewer whose skills overlap with selected topics.
+                String topicText = String.join(" ", session.getTopics()).toLowerCase();
 
                 Optional<User> skillMatch = interviewers.stream()
                         .filter(u -> u.getSkills() != null &&
                                      u.getSkills().stream()
-                                             .anyMatch(skill -> title.contains(skill.toLowerCase())))
+                                             .anyMatch(skill -> topicText.contains(skill.toLowerCase())))
                         .findFirst();
 
                 // Use skill-matched interviewer, or fall back to first available
@@ -382,6 +391,17 @@ public class SessionService {
 
     private int effectiveDurationMinutes(Integer durationMinutes) {
         return durationMinutes == null || durationMinutes <= 0 ? 45 : durationMinutes;
+    }
+
+    private List<String> normalizeTopics(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .flatMap(value -> Arrays.stream(value.split(",")))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
     }
 }
 

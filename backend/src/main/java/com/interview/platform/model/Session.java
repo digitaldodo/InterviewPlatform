@@ -6,6 +6,8 @@ import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Document(collection = "sessions")
 @CompoundIndex(name = "interviewer_time_status_idx", def = "{'interviewerId': 1, 'startTime': 1, 'status': 1}")
@@ -23,6 +25,7 @@ public class Session {
     private String status;
     private String notes;
     private String interviewType;
+    private List<String> topics = new ArrayList<>();
     private Integer durationMinutes = 45;
     private String meetingLink;
     private String meetingId;
@@ -66,7 +69,31 @@ public class Session {
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public String getInterviewType() { return interviewType; }
-    public void setInterviewType(String interviewType) { this.interviewType = interviewType; }
+    public void setInterviewType(String interviewType) {
+        this.interviewType = trimToNull(interviewType);
+        if ((topics == null || topics.isEmpty()) && this.interviewType != null) {
+            topics = normalizeTopics(List.of(this.interviewType));
+        }
+    }
+    public List<String> getTopics() {
+        if ((topics == null || topics.isEmpty()) && interviewType != null && !interviewType.isBlank()) {
+            topics = normalizeTopics(List.of(interviewType));
+        }
+        if ((topics == null || topics.isEmpty()) && title != null && !title.isBlank()) {
+            topics = normalizeTopics(List.of(title));
+        }
+        return topics == null ? new ArrayList<>() : topics;
+    }
+    public void setTopics(List<String> topics) {
+        this.topics = normalizeTopics(topics);
+        if (!this.topics.isEmpty()) {
+            String summary = String.join(", ", this.topics);
+            this.interviewType = summary;
+            if (title == null || title.isBlank()) {
+                title = summary;
+            }
+        }
+    }
     public Integer getDurationMinutes() { return durationMinutes; }
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes == null ? 45 : durationMinutes; }
     public String getMeetingLink() {
@@ -111,4 +138,24 @@ public class Session {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+
+    private List<String> normalizeTopics(List<String> values) {
+        List<String> normalized = new ArrayList<>();
+        if (values == null) return normalized;
+        for (String value : values) {
+            if (value == null) continue;
+            for (String part : value.split(",")) {
+                String topic = trimToNull(part);
+                if (topic != null && normalized.stream().noneMatch(item -> item.equalsIgnoreCase(topic))) {
+                    normalized.add(topic);
+                }
+            }
+        }
+        return normalized;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
+    }
 }

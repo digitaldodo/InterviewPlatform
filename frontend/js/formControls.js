@@ -337,9 +337,42 @@ const FormUx = (() => {
     return typeof inputOrId === 'string' ? document.getElementById(inputOrId) : inputOrId;
   }
 
+  function initPasswordToggles(root = document) {
+    root.querySelectorAll('input[type="password"], input[data-password-toggle="true"]').forEach(input => {
+      if (input.dataset.passwordToggleReady === 'true') return;
+      input.dataset.passwordToggleReady = 'true';
+      input.dataset.passwordToggle = 'true';
+      const wrapper = document.createElement('div');
+      wrapper.className = 'password-field';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'password-toggle';
+      button.setAttribute('aria-label', `Show ${input.labels?.[0]?.textContent || 'password'}`);
+      button.setAttribute('aria-pressed', 'false');
+      button.innerHTML = eyeIcon(false);
+      input.insertAdjacentElement('beforebegin', wrapper);
+      wrapper.append(input, button);
+      button.addEventListener('click', () => {
+        const isVisible = input.type === 'text';
+        input.type = isVisible ? 'password' : 'text';
+        button.setAttribute('aria-pressed', String(!isVisible));
+        button.setAttribute('aria-label', `${isVisible ? 'Show' : 'Hide'} ${input.labels?.[0]?.textContent || 'password'}`);
+        button.innerHTML = eyeIcon(!isVisible);
+        input.focus();
+      });
+    });
+  }
+
+  function eyeIcon(active) {
+    return active
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.3-6 9-6 9 6 9 6-3.3 6-9 6-9-6-9-6Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/><path d="m4 20 16-16"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.3-6 9-6 9 6 9 6-3.3 6-9 6-9-6-9-6Z"/><path d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>';
+  }
+
   return {
     initTagInput,
     initLanguageSelect,
+    initPasswordToggles,
     normalizeValues: uniqueValues,
     getTagValues(id) {
       const input = resolveInput(id);

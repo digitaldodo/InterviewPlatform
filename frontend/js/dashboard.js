@@ -30,7 +30,7 @@ const DEFAULT_MEETING_PROVIDERS = [
 ];
 const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
-const BOOKING_TYPES = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
+const TOPIC_OPTIONS = ['Java', 'DSA', 'Spring Boot', 'System Design', 'React', 'Node.js', 'SQL', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
@@ -43,6 +43,7 @@ function createBookingState() {
     selectedSlotStart: '',
     slotOptions: [],
     hiddenSlotStarts: [],
+    topics: [],
     interviewType: '',
     notes: '',
     meetingProvider: preferredMeetingProvider(),
@@ -464,6 +465,7 @@ function selectInterviewer(id) {
   bookingState = {
     ...createBookingState(),
     interviewer: selectedInterviewer,
+    topics: selectedBookingTopics(),
     interviewType: bookingState.interviewType,
     meetingProvider: bookingState.meetingProvider || preferredMeetingProvider(),
   };
@@ -656,7 +658,7 @@ function renderBookingConfirmStep() {
       <div class="booking-stage-head">
         <div>
           <h2>Confirm booking</h2>
-          <p class="availability-muted">Review the slot, add your interview focus, and submit the request.</p>
+          <p class="availability-muted">Review the slot, choose one or more interview topics, and submit the request.</p>
         </div>
         <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(3)">Change slot</button>
       </div>
@@ -667,10 +669,12 @@ function renderBookingConfirmStep() {
         <p><strong>Duration</strong><span>${esc(String(slot?.durationMinutes || 45))} min</span></p>
       </div>
       <div class="form-group">
-        <label>Interview focus</label>
+        <label>Interview topics</label>
         <div class="type-grid booking-type-grid">
-          ${BOOKING_TYPES.map(type => `<button class="type-card ${bookingState.interviewType === type ? 'active' : ''}" type="button" onclick="setBookingType('${type}')">${type}</button>`).join('')}
+          ${TOPIC_OPTIONS.map(topic => `<button class="type-card ${selectedBookingTopics().includes(topic) ? 'active' : ''}" type="button" onclick="toggleBookingTopic('${topic}')">${topic}</button>`).join('')}
         </div>
+        <input id="booking-custom-topic" class="topic-custom-input" type="text" placeholder="Add another topic, e.g. Graphs" onkeydown="handleCustomTopicKey(event)" />
+        <div class="topic-chip-row">${topicTags(selectedBookingTopics())}</div>
       </div>
       ${renderMeetingProviderField()}
       <div class="form-group">
@@ -694,7 +698,8 @@ function renderBookingConfirmationStep() {
       </div>
       <div class="booking-success-card">
         <span class="badge badge-${statusClass((session?.status || 'PENDING').toUpperCase())}">${esc((session?.status || 'PENDING').toUpperCase())}</span>
-        <h3>${esc(session?.interviewType || 'Interview request sent')}</h3>
+        <h3>${esc(sessionTitle(session) || 'Interview request sent')}</h3>
+        <div class="topic-chip-row">${topicTags(sessionTopics(session))}</div>
         <p>${esc(fmtDate(session?.startTime))}</p>
         <small>${esc(providerLabel(session?.meetingProvider))} meeting prepared${session?.joinUrl ? ' and linked to your session.' : '.'}</small>
       </div>
@@ -706,8 +711,25 @@ function renderBookingConfirmationStep() {
   `;
 }
 
-function setBookingType(type) {
-  bookingState.interviewType = type;
+function selectedBookingTopics() {
+  return FormUx.normalizeValues(bookingState.topics?.length ? bookingState.topics : splitList(bookingState.interviewType || ''));
+}
+
+function toggleBookingTopic(topic) {
+  const topics = selectedBookingTopics();
+  const exists = topics.some(item => item.toLowerCase() === String(topic).toLowerCase());
+  bookingState.topics = exists ? topics.filter(item => item.toLowerCase() !== String(topic).toLowerCase()) : [...topics, topic];
+  bookingState.interviewType = bookingState.topics.join(', ');
+  renderBookingStep();
+}
+
+function handleCustomTopicKey(event) {
+  if (event.key !== 'Enter' && event.key !== ',') return;
+  event.preventDefault();
+  const value = event.currentTarget.value.trim();
+  if (!value) return;
+  bookingState.topics = FormUx.normalizeValues([...selectedBookingTopics(), value]);
+  bookingState.interviewType = bookingState.topics.join(', ');
   renderBookingStep();
 }
 
@@ -899,8 +921,9 @@ async function confirmBooking() {
     renderBookingStep();
     return;
   }
-  if (!bookingState.interviewType) {
-    toast('Choose an interview focus before confirming.', 'error');
+  const topics = selectedBookingTopics();
+  if (!topics.length) {
+    toast('Choose at least one interview topic before confirming.', 'error');
     return;
   }
   try {
@@ -909,7 +932,8 @@ async function confirmBooking() {
       body: JSON.stringify({
         interviewerId: bookingState.interviewer.id,
         intervieweeId: currentUser.id,
-        interviewType: bookingState.interviewType,
+        interviewType: topics.join(', '),
+        topics,
         startTime: slot.startTime,
         durationMinutes: slot.durationMinutes,
         notes: bookingState.notes.trim(),
@@ -937,6 +961,8 @@ async function confirmBooking() {
 function startAnotherBooking() {
   bookingState.confirmedSession = null;
   bookingState.selectedSlotStart = '';
+  bookingState.topics = [];
+  bookingState.interviewType = '';
   bookingState.notes = '';
   bookingStep = bookingState.selectedDate ? 3 : 2;
   renderBookingStep();
@@ -1027,15 +1053,18 @@ function renderSessionCard(session) {
   const canComplete = status === 'CONFIRMED';
   const joinLabel = currentUser.id === session.interviewerId && meetingStatus !== 'LIVE' ? 'Start Meeting' : 'Join Meeting';
   const hasMeeting = Boolean(session.meetingId || session.joinUrl || session.meetingLink || session.meetingProvider);
+  const summary = feedbackSummaryForSession(session.id);
   return `
     <article class="session-card">
       <div class="session-card-head"><span class="badge badge-${statusClass(status)}">${status}</span><span>${countdown(session.startTime || session.scheduledAt)}</span></div>
-      <h3>${esc(session.interviewType || session.title || session.topic || 'Interview')}</h3>
+      <h3>${esc(sessionTitle(session))}</h3>
+      <div class="topic-chip-row">${topicTags(sessionTopics(session))}</div>
       <p>${fmtDate(session.startTime || session.scheduledAt)}</p>
       <div class="session-meta-row">
         <span class="badge badge-${meetingStatusClass(meetingStatus)}">${meetingStatusText(meetingStatus)}</span>
         <span>${esc(providerLabel(session.meetingProvider))}</span>
       </div>
+      ${summary ? `<div class="feedback-summary"><strong>${esc(summary.rating)}/5 feedback</strong><span>${esc(summary.text)}</span></div>` : ''}
       <div class="session-actions">
         ${hasMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}')">${joinLabel}</button>` : ''}
         ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
@@ -1044,6 +1073,31 @@ function renderSessionCard(session) {
       </div>
     </article>
   `;
+}
+
+function sessionTopics(session) {
+  if (!session) return [];
+  return FormUx.normalizeValues(Array.isArray(session?.topics) && session.topics.length
+    ? session.topics
+    : splitList(session?.interviewType || session?.title || session?.topic || 'Interview'));
+}
+
+function sessionTitle(session) {
+  const topics = sessionTopics(session);
+  return topics.length ? topics.join(', ') : (session?.interviewType || session?.title || session?.topic || 'Interview');
+}
+
+function topicTags(topics) {
+  return FormUx.normalizeValues(topics).map(topic => `<span>${esc(topic)}</span>`).join('');
+}
+
+function feedbackSummaryForSession(sessionId) {
+  const item = feedbackItems.find(feedback => feedback.sessionId === sessionId);
+  if (!item) return null;
+  return {
+    rating: String(item.rating || '-'),
+    text: item.improvementAreas || item.recommendations || item.comments || 'Feedback submitted',
+  };
 }
 
 async function updateSession(id, action) {
@@ -1063,6 +1117,9 @@ async function loadFeedback() {
     const html = feedbackItems.slice(0, 6).map(renderFeedback).join('') || emptyState('No feedback yet.');
     document.getElementById('feedback-list').innerHTML = html;
     document.getElementById('recent-feedback').innerHTML = html;
+    renderOverview();
+    renderSessions('upcoming');
+    renderInterviewerPanel();
   } catch {
     document.getElementById('feedback-list').innerHTML = emptyState('Feedback will appear here.');
     document.getElementById('recent-feedback').innerHTML = emptyState('Feedback will appear here.');
@@ -1075,6 +1132,7 @@ function bindFeedbackForm() {
     const btn = document.getElementById('feedback-submit');
     btn.disabled = true;
     try {
+      const topicFeedback = collectTopicFeedback();
       await api('/api/feedback', {
         method: 'POST',
         body: JSON.stringify({
@@ -1086,10 +1144,13 @@ function bindFeedbackForm() {
           comments: val('fb-comments'),
           strengths: val('fb-strengths'),
           weaknesses: val('fb-weaknesses'),
+          improvementAreas: val('fb-recommendations'),
           recommendations: val('fb-recommendations'),
+          topicFeedback,
         }),
       });
       document.getElementById('feedback-form').reset();
+      renderFeedbackTopicSections();
       toast('Feedback submitted.', 'success');
       await loadFeedback();
     } catch (err) {
@@ -1103,17 +1164,90 @@ function bindFeedbackForm() {
 function populateFeedbackSessions() {
   const select = document.getElementById('fb-session');
   const eligible = sessions.filter(item => ['CONFIRMED', 'COMPLETED'].includes((item.status || '').toUpperCase()));
-  select.innerHTML = eligible.map(item => `<option value="${esc(item.id)}">${esc(item.interviewType || item.title || 'Interview')} - ${fmtDate(item.startTime)}</option>`).join('') || '<option value="">No eligible sessions</option>';
+  select.innerHTML = eligible.map(item => `<option value="${esc(item.id)}">${esc(sessionTitle(item))} - ${fmtDate(item.startTime)}</option>`).join('') || '<option value="">No eligible sessions</option>';
+  renderFeedbackTopicSections();
 }
 
 function renderFeedback(item) {
+  const topics = item.topicFeedback || [];
   return `
     <article class="feedback-item">
-      <strong>${esc(String(item.rating || '-'))}/5</strong>
+      <div class="feedback-item-head"><strong>${esc(String(item.rating || '-'))}/5</strong>${topics.length ? `<div class="topic-chip-row">${topicTags(topics.map(topic => topic.topic))}</div>` : ''}</div>
       <span>${esc(item.comments || '')}</span>
-      ${item.recommendations ? `<small>${esc(item.recommendations)}</small>` : ''}
+      ${topics.length ? `<div class="feedback-topic-summary">${topics.map(topic => `<span>${esc(topic.topic)}${topic.rating ? `: ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
+      ${item.improvementAreas || item.recommendations ? `<small>${esc(item.improvementAreas || item.recommendations)}</small>` : ''}
     </article>
   `;
+}
+
+function renderFeedbackTopicSections() {
+  const host = document.getElementById('feedback-topic-sections');
+  if (!host) return;
+  const session = sessions.find(item => item.id === val('fb-session'));
+  const topics = sessionTopics(session);
+  if (!topics.length) {
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = `
+    <div class="feedback-topic-head">
+      <strong>Topic-specific feedback</strong>
+      <div class="topic-chip-row">${topicTags(topics)}</div>
+    </div>
+    ${topics.map((topic, index) => renderFeedbackTopicSection(topic, index)).join('')}
+  `;
+}
+
+function renderFeedbackTopicSection(topic, index) {
+  const skills = suggestedSkillsForTopic(topic);
+  return `
+    <details class="topic-feedback-card" open>
+      <summary><span>${esc(topic)}</span><small>Rate sub-skills and examples</small></summary>
+      <div class="form-grid">
+        <div class="form-group"><label for="fb-topic-rating-${index}">Topic rating</label><select id="fb-topic-rating-${index}" data-topic="${esc(topic)}"><option value="">Optional</option><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
+        <div class="form-group"><label for="fb-topic-examples-${index}">Examples observed</label><input id="fb-topic-examples-${index}" placeholder="Specific signals or moments" /></div>
+      </div>
+      ${skills.length ? `<div class="skill-rating-grid">${skills.map(skill => `
+        <label class="skill-rating-row"><span>${esc(skill)}</span><select data-topic-skill="${esc(topic)}" data-skill="${esc(skill)}"><option value="">-</option><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></label>
+      `).join('')}</div>` : ''}
+      <div class="form-grid">
+        <div class="form-group"><label for="fb-topic-strengths-${index}">Topic strengths</label><input id="fb-topic-strengths-${index}" placeholder="Strong areas" /></div>
+        <div class="form-group"><label for="fb-topic-weaknesses-${index}">Topic weaknesses</label><input id="fb-topic-weaknesses-${index}" placeholder="Gaps to practice" /></div>
+      </div>
+      <div class="form-group"><label for="fb-topic-comments-${index}">Topic comments</label><textarea id="fb-topic-comments-${index}" placeholder="Actionable topic-specific notes"></textarea></div>
+    </details>
+  `;
+}
+
+function suggestedSkillsForTopic(topic) {
+  const key = String(topic || '').toLowerCase();
+  if (key.includes('java')) return ['OOP understanding', 'Collections', 'Streams', 'Multithreading'];
+  if (key.includes('dsa')) return ['Arrays', 'Trees', 'DP', 'Graphs'];
+  if (key.includes('system')) return ['Scalability', 'API design', 'Database modeling'];
+  if (key.includes('react')) return ['Components', 'State management', 'Hooks', 'Rendering performance'];
+  if (key.includes('sql')) return ['Joins', 'Indexes', 'Query optimization', 'Data modeling'];
+  if (key.includes('spring')) return ['Dependency injection', 'REST APIs', 'Persistence', 'Testing'];
+  return [];
+}
+
+function collectTopicFeedback() {
+  const session = sessions.find(item => item.id === val('fb-session'));
+  return sessionTopics(session).map((topic, index) => {
+    const skillRatings = {};
+    document.querySelectorAll('[data-topic-skill]').forEach(select => {
+      if (select.dataset.topicSkill !== topic) return;
+      if (select.value) skillRatings[select.dataset.skill] = Number(select.value);
+    });
+    return {
+      topic,
+      rating: Number(val(`fb-topic-rating-${index}`) || 0),
+      skillRatings,
+      examples: val(`fb-topic-examples-${index}`),
+      strengths: val(`fb-topic-strengths-${index}`),
+      weaknesses: val(`fb-topic-weaknesses-${index}`),
+      comments: val(`fb-topic-comments-${index}`),
+    };
+  }).filter(item => item.rating || Object.keys(item.skillRatings).length || item.examples || item.strengths || item.weaknesses || item.comments);
 }
 
 function renderInterviewerPanel() {
@@ -1121,7 +1255,7 @@ function renderInterviewerPanel() {
   const incomingHost = document.getElementById('incoming-requests');
   if (incomingHost) incomingHost.innerHTML = incoming.map(renderSessionCard).join('') || emptyState('No pending requests.');
   const calendar = document.getElementById('calendar-view');
-  if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${new Date(item.startTime).toLocaleDateString()}</strong><span>${esc(item.interviewType || item.title || 'Interview')}</span></div>`).join('') || emptyState('Your calendar is clear.');
+  if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${new Date(item.startTime).toLocaleDateString()}</strong><span>${esc(sessionTitle(item))}</span></div>`).join('') || emptyState('Your calendar is clear.');
   renderInterviewerAvailabilityPanel();
 }
 
@@ -1527,6 +1661,7 @@ function renderProfile() {
     'Profiles you save for later will appear here for quick booking.'
   );
   initProfileControls();
+  FormUx.initPasswordToggles(summary);
   renderProfileAvailabilityPanel();
 }
 
@@ -1629,7 +1764,7 @@ function renderMeetingPlaceholder() {
 
 function renderMeetingLoading(session) {
   renderMeetingSummary({
-    title: session.interviewType || session.title || 'Interview session',
+    title: sessionTitle(session),
     subtitle: `Preparing ${providerLabel(session.meetingProvider)} access for ${fmtDate(session.startTime)}`,
     providerLabel: providerLabel(session.meetingProvider),
     meetingStatus: normalizeMeetingStatus(session),
@@ -1645,7 +1780,7 @@ function renderMeetingLoading(session) {
 
 async function renderMeetingRoom(access) {
   renderMeetingSummary({
-    title: access.sessionTitle || activeMeetingSession?.interviewType || 'Interview session',
+    title: access.sessionTitle || sessionTitle(activeMeetingSession) || 'Interview session',
     subtitle: `${fmtDate(access.scheduledAt)} • ${access.durationMinutes || activeMeetingSession?.durationMinutes || 45} min • ${access.interviewerName || 'Interviewer'} & ${access.intervieweeName || 'Interviewee'}`,
     providerLabel: access.providerLabel || providerLabel(access.meetingProvider),
     meetingStatus: access.meetingStatus,
@@ -1728,7 +1863,7 @@ function renderMeetingFallback(access) {
 
 function renderMeetingError(message) {
   renderMeetingSummary({
-    title: activeMeetingSession?.interviewType || activeMeetingSession?.title || 'Interview room',
+    title: sessionTitle(activeMeetingSession) || 'Interview room',
     subtitle: message,
     providerLabel: providerLabel(activeMeetingSession?.meetingProvider),
     meetingStatus: normalizeMeetingStatus(activeMeetingSession || {}),

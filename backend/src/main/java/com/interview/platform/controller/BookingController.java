@@ -30,8 +30,11 @@ public class BookingController {
         Session session = new Session();
         session.setInterviewerId(request.getInterviewerId());
         session.setCandidateId(request.getIntervieweeId());
+        session.setTopics(request.getTopics());
         session.setInterviewType(request.getInterviewType());
-        session.setTitle(request.getInterviewType());
+        session.setTitle(request.getTopics() != null && !request.getTopics().isEmpty()
+                ? String.join(", ", request.getTopics())
+                : request.getInterviewType());
         session.setStartTime(request.getStartTime());
         if (request.getDurationMinutes() != null) {
             session.setDurationMinutes(request.getDurationMinutes());
