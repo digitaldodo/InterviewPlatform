@@ -28,6 +28,8 @@ public class UserDtos {
         private List<String> availability;
         private Boolean acceptingBookings;
         private Boolean publicProfileVisible;
+        private String linkedInUrl;
+        private String verificationCompanyEmail;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
@@ -65,6 +67,26 @@ public class UserDtos {
         public void setAcceptingBookings(Boolean acceptingBookings) { this.acceptingBookings = acceptingBookings; }
         public Boolean getPublicProfileVisible() { return publicProfileVisible; }
         public void setPublicProfileVisible(Boolean publicProfileVisible) { this.publicProfileVisible = publicProfileVisible; }
+        public String getLinkedInUrl() { return linkedInUrl; }
+        public void setLinkedInUrl(String linkedInUrl) { this.linkedInUrl = linkedInUrl; }
+        public String getVerificationCompanyEmail() { return verificationCompanyEmail; }
+        public void setVerificationCompanyEmail(String verificationCompanyEmail) { this.verificationCompanyEmail = verificationCompanyEmail; }
+    }
+
+    public static class VerificationRequestSubmission {
+        @Size(max = 500)
+        private String notes;
+        @Size(max = 240)
+        private String linkedInUrl;
+        @Size(max = 160)
+        private String companyEmail;
+
+        public String getNotes() { return notes; }
+        public void setNotes(String notes) { this.notes = notes; }
+        public String getLinkedInUrl() { return linkedInUrl; }
+        public void setLinkedInUrl(String linkedInUrl) { this.linkedInUrl = linkedInUrl; }
+        public String getCompanyEmail() { return companyEmail; }
+        public void setCompanyEmail(String companyEmail) { this.companyEmail = companyEmail; }
     }
 
     public static class AddRoleRequest {

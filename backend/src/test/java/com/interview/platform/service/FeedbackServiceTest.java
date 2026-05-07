@@ -35,7 +35,7 @@ class FeedbackServiceTest {
 
     @Test
     void rejectsDuplicateFeedbackFromSameReviewerForSession() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService);
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -46,7 +46,7 @@ class FeedbackServiceTest {
 
         Feedback feedback = new Feedback();
         feedback.setSessionId("session-1");
-        feedback.setComments("Helpful session");
+        feedback.setComments("Helpful session with clear system design feedback");
         feedback.setRating(5);
 
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
@@ -58,7 +58,7 @@ class FeedbackServiceTest {
 
     @Test
     void marksCompletedCandidateFeedbackAsPublicReview() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService);
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -73,11 +73,12 @@ class FeedbackServiceTest {
 
         Feedback feedback = new Feedback();
         feedback.setSessionId("session-1");
-        feedback.setComments("Helpful session");
+        feedback.setComments("Helpful session with clear system design feedback");
         feedback.setRating(5);
 
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
         when(feedbackRepository.existsBySessionIdAndReviewerId("session-1", "candidate-1")).thenReturn(false);
+        when(feedbackRepository.findTop10ByReviewerIdOrderByCreatedAtDesc("candidate-1")).thenReturn(java.util.List.of());
         when(feedbackRepository.save(any(Feedback.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(sessionRepository.findByInterviewerId("interviewer-1")).thenReturn(java.util.List.of(session));
         when(feedbackRepository.findAll()).thenReturn(java.util.List.of(feedback));
@@ -92,7 +93,7 @@ class FeedbackServiceTest {
 
     @Test
     void rejectsFeedbackWhenSessionIsOnlyConfirmed() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService);
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -103,7 +104,7 @@ class FeedbackServiceTest {
 
         Feedback feedback = new Feedback();
         feedback.setSessionId("session-1");
-        feedback.setComments("Helpful session");
+        feedback.setComments("Helpful session with clear system design feedback");
         feedback.setRating(5);
 
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));

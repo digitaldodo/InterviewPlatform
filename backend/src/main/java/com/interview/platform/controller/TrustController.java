@@ -2,6 +2,7 @@ package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
 import com.interview.platform.dto.ReportDtos;
+import com.interview.platform.dto.UserDtos;
 import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
@@ -28,6 +29,13 @@ public class TrustController {
                                                                 Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Report submitted successfully",
                 trustService.submitReport(currentUser(authentication), request)));
+    }
+
+    @PostMapping("/verification-request")
+    public ResponseEntity<ApiResponse<User>> submitVerificationRequest(@RequestBody UserDtos.VerificationRequestSubmission request,
+                                                                       Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Verification request submitted successfully",
+                trustService.submitVerificationRequest(currentUser(authentication), request)));
     }
 
     private User currentUser(Authentication authentication) {

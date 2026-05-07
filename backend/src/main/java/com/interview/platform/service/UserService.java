@@ -149,6 +149,12 @@ public class UserService {
         if (request.getPublicProfileVisible() != null) {
             user.setPublicProfileVisible(request.getPublicProfileVisible());
         }
+        if (request.getLinkedInUrl() != null) {
+            user.setLinkedInUrl(trimToNull(request.getLinkedInUrl()));
+        }
+        if (request.getVerificationCompanyEmail() != null) {
+            user.setVerificationCompanyEmail(trimToNull(request.getVerificationCompanyEmail()));
+        }
         return userRepository.save(user);
     }
 

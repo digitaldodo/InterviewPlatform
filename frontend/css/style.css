@@ -3213,6 +3213,73 @@ textarea:focus-visible {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.admin-trust-summary-grid,
+.admin-user-metrics {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.admin-trust-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 1rem;
+}
+
+.admin-trust-card,
+.audit-log-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+  padding: 0.95rem;
+}
+
+.admin-trust-card {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.admin-trust-card strong {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-trust-card span {
+  font-size: 1.65rem;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.admin-user-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0.6rem;
+}
+
+.admin-user-metrics span,
+.admin-signal-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.28rem 0.55rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.03);
+}
+
+.admin-signal-row,
+.audit-log-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-signal-row {
+  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+  margin-top: 0.55rem;
+}
+
+.audit-log-item p {
+  margin: 0.45rem 0;
+}
+
 .mobile-menu-btn,
 .sidebar-backdrop,
 .bottom-nav {
@@ -3694,6 +3761,7 @@ textarea:focus-visible {
   .prep-track-grid,
   .admin-stats-grid,
   .admin-moderation-grid,
+  .admin-trust-summary-grid,
   .public-profile-detail-grid,
   .trust-grid,
   .public-review-grid,
@@ -3752,6 +3820,10 @@ textarea:focus-visible {
   .public-topic-feedback-card summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .admin-user-metrics {
+    grid-template-columns: 1fr;
   }
 
   .avatar-profile {

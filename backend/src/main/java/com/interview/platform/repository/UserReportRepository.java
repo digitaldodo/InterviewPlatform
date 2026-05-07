@@ -10,5 +10,7 @@ import java.util.List;
 public interface UserReportRepository extends MongoRepository<UserReport, String> {
     boolean existsByReporterIdAndReportedUserIdAndSessionId(String reporterId, String reportedUserId, String sessionId);
     List<UserReport> findByStatusOrderByCreatedAtDesc(String status);
+    List<UserReport> findByReporterIdAndReportedUserIdOrderByCreatedAtDesc(String reporterId, String reportedUserId);
+    List<UserReport> findTop20ByReportedUserIdOrderByCreatedAtDesc(String reportedUserId);
     long countByStatus(String status);
 }

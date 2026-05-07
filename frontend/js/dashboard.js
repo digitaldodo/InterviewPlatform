@@ -45,6 +45,8 @@ let adminUsers = [];
 let adminSessions = [];
 let adminReports = [];
 let adminReviews = [];
+let adminTrustDashboard = null;
+let adminAuditLogPage = null;
 let adminLoading = false;
 let moderationDialogState = null;
 let reportDialogState = null;
@@ -56,6 +58,7 @@ const adminState = {
   sessions: { page: 0, size: 8 },
   reports: { page: 0, size: 5, status: 'OPEN', query: '', category: '' },
   reviews: { page: 0, size: 5, visibility: '', query: '', minRating: '' },
+  audit: { page: 0, size: 8, entityType: '', subjectUserId: '' },
 };
 const REPORT_CATEGORY_OPTIONS = [
   { value: 'SAFETY', label: 'Safety concern', hint: 'Harassment, hate speech, threats, discrimination, or abuse.' },
@@ -2449,6 +2452,34 @@ function renderProfile() {
           </div>
         </div>
       ` : ''}
+      ${showInterviewerSetup ? `
+        <div class="availability-preference-card">
+          <h3>Interviewer verification</h3>
+          <div class="profile-status-row">
+            <span class="badge ${currentUser.interviewerVerified ? 'badge-green' : currentUser.verificationRequestStatus === 'PENDING' ? 'badge-yellow' : currentUser.verificationRequestStatus === 'REJECTED' ? 'badge-red' : 'badge-gray'}">${esc(currentUser.interviewerVerified ? 'Verified interviewer' : currentUser.verificationRequestStatus || 'NONE')}</span>
+            ${currentUser.verificationRequestedAt ? `<span class="availability-summary-note">Requested ${esc(fmtDate(currentUser.verificationRequestedAt))}</span>` : ''}
+          </div>
+          <p class="availability-summary-note">Share verification evidence for manual review. Suspicious or incomplete submissions stay pending until an admin approves them.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="profile-linkedin-url">LinkedIn or profile URL</label>
+              <input id="profile-linkedin-url" value="${esc(currentUser.linkedInUrl || '')}" placeholder="https://linkedin.com/in/your-profile" />
+            </div>
+            <div class="form-group">
+              <label for="profile-company-email">Company email</label>
+              <input id="profile-company-email" value="${esc(currentUser.verificationCompanyEmail || '')}" placeholder="name@company.com" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="profile-verification-notes">Verification notes</label>
+            <textarea id="profile-verification-notes" class="compact-textarea" placeholder="Add role, company, or credential context for the moderation team.">${esc(currentUser.verificationRequestNotes || '')}</textarea>
+          </div>
+          ${currentUser.verificationNotes ? `<p class="admin-note-chip">Admin note: ${esc(currentUser.verificationNotes)}</p>` : ''}
+          <div class="card-actions">
+            <button class="btn btn-primary btn-sm" type="button" onclick="submitVerificationRequest()">${currentUser.verificationRequestStatus === 'PENDING' ? 'Refresh request' : 'Submit verification request'}</button>
+          </div>
+        </div>
+      ` : ''}
       ${showIntervieweePreferences ? `
         <div class="availability-preference-card">
           <h3>Interviewee availability preferences</h3>
@@ -3129,6 +3160,8 @@ async function saveProfile(event) {
       company: val('profile-company'),
       currentRole: val('profile-current-role'),
       yearsExperience: Number(val('profile-years') || 0),
+      linkedInUrl: val('profile-linkedin-url'),
+      verificationCompanyEmail: val('profile-company-email'),
     };
     if (document.getElementById('profile-accepting-bookings')) payload.acceptingBookings = document.getElementById('profile-accepting-bookings').checked;
     if (document.getElementById('profile-public-profile')) payload.publicProfileVisible = document.getElementById('profile-public-profile').checked;
@@ -4882,7 +4915,8 @@ async function submitReportUserDialog() {
       body: JSON.stringify({
         reportedUserId: reportDialogState.reportedUserId,
         sessionId: reportDialogState.sessionId,
-        reason: selected.value,
+        category: selected.value,
+        reason: selected.label,
         details: reportDialogState.details,
       }),
     });
@@ -4894,6 +4928,855 @@ async function submitReportUserDialog() {
     reportDialogState.loading = false;
     renderReportUserDialog();
     toast(err.message || 'Could not submit report.', 'error');
+  }
+}
+
+async function submitVerificationRequest() {
+  const linkedInUrl = val('profile-linkedin-url');
+  const companyEmail = val('profile-company-email');
+  const notes = val('profile-verification-notes');
+  if (!linkedInUrl && !companyEmail && !notes) {
+    toast('Add verification evidence before submitting.', 'error');
+    return;
+  }
+  try {
+    const updated = await api('/api/trust/verification-request', {
+      method: 'POST',
+      body: JSON.stringify({ linkedInUrl, companyEmail, notes }),
+    });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+    initUi();
+    renderProfile();
+    toast('Verification request submitted for review.', 'success');
+  } catch (err) {
+    toast(err.message || 'Could not submit verification request.', 'error');
+  }
+}
+
+function bindFeedbackForm() {
+  document.getElementById('feedback-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const btn = document.getElementById('feedback-submit');
+    btn.disabled = true;
+    hideAlert('feedback-alert');
+    try {
+      const comments = val('fb-comments').trim();
+      if (comments.length < 16 || comments.split(/\s+/).filter(Boolean).length < 3) {
+        throw new Error('Reviews must be specific and meaningful before submission.');
+      }
+      const topicFeedback = collectTopicFeedback();
+      await api('/api/feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: val('fb-session'),
+          rating: Number(val('fb-rating')),
+          communication: Number(val('fb-communication')),
+          technicalSkills: Number(val('fb-technical')),
+          comments,
+          strengths: val('fb-strengths'),
+          weaknesses: val('fb-weaknesses'),
+          improvementAreas: val('fb-recommendations'),
+          recommendations: val('fb-recommendations'),
+          topicFeedback,
+        }),
+      });
+      document.getElementById('feedback-form').reset();
+      renderFeedbackTopicSections();
+      toast('Feedback submitted. Suspicious reviews may be held for moderation.', 'success');
+      await loadFeedback();
+    } catch (err) {
+      showAlert('feedback-alert', err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function buildAuditQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.audit.page || 0));
+  params.set('size', String(adminState.audit.size || 8));
+  if (adminState.audit.entityType) params.set('entityType', adminState.audit.entityType);
+  if (adminState.audit.subjectUserId) params.set('subjectUserId', adminState.audit.subjectUserId);
+  return params.toString();
+}
+
+async function loadAdminData(force = false) {
+  if (!hasAdminRole()) return;
+  if (!force && adminOverview && adminTrustDashboard && adminAuditLogPage && adminUsers.length && adminSessions.length) {
+    renderAdminPanels();
+    return;
+  }
+  adminLoading = true;
+  renderAdminPanels();
+  try {
+    const [overview, users, sessionsData, reports, reviews, trustDashboard, auditLogPage] = await Promise.all([
+      api('/api/admin/overview'),
+      api('/api/admin/users'),
+      api('/api/admin/sessions'),
+      api('/api/admin/reports'),
+      api('/api/admin/reviews'),
+      api('/api/admin/trust-dashboard'),
+      api(`/api/admin/audit-logs?${buildAuditQuery()}`),
+    ]);
+    adminOverview = overview;
+    adminUsers = Array.isArray(users) ? users : [];
+    adminSessions = Array.isArray(sessionsData) ? sessionsData : [];
+    adminReports = Array.isArray(reports) ? reports : [];
+    adminReviews = Array.isArray(reviews) ? reviews : [];
+    adminTrustDashboard = trustDashboard || null;
+    adminAuditLogPage = auditLogPage || null;
+  } catch (err) {
+    toast(err.message || 'Could not load admin data.', 'error');
+  } finally {
+    adminLoading = false;
+    renderAdminPanels();
+  }
+}
+
+function renderAdminPanels() {
+  if (!hasAdminRole()) return;
+  const metricsHost = document.getElementById('admin-metrics-grid');
+  const analyticsHost = document.getElementById('admin-analytics-panel');
+  const liveHost = document.getElementById('admin-live-sessions-panel');
+  const moderationSummary = adminReports.reduce((acc, item) => {
+    const status = String(item?.status || 'OPEN').toUpperCase();
+    if (status === 'ACTIONED') acc.actioned += 1;
+    else if (status === 'REVIEWED') acc.reviewed += 1;
+    else acc.open += 1;
+    return acc;
+  }, { open: 0, reviewed: 0, actioned: 0 });
+  const trust = adminTrustDashboard || {};
+  if (metricsHost) {
+    metricsHost.innerHTML = [
+      statMetric('Users', adminOverview?.totalUsers || 0, 'badge-purple'),
+      statMetric('Flagged reviews', trust.flaggedReviewCount || adminOverview?.flaggedReviews || 0, 'badge-yellow'),
+      statMetric('Pending verification', trust.pendingVerificationCount || adminOverview?.pendingVerificationRequests || 0, 'badge-yellow'),
+      statMetric('Open reports', moderationSummary.open, 'badge-red'),
+      statMetric('Avg trust score', `${trust.averageTrustScore || adminOverview?.averageTrustScore || 0}%`, 'badge-green'),
+      statMetric('Avg review quality', `${trust.averageReviewQualityScore || adminOverview?.averageReviewQualityScore || 0}%`, 'badge-green'),
+    ].join('');
+  }
+  if (analyticsHost) {
+    const flaggedUsers = Array.isArray(trust.flaggedUsers) ? trust.flaggedUsers.slice(0, 4) : [];
+    analyticsHost.innerHTML = adminLoading && !adminOverview
+      ? skeletonCards(2)
+      : `
+        <div class="admin-analytics-stack">
+          <section class="admin-analytics-section">
+            <h3>Trust foundation metrics</h3>
+            <div class="admin-analytics-copy">
+              <div class="admin-analytics-metric"><span>Completion rate</span><strong>${esc(String(adminOverview?.completionRate || 0))}%</strong></div>
+              <div class="admin-analytics-metric"><span>Cancellation rate</span><strong>${esc(String(adminOverview?.cancellationRate || 0))}%</strong></div>
+              <div class="admin-analytics-metric"><span>Platform rating</span><strong>${esc(String(adminOverview?.platformAverageRating || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Queue pressure</span><strong>${esc(moderationSummary.open > 8 ? 'High' : moderationSummary.open > 3 ? 'Medium' : 'Low')}</strong></div>
+            </div>
+          </section>
+          <section class="admin-analytics-section">
+            <h3>Flagged users</h3>
+            <div class="admin-list">
+              ${flaggedUsers.map(item => `
+                <article class="admin-list-item">
+                  <div>
+                    <strong>${esc(item.displayName || 'User')}</strong>
+                    <p>${esc(item.email || '')}</p>
+                    <div class="admin-signal-row">${renderSignalChips(item.indicators || [])}</div>
+                  </div>
+                  <span class="badge badge-${Number(item.trustScore || 0) < 70 ? 'red' : 'yellow'}">${esc(String(item.trustScore || 0))}%</span>
+                </article>
+              `).join('') || emptyState('No elevated user risk signals right now.')}
+            </div>
+          </section>
+        </div>
+      `;
+  }
+  if (liveHost) {
+    liveHost.innerHTML = adminLoading && !adminSessions.length
+      ? skeletonCards(2)
+      : `
+        <div class="panel-head"><h2>Upcoming session monitoring</h2><span class="badge badge-gray">${esc(String(adminSessions.length || 0))} total</span></div>
+        <div class="admin-list">
+          ${adminSessions.slice(0, 6).map(session => `
+            <article class="admin-list-item">
+              <div>
+                <strong>${esc(sessionTitle(session))}</strong>
+                <p>${esc(fmtDate(session.startTime))}</p>
+                <small>${esc(providerLabel(session.meetingProvider))}</small>
+              </div>
+              <span class="badge badge-${statusClass((session.status || '').toUpperCase())}">${esc(session.status || 'PENDING')}</span>
+            </article>
+          `).join('') || emptyState('No sessions to monitor right now.')}
+        </div>
+      `;
+  }
+  renderAdminUsers();
+  renderAdminSessions();
+  renderAdminReports();
+}
+
+function renderAdminUsers() {
+  const host = document.getElementById('admin-users-panel');
+  if (!host) return;
+  const query = String(document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+  const role = String(document.getElementById('admin-user-role')?.value || '').trim().toUpperCase();
+  const enabled = String(document.getElementById('admin-user-enabled')?.value || '').trim().toLowerCase();
+  const flaggedMap = new Map((adminTrustDashboard?.flaggedUsers || []).map(item => [item.userId, item]));
+  if (adminLoading && !adminUsers.length) {
+    host.innerHTML = skeletonCards(2);
+    return;
+  }
+  const rows = adminUsers.filter(user => {
+    const roleMatch = !role || (Array.isArray(user.roles) ? user.roles : [user.role]).includes(role);
+    const searchMatch = !query || [user.username, user.displayName, user.email, user.company].some(value => String(value || '').toLowerCase().includes(query));
+    const enabledMatch = !enabled || (enabled === 'enabled' ? user.accountEnabled !== false : user.accountEnabled === false);
+    return roleMatch && enabledMatch && searchMatch;
+  });
+  const page = paginateCollection(rows, adminState.users);
+  host.innerHTML = `
+    <div class="admin-table-shell">
+      <div class="admin-table-meta"><strong>${esc(String(rows.length))}</strong><span>matching users</span></div>
+      <div class="admin-table">
+      ${page.items.map(user => {
+        const trust = flaggedMap.get(user.id);
+        return `
+          <article class="admin-table-row">
+            <div class="admin-row-main">
+              <div class="admin-row-head">
+                <strong>${esc(accountDisplayName(user))}</strong>
+                <div class="tag-row">
+                  ${(user.roles || [user.role]).map(roleName => `<span>${esc(roleName)}</span>`).join('')}
+                  ${user.interviewerVerified ? '<span>Verified interviewer</span>' : ''}
+                  ${user.verificationRequestStatus && user.verificationRequestStatus !== 'NONE' ? `<span>${esc(user.verificationRequestStatus)}</span>` : ''}
+                </div>
+              </div>
+              <p>${esc(user.email || '')}</p>
+              ${trust ? `
+                <div class="admin-user-metrics">
+                  <span>Trust ${esc(String(trust.trustScore || 0))}%</span>
+                  <span>Completion ${esc(String(trust.sessionCompletionRate || 0))}%</span>
+                  <span>Cancellation ${esc(String(trust.cancellationReliability || 0))}%</span>
+                  <span>Review quality ${esc(String(trust.reviewQualityScore || 0))}%</span>
+                </div>
+                <div class="admin-signal-row">${renderSignalChips(trust.indicators || [])}</div>
+              ` : '<small>No elevated trust indicators.</small>'}
+            </div>
+            <div class="card-actions">
+              ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', '${user.interviewerVerified ? 'REJECTED' : user.verificationRequestStatus === 'PENDING' ? 'APPROVED' : 'PENDING'}')">${user.interviewerVerified ? 'Review verification' : 'Manage verification'}</button>` : ''}
+              <button class="btn btn-outline btn-sm" type="button" onclick="togglePublicProfileVisibility('${user.id}', ${user.publicProfileVisible === false ? 'true' : 'false'})">${user.publicProfileVisible === false ? 'Show profile' : 'Hide profile'}</button>
+              <button class="btn ${user.accountEnabled === false ? 'btn-success' : 'btn-danger'} btn-sm" type="button" onclick="toggleUserAccess('${user.id}', ${user.accountEnabled === false ? 'true' : 'false'})">${user.accountEnabled === false ? 'Reactivate' : 'Deactivate'}</button>
+            </div>
+          </article>
+        `;
+      }).join('') || emptyState('No users match the current filters.')}
+      </div>
+      ${renderAdminPagination('users', page)}
+    </div>
+  `;
+}
+
+function renderAdminReports() {
+  const host = document.getElementById('admin-reports-panel');
+  if (!host) return;
+  if (adminLoading && !adminReports.length && !adminReviews.length) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const reportQuery = String(adminState.reports.query || '').trim().toLowerCase();
+  const reportStatus = String(adminState.reports.status || '').trim().toUpperCase();
+  const reportCategory = String(adminState.reports.category || '').trim().toUpperCase();
+  const filteredReports = adminReports.filter(report => {
+    const statusMatch = !reportStatus || String(report.status || '').toUpperCase() === reportStatus;
+    const categoryValue = normalizeReportCategory(report.category || report.reason);
+    const categoryMatch = !reportCategory || categoryValue === reportCategory;
+    const searchText = [report.reason, report.details, report.reporterId, report.reportedUserId, report.reviewedByAdminId].filter(Boolean).join(' ').toLowerCase();
+    return statusMatch && categoryMatch && (!reportQuery || searchText.includes(reportQuery));
+  });
+  const reportPage = paginateCollection(filteredReports, adminState.reports);
+  const reviewQuery = String(adminState.reviews.query || '').trim().toLowerCase();
+  const visibility = String(adminState.reviews.visibility || '').trim().toLowerCase();
+  const minRating = Number(adminState.reviews.minRating || 0);
+  const filteredReviews = adminReviews.filter(review => {
+    const visibilityMatch = !visibility || (visibility === 'visible' ? review.publicReview === true : review.publicReview !== true);
+    const ratingMatch = !minRating || Number(review.rating || 0) >= minRating;
+    const topicText = Array.isArray(review.topicSummaries) ? review.topicSummaries.map(item => item.topic).join(' ') : '';
+    const signalText = Array.isArray(review.suspiciousFlags) ? review.suspiciousFlags.join(' ') : '';
+    const searchText = [review.reviewerName, review.interviewerName, review.comments, review.sessionTitle, topicText, review.moderationNotes, signalText].filter(Boolean).join(' ').toLowerCase();
+    return visibilityMatch && ratingMatch && (!reviewQuery || searchText.includes(reviewQuery));
+  });
+  const reviewPage = paginateCollection(filteredReviews, adminState.reviews);
+  const verificationQueue = adminTrustDashboard?.verificationQueue || [];
+  const auditItems = adminAuditLogPage?.items || [];
+  host.innerHTML = `
+    <div class="admin-trust-summary-grid">
+      <article class="admin-trust-card">
+        <strong>Flagged reviews</strong>
+        <span>${esc(String(adminTrustDashboard?.flaggedReviewCount || 0))}</span>
+        <small>Spam patterns, bursts, or repeated low-quality submissions.</small>
+      </article>
+      <article class="admin-trust-card">
+        <strong>Pending verification</strong>
+        <span>${esc(String(adminTrustDashboard?.pendingVerificationCount || 0))}</span>
+        <small>Interviewers waiting for approval or rejection.</small>
+      </article>
+      <article class="admin-trust-card">
+        <strong>Flagged users</strong>
+        <span>${esc(String(adminTrustDashboard?.flaggedUserCount || 0))}</span>
+        <small>Users with trust indicators below healthy thresholds.</small>
+      </article>
+      <article class="admin-trust-card">
+        <strong>Average trust score</strong>
+        <span>${esc(String(adminTrustDashboard?.averageTrustScore || 0))}%</span>
+        <small>Composite of completion, cancellations, consistency, and review quality.</small>
+      </article>
+    </div>
+    <div class="admin-moderation-grid">
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Trust reports</h2><span class="badge badge-gray">${esc(String(filteredReports.length))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
+            <option value="">All statuses</option>
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+          <select class="input" onchange="setAdminFilter('reports', 'category', this.value)">
+            <option value="">All categories</option>
+            ${REPORT_CATEGORY_OPTIONS.map(option => `<option value="${esc(option.value)}" ${reportCategory === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="admin-table">
+          ${reportPage.items.map(report => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>Trust report</strong>
+                  <div class="tag-row">
+                    <span>${esc(reportCategoryLabel(report.category || report.reason))}</span>
+                    ${report.duplicateCount ? `<span>${esc(String(report.duplicateCount))} related</span>` : ''}
+                  </div>
+                </div>
+                <p>${esc(report.details || 'No details provided.')}</p>
+                <small>Reporter ${esc(report.reporterId || 'unknown')} • Target ${esc(report.reportedUserId || 'unknown')}</small>
+                <small>${esc(fmtDate(report.createdAt))}${report.reviewedByAdminId ? ` • Moderated by ${esc(report.reviewedByAdminId)}` : ''}</small>
+                ${report.resolutionNotes ? `<p class="admin-note-chip">Last note: ${esc(report.resolutionNotes)}</p>` : ''}
+              </div>
+              <div class="card-actions">
+                <span class="badge badge-${report.status === 'OPEN' ? 'yellow' : report.status === 'ACTIONED' ? 'red' : 'gray'}">${esc(report.status || 'OPEN')}</span>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'REVIEWED')">Review</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'ACTIONED')">Action</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No trust reports match the current filters.')}
+        </div>
+        ${renderAdminPagination('reports', reportPage)}
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Public review moderation</h2><span class="badge badge-gray">${esc(String(filteredReviews.length))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reviews.query || '')}" placeholder="Search reviews" oninput="setAdminFilter('reviews', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reviews', 'visibility', this.value)">
+            <option value="">All visibility</option>
+            <option value="visible" ${visibility === 'visible' ? 'selected' : ''}>Visible</option>
+            <option value="hidden" ${visibility === 'hidden' ? 'selected' : ''}>Hidden</option>
+          </select>
+          <select class="input" onchange="setAdminFilter('reviews', 'minRating', this.value)">
+            <option value="">Any rating</option>
+            <option value="4" ${String(adminState.reviews.minRating || '') === '4' ? 'selected' : ''}>4+ rating</option>
+            <option value="3" ${String(adminState.reviews.minRating || '') === '3' ? 'selected' : ''}>3+ rating</option>
+            <option value="2" ${String(adminState.reviews.minRating || '') === '2' ? 'selected' : ''}>2+ rating</option>
+          </select>
+        </div>
+        <div class="admin-table">
+          ${reviewPage.items.map(review => `
+            <article class="admin-table-row admin-review-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(review.reviewerName || 'InterviewPrep member')} → ${esc(review.interviewerName || 'Interviewer')}</strong>
+                  <div class="tag-row">
+                    ${review.interviewerVerified ? '<span>Verified</span>' : '<span>Unverified</span>'}
+                    ${review.flaggedForModeration ? '<span>Flagged</span>' : ''}
+                  </div>
+                </div>
+                <p>${esc(review.comments || 'No written review provided.')}</p>
+                <div class="admin-signal-row">
+                  ${review.reviewQualityScore != null ? `<span class="admin-signal-chip">Quality ${esc(String(review.reviewQualityScore))}</span>` : ''}
+                  ${review.suspiciousScore != null ? `<span class="admin-signal-chip">Risk ${esc(String(review.suspiciousScore))}</span>` : ''}
+                  ${renderSignalChips(review.suspiciousFlags || [])}
+                </div>
+                <small>${esc(review.sessionTitle || 'Interview session')} • ${esc(fmtDate(review.createdAt))}</small>
+                ${review.interviewerReliability != null ? `<small>Interviewer trust ${esc(String(review.interviewerReliability))}%${review.interviewerCancelledSessions != null ? ` • Cancelled ${esc(String(review.interviewerCancelledSessions))}` : ''}</small>` : ''}
+                ${review.moderationNotes ? `<p class="admin-note-chip">Last note: ${esc(review.moderationNotes)}</p>` : ''}
+              </div>
+              <div class="card-actions">
+                <span class="badge badge-${review.publicReview ? 'green' : 'gray'}">${review.publicReview ? 'Visible' : 'Hidden'}</span>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReviewModerationModal('${review.id}', ${review.publicReview ? 'false' : 'true'})">${review.publicReview ? 'Hide' : 'Republish'}</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No review items match the current filters.')}
+        </div>
+        ${renderAdminPagination('reviews', reviewPage)}
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Verification queue</h2><span class="badge badge-gray">${esc(String(verificationQueue.length))}</span></div>
+        <div class="admin-table">
+          ${verificationQueue.map(item => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(item.displayName || 'Interviewer')}</strong>
+                  <span class="badge badge-${item.status === 'REJECTED' ? 'red' : 'yellow'}">${esc(item.status || 'PENDING')}</span>
+                </div>
+                <p>${esc(item.email || '')}</p>
+                ${item.linkedInUrl ? `<small><a href="${esc(item.linkedInUrl)}" target="_blank" rel="noreferrer">${esc(item.linkedInUrl)}</a></small>` : ''}
+                ${item.companyEmail ? `<small>${esc(item.companyEmail)}</small>` : ''}
+                ${item.requestNotes ? `<p class="admin-note-chip">Request: ${esc(item.requestNotes)}</p>` : ''}
+                ${item.adminNotes ? `<p class="admin-note-chip">Admin note: ${esc(item.adminNotes)}</p>` : ''}
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${item.userId}', 'APPROVED')">Approve</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="toggleInterviewerVerification('${item.userId}', 'REJECTED')">Reject</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No verification requests are waiting right now.')}
+        </div>
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Moderation history</h2><span class="badge badge-gray">${esc(String(adminAuditLogPage?.totalElements || auditItems.length || 0))}</span></div>
+        <div class="admin-inline-filters">
+          <select class="input" onchange="setAuditFilter('entityType', this.value)">
+            <option value="">All entities</option>
+            ${['USER', 'REVIEW', 'REPORT', 'VERIFICATION'].map(type => `<option value="${type}" ${String(adminState.audit.entityType || '') === type ? 'selected' : ''}>${type}</option>`).join('')}
+          </select>
+        </div>
+        <div class="audit-log-list">
+          ${auditItems.map(item => `
+            <article class="audit-log-item">
+              <div class="admin-row-head">
+                <strong>${esc(item.action || item.entityType || 'ACTION')}</strong>
+                <span class="badge badge-gray">${esc(item.entityType || 'AUDIT')}</span>
+              </div>
+              <p>${esc(item.summary || 'Moderation action recorded.')}</p>
+              <small>${esc(fmtDate(item.createdAt))} • Actor ${esc(item.actorUserId || 'system')} • Subject ${esc(item.subjectUserId || item.entityId || 'unknown')}</small>
+              ${item.reason ? `<p class="admin-note-chip">Reason: ${esc(item.reason)}</p>` : ''}
+            </article>
+          `).join('') || emptyState('No moderation history available yet.')}
+        </div>
+        ${renderAuditPagination()}
+      </article>
+    </div>
+  `;
+}
+
+function statMetric(label, value, badgeClass) {
+  return `<div class="stat-card"><span>${esc(String(value))}</span><p>${esc(label)}</p><small class="badge ${badgeClass}">${esc(label)}</small></div>`;
+}
+
+function renderSignalChips(signals) {
+  return (signals || []).map(signal => `<span class="admin-signal-chip">${esc(String(signal).replaceAll('_', ' ').toLowerCase())}</span>`).join('');
+}
+
+function renderAuditPagination() {
+  if (!adminAuditLogPage || Number(adminAuditLogPage.totalPages || 0) <= 1) return '';
+  const page = Number(adminAuditLogPage.page || 0);
+  const totalPages = Number(adminAuditLogPage.totalPages || 1);
+  return `
+    <div class="pagination-row admin-pagination-row">
+      <button class="btn btn-outline btn-sm" type="button" onclick="changeAuditPage(-1)" ${page <= 0 ? 'disabled' : ''}>Previous</button>
+      <span>Page ${page + 1} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" type="button" onclick="changeAuditPage(1)" ${page >= totalPages - 1 ? 'disabled' : ''}>Next</button>
+    </div>
+  `;
+}
+
+function setAuditFilter(key, value) {
+  adminState.audit[key] = value;
+  adminState.audit.page = 0;
+  loadAdminData(true);
+}
+
+function changeAuditPage(delta) {
+  adminState.audit.page = Math.max(0, Number(adminState.audit.page || 0) + Number(delta || 0));
+  loadAdminData(true);
+}
+
+function toggleUserAccess(userId, enabled) {
+  const user = adminUsers.find(item => item.id === userId);
+  if (!user) return toast('User not found.', 'error');
+  moderationDialogState = {
+    kind: 'user',
+    step: 'form',
+    loading: false,
+    userId,
+    enabled,
+    publicProfileVisible: null,
+    title: enabled ? 'Reactivate user' : 'Deactivate user',
+    notes: '',
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function togglePublicProfileVisibility(userId, publicProfileVisible) {
+  const user = adminUsers.find(item => item.id === userId);
+  if (!user) return toast('User not found.', 'error');
+  moderationDialogState = {
+    kind: 'user',
+    step: 'form',
+    loading: false,
+    userId,
+    enabled: null,
+    publicProfileVisible,
+    title: publicProfileVisible ? 'Show public profile' : 'Hide public profile',
+    notes: '',
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function toggleInterviewerVerification(userId, suggestedStatus) {
+  const user = adminUsers.find(item => item.id === userId) || (adminTrustDashboard?.verificationQueue || []).find(item => item.userId === userId);
+  if (!user) return toast('Interviewer not found.', 'error');
+  moderationDialogState = {
+    kind: 'verification',
+    step: 'form',
+    loading: false,
+    userId,
+    status: suggestedStatus || (user.interviewerVerified ? 'REJECTED' : 'APPROVED'),
+    notes: user.verificationNotes || user.adminNotes || '',
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function openReportModerationModal(reportId, suggestedStatus = 'REVIEWED') {
+  const report = adminReports.find(item => item.id === reportId);
+  if (!report) {
+    toast('Report not found in current queue.', 'error');
+    return;
+  }
+  moderationDialogState = {
+    kind: 'report',
+    step: 'form',
+    loading: false,
+    reportId,
+    status: String(suggestedStatus || report.status || 'REVIEWED').toUpperCase(),
+    notes: report.resolutionNotes || '',
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function openReviewModerationModal(reviewId, visible) {
+  const review = adminReviews.find(item => item.id === reviewId);
+  if (!review) {
+    toast('Review not found in current queue.', 'error');
+    return;
+  }
+  moderationDialogState = {
+    kind: 'review',
+    step: 'form',
+    loading: false,
+    reviewId,
+    visible: visible !== false,
+    notes: review.moderationNotes || '',
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function continueModerationDialog() {
+  if (!moderationDialogState) return;
+  if (String(moderationDialogState.reason || '').trim().length < 6) {
+    toast('Add a clear moderation reason.', 'error');
+    return;
+  }
+  if (moderationDialogState.kind === 'report' && moderationDialogState.status === 'ACTIONED' && String(moderationDialogState.notes || '').trim().length < 8) {
+    toast('Add clear action notes before proceeding.', 'error');
+    return;
+  }
+  if (moderationDialogState.kind === 'review' && !moderationDialogState.visible && String(moderationDialogState.notes || '').trim().length < 8) {
+    toast('Add moderation notes before hiding a review.', 'error');
+    return;
+  }
+  if (moderationDialogState.kind === 'verification' && moderationDialogState.status === 'REJECTED' && String(moderationDialogState.notes || '').trim().length < 8) {
+    toast('Add a rejection note for the interviewer.', 'error');
+    return;
+  }
+  if (!moderationDialogState.confirmChecked) {
+    toast('Confirm the moderation action before continuing.', 'error');
+    return;
+  }
+  moderationDialogState.step = 'confirm';
+  renderModerationDialog();
+}
+
+function renderModerationDialog() {
+  if (!moderationDialogState) return;
+  if (moderationDialogState.kind === 'user') {
+    const user = adminUsers.find(item => item.id === moderationDialogState.userId);
+    if (!user) return closeModerationDialog();
+    const changeSummary = moderationDialogState.enabled != null
+      ? `${moderationDialogState.enabled ? 'Enable access' : 'Disable access'} for ${accountDisplayName(user)}`
+      : `${moderationDialogState.publicProfileVisible ? 'Show public profile' : 'Hide public profile'} for ${accountDisplayName(user)}`;
+    if (moderationDialogState.step === 'confirm') {
+      modal(`
+        <div class="modal-head">
+          <h2>Confirm user moderation</h2>
+          <p class="muted">${esc(changeSummary)}</p>
+        </div>
+        <div class="moderation-summary-list">
+          <div><span>User</span><strong>${esc(accountDisplayName(user))}</strong></div>
+          <div><span>Reason</span><strong>${esc(moderationDialogState.reason)}</strong></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+          <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm moderation'}</button>
+        </div>
+      `);
+      return;
+    }
+    modal(`
+      <div class="modal-head">
+        <h2>${esc(moderationDialogState.title || 'User moderation')}</h2>
+        <p class="muted">All admin actions are written to the moderation audit log.</p>
+      </div>
+      <div class="moderation-form-grid">
+        <label class="form-group">
+          <span>Moderation reason</span>
+          <textarea placeholder="Document why this user access change is necessary." oninput="updateModerationDialogField('reason', this.value)">${esc(moderationDialogState.reason || '')}</textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+          I confirm this action is necessary and accurate.
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+      </div>
+    `);
+    return;
+  }
+  if (moderationDialogState.kind === 'verification') {
+    const user = adminUsers.find(item => item.id === moderationDialogState.userId) || (adminTrustDashboard?.verificationQueue || []).find(item => item.userId === moderationDialogState.userId);
+    if (!user) return closeModerationDialog();
+    if (moderationDialogState.step === 'confirm') {
+      modal(`
+        <div class="modal-head">
+          <h2>Confirm verification decision</h2>
+          <p class="muted">This updates interviewer verification status immediately.</p>
+        </div>
+        <div class="moderation-summary-list">
+          <div><span>Interviewer</span><strong>${esc(user.displayName || accountDisplayName(user))}</strong></div>
+          <div><span>Status</span><strong>${esc(moderationDialogState.status)}</strong></div>
+          <div><span>Reason</span><strong>${esc(moderationDialogState.reason)}</strong></div>
+          <div><span>Notes</span><strong>${esc(moderationDialogState.notes || 'No note added')}</strong></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+          <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm decision'}</button>
+        </div>
+      `);
+      return;
+    }
+    modal(`
+      <div class="modal-head">
+        <h2>Manage interviewer verification</h2>
+        <p class="muted">Approve, reject, or keep a request pending with an audit reason.</p>
+      </div>
+      <div class="moderation-form-grid">
+        <label class="form-group">
+          <span>Status</span>
+          <select class="input" onchange="updateModerationDialogField('status', this.value)">
+            ${['PENDING', 'APPROVED', 'REJECTED'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+        </label>
+        <label class="form-group">
+          <span>Admin notes</span>
+          <textarea placeholder="Explain evidence reviewed or next steps." oninput="updateModerationDialogField('notes', this.value)">${esc(moderationDialogState.notes || '')}</textarea>
+        </label>
+        <label class="form-group">
+          <span>Audit reason</span>
+          <textarea placeholder="Why are you making this verification decision?" oninput="updateModerationDialogField('reason', this.value)">${esc(moderationDialogState.reason || '')}</textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+          I reviewed the interviewer evidence.
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+      </div>
+    `);
+    return;
+  }
+  if (moderationDialogState.kind === 'report') {
+    const report = adminReports.find(item => item.id === moderationDialogState.reportId);
+    if (!report) return closeModerationDialog();
+    if (moderationDialogState.step === 'confirm') {
+      modal(`
+        <div class="modal-head">
+          <h2>Confirm report moderation</h2>
+          <p class="muted">This decision will be saved to the trust queue immediately.</p>
+        </div>
+        <div class="moderation-summary-list">
+          <div><span>Category</span><strong>${esc(reportCategoryLabel(report.category || report.reason))}</strong></div>
+          <div><span>Decision</span><strong>${esc(moderationDialogState.status)}</strong></div>
+          <div><span>Reason</span><strong>${esc(moderationDialogState.reason)}</strong></div>
+          <div><span>Notes</span><strong>${esc(moderationDialogState.notes || 'No notes added')}</strong></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+          <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm moderation'}</button>
+        </div>
+      `);
+      return;
+    }
+    modal(`
+      <div class="modal-head">
+        <h2>Moderate trust report</h2>
+        <p class="muted">${esc(reportCategoryHint(report.category || report.reason) || 'Review details, then choose a moderation outcome.')}</p>
+      </div>
+      <div class="moderation-form-grid">
+        <label class="form-group">
+          <span>Decision</span>
+          <select class="input" onchange="updateModerationDialogField('status', this.value)">
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+        </label>
+        <label class="form-group">
+          <span>Moderation notes</span>
+          <textarea placeholder="Document evidence, policy alignment, and next steps." oninput="updateModerationDialogField('notes', this.value)">${esc(moderationDialogState.notes || '')}</textarea>
+        </label>
+        <label class="form-group">
+          <span>Audit reason</span>
+          <textarea placeholder="Why are you applying this report decision?" oninput="updateModerationDialogField('reason', this.value)">${esc(moderationDialogState.reason || '')}</textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+          I confirm this report decision is accurate.
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+      </div>
+    `);
+    return;
+  }
+  const review = adminReviews.find(item => item.id === moderationDialogState.reviewId);
+  if (!review) return closeModerationDialog();
+  if (moderationDialogState.step === 'confirm') {
+    modal(`
+      <div class="modal-head">
+        <h2>Confirm review moderation</h2>
+        <p class="muted">Visibility changes apply to public profile pages instantly.</p>
+      </div>
+      <div class="moderation-summary-list">
+        <div><span>Reviewer</span><strong>${esc(review.reviewerName || 'InterviewPrep member')}</strong></div>
+        <div><span>Visibility</span><strong>${moderationDialogState.visible ? 'Visible' : 'Hidden'}</strong></div>
+        <div><span>Reason</span><strong>${esc(moderationDialogState.reason)}</strong></div>
+        <div><span>Notes</span><strong>${esc(moderationDialogState.notes || 'No notes added')}</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+        <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm moderation'}</button>
+      </div>
+    `);
+    return;
+  }
+  modal(`
+    <div class="modal-head">
+      <h2>Moderate public review</h2>
+      <p class="muted">Capture context for auditability before changing visibility.</p>
+    </div>
+    <div class="moderation-form-grid">
+      <label class="form-group">
+        <span>Visibility decision</span>
+        <select class="input" onchange="updateModerationDialogField('visible', this.value === 'true')">
+          <option value="true" ${moderationDialogState.visible ? 'selected' : ''}>Visible</option>
+          <option value="false" ${!moderationDialogState.visible ? 'selected' : ''}>Hidden</option>
+        </select>
+      </label>
+      <label class="form-group">
+        <span>Moderation notes</span>
+        <textarea placeholder="Why is this review visible or hidden?" oninput="updateModerationDialogField('notes', this.value)">${esc(moderationDialogState.notes || '')}</textarea>
+      </label>
+      <label class="form-group">
+        <span>Audit reason</span>
+        <textarea placeholder="What integrity or abuse concern is this action addressing?" oninput="updateModerationDialogField('reason', this.value)">${esc(moderationDialogState.reason || '')}</textarea>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+        I confirm this visibility update follows trust policy.
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+    </div>
+  `);
+}
+
+async function submitModerationDialog() {
+  if (!moderationDialogState || moderationDialogState.loading) return;
+  moderationDialogState.loading = true;
+  renderModerationDialog();
+  try {
+    if (moderationDialogState.kind === 'user') {
+      await api(`/api/admin/users/${moderationDialogState.userId}/moderation`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          enabled: moderationDialogState.enabled,
+          publicProfileVisible: moderationDialogState.publicProfileVisible,
+          reason: moderationDialogState.reason,
+        }),
+      });
+      toast('User moderation updated.', 'success');
+    } else if (moderationDialogState.kind === 'verification') {
+      await api(`/api/admin/interviewers/${moderationDialogState.userId}/verify`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: moderationDialogState.status,
+          notes: moderationDialogState.notes,
+          reason: moderationDialogState.reason,
+        }),
+      });
+      toast('Verification decision saved.', 'success');
+    } else if (moderationDialogState.kind === 'report') {
+      await api(`/api/admin/reports/${moderationDialogState.reportId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: moderationDialogState.status,
+          resolutionNotes: moderationDialogState.notes,
+          reason: moderationDialogState.reason,
+        }),
+      });
+      toast('Report moderation updated.', 'success');
+    } else {
+      await api(`/api/admin/reviews/${moderationDialogState.reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          visible: moderationDialogState.visible,
+          moderationNotes: moderationDialogState.notes,
+          reason: moderationDialogState.reason,
+        }),
+      });
+      toast('Review moderation updated.', 'success');
+    }
+    moderationDialogState = null;
+    closeModal();
+    await loadAdminData(true);
+  } catch (err) {
+    moderationDialogState.loading = false;
+    renderModerationDialog();
+    toast(err.message || 'Could not save moderation action.', 'error');
   }
 }
 

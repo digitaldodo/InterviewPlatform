@@ -18,12 +18,17 @@ public class UserReport {
     private String reportedUserId;
     @Indexed
     private String sessionId;
+    @Indexed
+    private String category;
     private String reason;
     private String details;
     @Indexed
     private String status;
+    private Integer duplicateCount = 0;
+    private Instant lastDuplicateAt;
     private String reviewedByAdminId;
     private String resolutionNotes;
+    private Instant moderatedAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -35,16 +40,24 @@ public class UserReport {
     public void setReportedUserId(String reportedUserId) { this.reportedUserId = reportedUserId; }
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+    public String getCategory() { return category; }
+    public void setCategory(String category) { this.category = category; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
     public String getDetails() { return details; }
     public void setDetails(String details) { this.details = details; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public Integer getDuplicateCount() { return duplicateCount == null ? 0 : duplicateCount; }
+    public void setDuplicateCount(Integer duplicateCount) { this.duplicateCount = duplicateCount == null ? 0 : duplicateCount; }
+    public Instant getLastDuplicateAt() { return lastDuplicateAt; }
+    public void setLastDuplicateAt(Instant lastDuplicateAt) { this.lastDuplicateAt = lastDuplicateAt; }
     public String getReviewedByAdminId() { return reviewedByAdminId; }
     public void setReviewedByAdminId(String reviewedByAdminId) { this.reviewedByAdminId = reviewedByAdminId; }
     public String getResolutionNotes() { return resolutionNotes; }
     public void setResolutionNotes(String resolutionNotes) { this.resolutionNotes = resolutionNotes; }
+    public Instant getModeratedAt() { return moderatedAt; }
+    public void setModeratedAt(Instant moderatedAt) { this.moderatedAt = moderatedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

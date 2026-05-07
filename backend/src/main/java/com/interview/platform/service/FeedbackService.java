@@ -24,15 +24,20 @@ public class FeedbackService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final InterviewReportService interviewReportService;
+    private final ReviewIntegrityService reviewIntegrityService;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, SessionRepository sessionRepository,
-                           UserRepository userRepository, NotificationService notificationService,
-                           InterviewReportService interviewReportService) {
+    public FeedbackService(FeedbackRepository feedbackRepository,
+                           SessionRepository sessionRepository,
+                           UserRepository userRepository,
+                           NotificationService notificationService,
+                           InterviewReportService interviewReportService,
+                           ReviewIntegrityService reviewIntegrityService) {
         this.feedbackRepository = feedbackRepository;
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.interviewReportService = interviewReportService;
+        this.reviewIntegrityService = reviewIntegrityService;
     }
 
     public FeedbackDtos.FeedbackItem submitFeedback(User actor, Feedback feedback) {
@@ -61,14 +66,29 @@ public class FeedbackService {
         if (feedbackRepository.existsBySessionIdAndReviewerId(session.getId(), actor.getId())) {
             throw new IllegalArgumentException("You have already submitted feedback for this session");
         }
-        feedback.setComments(feedback.getComments().trim());
+
+        normalizeStructuredFeedback(feedback);
+        ReviewIntegrityService.ReviewIntegrityResult integrity = reviewIntegrityService.analyze(
+                actor,
+                session,
+                feedback,
+                feedbackRepository.findTop10ByReviewerIdOrderByCreatedAtDesc(actor.getId())
+        );
+
+        feedback.setComments(integrity.normalizedComments());
         feedback.setReviewerId(actor.getId());
         feedback.setInterviewerId(session.getInterviewerId());
         feedback.setTargetUserId(candidateReviewer ? session.getInterviewerId() : session.getCandidateId());
         feedback.setReviewType(candidateReviewer ? "INTERVIEWER_REVIEW" : "SESSION_FEEDBACK");
-        feedback.setPublicReview(candidateReviewer);
-        normalizeStructuredFeedback(feedback);
+        feedback.setPublicReview(candidateReviewer && !integrity.flaggedForModeration());
+        feedback.setFlaggedForModeration(integrity.flaggedForModeration());
+        feedback.setSuspiciousFlags(integrity.suspiciousFlags());
+        feedback.setSuspiciousScore(integrity.suspiciousScore());
+        feedback.setReviewQualityScore(integrity.reviewQualityScore());
+        feedback.setContentFingerprint(integrity.contentFingerprint());
+        feedback.setReviewedWindowStartedAt(integrity.rateLimitWindowStart());
         feedback.setCreatedAt(Instant.now());
+
         Feedback saved = feedbackRepository.save(feedback);
         updateInterviewerRating(feedback.getSessionId());
         try {
@@ -80,14 +100,18 @@ public class FeedbackService {
                 session.getCandidateId(),
                 "FEEDBACK_SUBMITTED",
                 "Feedback received",
-                "New feedback is available for " + session.getTitle() + ".",
+                integrity.flaggedForModeration()
+                        ? "New feedback is awaiting moderation review for " + session.getTitle() + "."
+                        : "New feedback is available for " + session.getTitle() + ".",
                 java.util.Map.of("sessionId", session.getId())
         );
         notificationService.create(
                 session.getInterviewerId(),
                 "FEEDBACK_SUBMITTED",
                 "Feedback received",
-                "New feedback is available for " + session.getTitle() + ".",
+                integrity.flaggedForModeration()
+                        ? "New feedback is awaiting moderation review for " + session.getTitle() + "."
+                        : "New feedback is available for " + session.getTitle() + ".",
                 java.util.Map.of("sessionId", session.getId())
         );
         return toFeedbackItem(saved);
@@ -144,10 +168,9 @@ public class FeedbackService {
                 .filter(item -> ids.contains(item.getSessionId()))
                 .filter(item -> Boolean.TRUE.equals(item.getPublicReview()))
                 .toList();
-        if (all.isEmpty()) return;
-        double avg = all.stream().mapToInt(Feedback::getRating).average().orElse(0.0);
         User interviewer = userRepository.findById(session.getInterviewerId()).orElse(null);
         if (interviewer == null) return;
+        double avg = all.stream().mapToInt(Feedback::getRating).average().orElse(0.0);
         interviewer.setAverageRating(Math.round(avg * 10.0) / 10.0);
         interviewer.setReviewCount(all.size());
         interviewer.setCompletedInterviews((int) sessions.stream()
@@ -204,6 +227,10 @@ public class FeedbackService {
                 feedback.getImprovementAreas(),
                 feedback.getReviewType(),
                 feedback.getPublicReview(),
+                feedback.getFlaggedForModeration(),
+                feedback.getSuspiciousFlags(),
+                feedback.getSuspiciousScore(),
+                feedback.getReviewQualityScore(),
                 feedback.getCreatedAt() == null ? null : feedback.getCreatedAt().toString(),
                 feedback.getTopicFeedback().stream()
                         .map(this::toTopicSummary)
@@ -216,6 +243,7 @@ public class FeedbackService {
                 feedback.getId(),
                 feedback.getRating(),
                 feedback.getComments(),
+                feedback.getReviewQualityScore(),
                 feedback.getCreatedAt() == null ? null : feedback.getCreatedAt().toString(),
                 feedback.getTopicFeedback().stream()
                         .map(this::toTopicSummary)

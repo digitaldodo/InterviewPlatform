@@ -57,6 +57,15 @@ public class User {
     private Boolean acceptingBookings = true;
     private Boolean isVerified = false;
     private Boolean interviewerVerified = false;
+    @Indexed
+    private String verificationRequestStatus = "NONE";
+    private String verificationRequestNotes;
+    private String verificationNotes;
+    private String linkedInUrl;
+    private String verificationCompanyEmail;
+    private Instant verificationRequestedAt;
+    private Instant verificationReviewedAt;
+    private Instant verificationApprovedAt;
     private Boolean publicProfileVisible = true;
     private Boolean accountEnabled = true;
     private String resumeUrl;
@@ -254,6 +263,32 @@ public class User {
 
     public Boolean getInterviewerVerified() { return interviewerVerified; }
     public void setInterviewerVerified(Boolean interviewerVerified) { this.interviewerVerified = interviewerVerified != null && interviewerVerified; }
+
+    public String getVerificationRequestStatus() { return verificationRequestStatus == null ? "NONE" : verificationRequestStatus; }
+    public void setVerificationRequestStatus(String verificationRequestStatus) {
+        this.verificationRequestStatus = trimToNull(verificationRequestStatus) == null ? "NONE" : verificationRequestStatus.trim().toUpperCase();
+    }
+
+    public String getVerificationRequestNotes() { return verificationRequestNotes; }
+    public void setVerificationRequestNotes(String verificationRequestNotes) { this.verificationRequestNotes = trimToNull(verificationRequestNotes); }
+
+    public String getVerificationNotes() { return verificationNotes; }
+    public void setVerificationNotes(String verificationNotes) { this.verificationNotes = trimToNull(verificationNotes); }
+
+    public String getLinkedInUrl() { return linkedInUrl; }
+    public void setLinkedInUrl(String linkedInUrl) { this.linkedInUrl = trimToNull(linkedInUrl); }
+
+    public String getVerificationCompanyEmail() { return verificationCompanyEmail; }
+    public void setVerificationCompanyEmail(String verificationCompanyEmail) { this.verificationCompanyEmail = trimToNull(verificationCompanyEmail); }
+
+    public Instant getVerificationRequestedAt() { return verificationRequestedAt; }
+    public void setVerificationRequestedAt(Instant verificationRequestedAt) { this.verificationRequestedAt = verificationRequestedAt; }
+
+    public Instant getVerificationReviewedAt() { return verificationReviewedAt; }
+    public void setVerificationReviewedAt(Instant verificationReviewedAt) { this.verificationReviewedAt = verificationReviewedAt; }
+
+    public Instant getVerificationApprovedAt() { return verificationApprovedAt; }
+    public void setVerificationApprovedAt(Instant verificationApprovedAt) { this.verificationApprovedAt = verificationApprovedAt; }
 
     public Boolean getPublicProfileVisible() { return publicProfileVisible; }
     public void setPublicProfileVisible(Boolean publicProfileVisible) {

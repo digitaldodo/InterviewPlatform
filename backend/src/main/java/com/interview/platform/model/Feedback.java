@@ -1,6 +1,7 @@
 package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
@@ -11,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 @Document(collection = "feedback")
+@CompoundIndex(name = "reviewer_created_idx", def = "{'reviewerId': 1, 'createdAt': -1}")
 public class Feedback {
     @Id
     private String id;
@@ -32,6 +34,13 @@ public class Feedback {
     private String improvementAreas;
     private String reviewType;
     private Boolean publicReview = false;
+    @Indexed
+    private Boolean flaggedForModeration = false;
+    private List<String> suspiciousFlags = new ArrayList<>();
+    private Integer suspiciousScore = 0;
+    private Double reviewQualityScore = 0.0;
+    private String contentFingerprint;
+    private Instant reviewedWindowStartedAt;
     private String moderationNotes;
     private String moderatedByAdminId;
     private Instant moderatedAt;
@@ -82,6 +91,18 @@ public class Feedback {
     public void setReviewType(String reviewType) { this.reviewType = reviewType; }
     public Boolean getPublicReview() { return publicReview; }
     public void setPublicReview(Boolean publicReview) { this.publicReview = publicReview != null && publicReview; }
+    public Boolean getFlaggedForModeration() { return flaggedForModeration; }
+    public void setFlaggedForModeration(Boolean flaggedForModeration) { this.flaggedForModeration = flaggedForModeration != null && flaggedForModeration; }
+    public List<String> getSuspiciousFlags() { return suspiciousFlags == null ? new ArrayList<>() : suspiciousFlags; }
+    public void setSuspiciousFlags(List<String> suspiciousFlags) { this.suspiciousFlags = suspiciousFlags == null ? new ArrayList<>() : suspiciousFlags; }
+    public Integer getSuspiciousScore() { return suspiciousScore == null ? 0 : suspiciousScore; }
+    public void setSuspiciousScore(Integer suspiciousScore) { this.suspiciousScore = suspiciousScore == null ? 0 : suspiciousScore; }
+    public Double getReviewQualityScore() { return reviewQualityScore == null ? 0.0 : reviewQualityScore; }
+    public void setReviewQualityScore(Double reviewQualityScore) { this.reviewQualityScore = reviewQualityScore == null ? 0.0 : reviewQualityScore; }
+    public String getContentFingerprint() { return contentFingerprint; }
+    public void setContentFingerprint(String contentFingerprint) { this.contentFingerprint = contentFingerprint; }
+    public Instant getReviewedWindowStartedAt() { return reviewedWindowStartedAt; }
+    public void setReviewedWindowStartedAt(Instant reviewedWindowStartedAt) { this.reviewedWindowStartedAt = reviewedWindowStartedAt; }
     public String getModerationNotes() { return moderationNotes; }
     public void setModerationNotes(String moderationNotes) { this.moderationNotes = moderationNotes; }
     public String getModeratedByAdminId() { return moderatedByAdminId; }

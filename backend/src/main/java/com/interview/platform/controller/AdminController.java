@@ -57,16 +57,33 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Review moderation queue fetched", adminService.reviews(visible)));
     }
 
+    @GetMapping("/trust-dashboard")
+    public ResponseEntity<ApiResponse<AdminDtos.TrustDashboardResponse>> trustDashboard() {
+        return ResponseEntity.ok(ApiResponse.success("Trust dashboard fetched", adminService.trustDashboard()));
+    }
+
+    @GetMapping("/audit-logs")
+    public ResponseEntity<ApiResponse<AdminDtos.AuditLogPage>> auditLogs(@RequestParam(required = false) Integer page,
+                                                                         @RequestParam(required = false) Integer size,
+                                                                         @RequestParam(required = false) String entityType,
+                                                                         @RequestParam(required = false) String subjectUserId) {
+        return ResponseEntity.ok(ApiResponse.success("Audit logs fetched", adminService.auditLogs(page, size, entityType, subjectUserId)));
+    }
+
     @PatchMapping("/users/{userId}/moderation")
     public ResponseEntity<ApiResponse<User>> moderateUser(@PathVariable String userId,
-                                                          @RequestBody AdminDtos.UserModerationRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("User moderation updated", adminService.updateUserModeration(userId, request)));
+                                                          @RequestBody AdminDtos.UserModerationRequest request,
+                                                          Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("User moderation updated",
+                adminService.updateUserModeration(userId, request, currentUser(authentication).getId())));
     }
 
     @PatchMapping("/interviewers/{userId}/verify")
     public ResponseEntity<ApiResponse<User>> verifyInterviewer(@PathVariable String userId,
-                                                               @RequestBody AdminDtos.InterviewerVerificationRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Interviewer verification updated", adminService.verifyInterviewer(userId, request)));
+                                                               @RequestBody AdminDtos.InterviewerVerificationRequest request,
+                                                               Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Interviewer verification updated",
+                adminService.verifyInterviewer(userId, request, currentUser(authentication).getId())));
     }
 
     @PatchMapping("/reports/{reportId}")

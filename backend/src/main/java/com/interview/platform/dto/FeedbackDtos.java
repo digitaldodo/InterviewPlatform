@@ -28,6 +28,10 @@ public class FeedbackDtos {
             String improvementAreas,
             String reviewType,
             Boolean publicReview,
+            Boolean flaggedForModeration,
+            List<String> suspiciousFlags,
+            Integer suspiciousScore,
+            Double reviewQualityScore,
             String createdAt,
             List<TopicFeedbackSummary> topicFeedback
     ) {}
@@ -36,6 +40,7 @@ public class FeedbackDtos {
             String id,
             int rating,
             String comments,
+            Double reviewQualityScore,
             String createdAt,
             List<TopicFeedbackSummary> topicFeedback
     ) {}
