@@ -35,9 +35,9 @@ public class CloudinaryImageService {
     private static final long MAX_DOCUMENT_SIZE_BYTES = 10L * 1024 * 1024;
     private static final Set<String> ALLOWED_DOCUMENT_TYPES = Set.of(
             "application/pdf",
-            "application/msword",
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     );
+    private static final Set<String> ALLOWED_DOCUMENT_EXTENSIONS = Set.of(".pdf", ".docx");
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final String cloudName;
@@ -130,9 +130,17 @@ public class CloudinaryImageService {
         if (file.getSize() > MAX_DOCUMENT_SIZE_BYTES) {
             throw new IllegalArgumentException("Choose a resume under 10 MB.");
         }
+        String filename = stringValue(file.getOriginalFilename());
+        String lowerFilename = filename == null ? "" : filename.toLowerCase(Locale.ROOT);
+        boolean hasAllowedExtension = ALLOWED_DOCUMENT_EXTENSIONS.stream().anyMatch(lowerFilename::endsWith);
+        if (!hasAllowedExtension) {
+            throw new IllegalArgumentException("Only PDF and DOCX resumes are supported.");
+        }
         String contentType = stringValue(file.getContentType());
-        if (contentType == null || !ALLOWED_DOCUMENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
-            throw new IllegalArgumentException("Only PDF, DOC, and DOCX resumes are supported.");
+        if (contentType != null && !contentType.isBlank()
+                && !ALLOWED_DOCUMENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))
+                && !"application/octet-stream".equalsIgnoreCase(contentType)) {
+            throw new IllegalArgumentException("Unsupported resume file type. Upload PDF or DOCX.");
         }
     }
 

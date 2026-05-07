@@ -39,6 +39,7 @@ public class UserService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final VerificationOtpRepository verificationOtpRepository;
     private final AccountIdentityService accountIdentityService;
+    private final ResumeIntelligenceService resumeIntelligenceService;
 
     public UserService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -52,7 +53,8 @@ public class UserService {
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        VerificationOtpRepository verificationOtpRepository,
-                       AccountIdentityService accountIdentityService) {
+                       AccountIdentityService accountIdentityService,
+                       ResumeIntelligenceService resumeIntelligenceService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.cloudinaryImageService = cloudinaryImageService;
@@ -66,6 +68,7 @@ public class UserService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.verificationOtpRepository = verificationOtpRepository;
         this.accountIdentityService = accountIdentityService;
+        this.resumeIntelligenceService = resumeIntelligenceService;
     }
 
     public Optional<User> getById(String id) {
@@ -239,7 +242,15 @@ public class UserService {
         user.setResumeFileName(asset.fileName());
         user.setResumeContentType(asset.contentType());
         user.setResumeUpdatedAt(Instant.now());
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        resumeIntelligenceService.processUploadedResume(
+                saved.getId(),
+                file,
+                saved.getResumeUrl(),
+                saved.getResumeContentType(),
+                saved.getResumeFileName()
+        );
+        return saved;
     }
 
     public User removeOwnResume(String userId) {
@@ -249,7 +260,9 @@ public class UserService {
         user.setResumeFileName(null);
         user.setResumeContentType(null);
         user.setResumeUpdatedAt(null);
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        resumeIntelligenceService.clearActiveResume(saved.getId());
+        return saved;
     }
 
     public void changeOwnPassword(String userId, UserDtos.ChangePasswordRequest request) {

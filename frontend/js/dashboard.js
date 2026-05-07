@@ -40,6 +40,11 @@ let prepHub = null;
 let prepHubLoading = false;
 let prepHubSignature = '';
 let prepHubRequestId = 0;
+let resumeIntelligence = null;
+let resumeIntelligenceLoading = false;
+let resumeIntelligenceRequestId = 0;
+let resumeUploadState = 'idle';
+let jdMatchSubmitting = false;
 let adminOverview = null;
 let adminUsers = [];
 let adminSessions = [];
@@ -134,6 +139,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadNotifications(),
     loadAvailabilityManagement(),
     loadPrepHub(),
+    loadResumeIntelligence(),
     loadAdminData(),
   ]);
   startNotificationStream();
@@ -187,6 +193,8 @@ function initUi() {
       : 'Book session';
   renderBookingStep();
   renderResumePanel();
+  renderResumeIntelligencePanel();
+  renderPrepHistoryPanel();
   renderPrepPanels();
   renderAdminPanels();
 }
@@ -239,6 +247,7 @@ function switchWorkspace(workspace) {
   loadAnalyticsSummary();
   loadAdminData();
   loadPrepHub();
+  loadResumeIntelligence();
 }
 
 function primaryWorkspaceAction() {
@@ -3929,13 +3938,25 @@ function renderResumePanel() {
   const hasResume = Boolean(currentUser?.resumeUrl);
   const updatedLabel = currentUser?.resumeUpdatedAt ? fmtDate(currentUser.resumeUpdatedAt) : '';
   const resumeQuickWin = (prepHub?.quickWins || []).find(item => (item?.tags || []).some(tag => String(tag).toLowerCase().includes('resume')));
+  const active = resumeIntelligence?.activeResume || null;
+  const history = Array.isArray(resumeIntelligence?.resumeHistory) ? resumeIntelligence.resumeHistory : [];
+  if (resumeIntelligenceLoading && !active && !history.length) {
+    host.innerHTML = `
+      <div class="panel-head"><h2>Resume manager</h2></div>
+      <div class="prep-skeleton-grid">${skeletonCards(3)}</div>
+    `;
+    return;
+  }
   host.innerHTML = `
     <div class="panel-head"><h2>Resume manager</h2>${hasResume ? `<button class="btn btn-outline btn-sm" type="button" onclick="removeResume()">Remove</button>` : ''}</div>
     <p class="availability-summary-note">Upload a resume once and use it to unlock sharper interview preparation signals.</p>
     ${hasResume ? `
-      <div class="resume-card">
-        <strong>${esc(currentUser.resumeFileName || 'Uploaded resume')}</strong>
-        <span>${esc(currentUser.resumeContentType || 'Document')}</span>
+      <div class="resume-card resume-card-active">
+        <div class="prep-card-head">
+          <strong>${esc((active && active.fileName) || currentUser.resumeFileName || 'Uploaded resume')}</strong>
+          <span class="badge badge-green">${active?.atsScore != null ? `ATS ${clampPercent(active.atsScore)}` : 'Active'}</span>
+        </div>
+        <span>${esc((active && active.contentType) || currentUser.resumeContentType || 'Document')}</span>
         ${updatedLabel ? `<small class="availability-summary-note">Last updated ${esc(updatedLabel)}</small>` : ''}
         <div class="card-actions">
           <a class="btn btn-outline btn-sm" href="${esc(currentUser.resumeUrl)}" target="_blank" rel="noreferrer">Preview</a>
@@ -3943,11 +3964,292 @@ function renderResumePanel() {
       </div>
     ` : '<div class="empty-state"><p>No resume uploaded yet.</p></div>'}
     ${resumeQuickWin ? `<div class="prep-resume-tip"><strong>${esc(resumeQuickWin.title || 'Resume quick win')}</strong><p>${esc(resumeQuickWin.description || '')}</p></div>` : ''}
+    ${history.length > 1 ? `
+      <div class="resume-history-wrap">
+        <strong>Resume versions</strong>
+        <div class="resume-history-list">
+          ${history.slice(0, 6).map(item => `
+            <article class="resume-history-item ${item.active ? 'active' : ''}">
+              <div>
+                <strong>${esc(item.fileName || 'Resume version')}</strong>
+                <small>${esc(item.uploadedAt ? fmtDate(item.uploadedAt) : '')}</small>
+              </div>
+              <div class="card-actions">
+                <span class="badge badge-gray">${item.atsScore == null ? 'ATS -' : `ATS ${clampPercent(item.atsScore)}`}</span>
+                ${item.active ? '<span class="badge badge-green">Active</span>' : `<button class="btn btn-outline btn-sm" type="button" onclick="activateResumeVersion('${esc(item.id || '')}')">Set active</button>`}
+              </div>
+            </article>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
     <div class="form-group" style="margin-top:1rem;">
-      <label for="resume-upload">Upload resume</label>
-      <input id="resume-upload" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="uploadResume(event)" />
+      <label for="resume-upload">${hasResume ? 'Replace resume' : 'Upload resume'}</label>
+      <input id="resume-upload" type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="uploadResume(event)" ${resumeUploadState === 'uploading' ? 'disabled' : ''} />
+      <small class="availability-summary-note">${resumeUploadState === 'uploading' || resumeIntelligenceLoading ? 'Parsing and ATS analysis in progress...' : 'Supported formats: PDF, DOCX (max 10 MB).'}</small>
     </div>
   `;
+}
+
+async function loadResumeIntelligence(force = false) {
+  if (!hasIntervieweeRole()) {
+    resumeIntelligence = null;
+    resumeIntelligenceLoading = false;
+    renderResumePanel();
+    renderResumeIntelligencePanel();
+    renderPrepHistoryPanel();
+    return;
+  }
+  if (!force && resumeIntelligence && !resumeIntelligenceLoading) {
+    renderResumePanel();
+    renderResumeIntelligencePanel();
+    renderPrepHistoryPanel();
+    return;
+  }
+  const requestId = ++resumeIntelligenceRequestId;
+  resumeIntelligenceLoading = true;
+  renderResumePanel();
+  renderResumeIntelligencePanel();
+  renderPrepHistoryPanel();
+  try {
+    const data = await api('/api/prep/intelligence');
+    if (requestId !== resumeIntelligenceRequestId) return;
+    resumeIntelligence = data;
+  } catch {
+    if (requestId !== resumeIntelligenceRequestId) return;
+    resumeIntelligence = null;
+  } finally {
+    if (requestId !== resumeIntelligenceRequestId) return;
+    resumeIntelligenceLoading = false;
+    renderResumePanel();
+    renderResumeIntelligencePanel();
+    renderPrepHistoryPanel();
+  }
+}
+
+function renderResumeIntelligencePanel() {
+  const host = document.getElementById('prep-intelligence-panel');
+  if (!host) return;
+  const active = resumeIntelligence?.activeResume || null;
+  const ats = resumeIntelligence?.atsAnalysis || null;
+  const parsed = resumeIntelligence?.parsedData || null;
+  const latestMatch = resumeIntelligence?.latestJobMatch || null;
+  const readiness = clampPercent(resumeIntelligence?.interviewReadinessScore || 0);
+  const weak = Array.isArray(resumeIntelligence?.weakAreas) ? resumeIntelligence.weakAreas : [];
+  const recommendedTopics = Array.isArray(resumeIntelligence?.recommendedTopics) ? resumeIntelligence.recommendedTopics : [];
+  const skillGap = resumeIntelligence?.skillGapAnalysis || {};
+  const topicReadiness = resumeIntelligence?.topicReadiness || {};
+  const recommendations = Array.isArray(resumeIntelligence?.recommendations) ? resumeIntelligence.recommendations : [];
+  if (resumeIntelligenceLoading && !resumeIntelligence) {
+    host.innerHTML = `<h2>Prep intelligence</h2><div class="prep-skeleton-grid">${skeletonCards(4)}</div>`;
+    return;
+  }
+  if (!active || !ats || !parsed) {
+    host.innerHTML = `
+      <h2>Prep intelligence</h2>
+      ${emptyState('Upload a resume to unlock ATS scoring, JD matching, and personalized prep insights.')}
+    `;
+    return;
+  }
+  host.innerHTML = `
+    <div class="panel-head"><h2>Prep intelligence</h2><span class="badge badge-purple">Readiness ${readiness}%</span></div>
+    <div class="prep-intel-score-grid">
+      ${renderIntelMetric('ATS score', ats.atsScore)}
+      ${renderIntelMetric('Completeness', ats.completenessScore)}
+      ${renderIntelMetric('Keyword strength', ats.keywordStrength)}
+      ${renderIntelMetric('Formatting quality', ats.formattingQualityScore)}
+    </div>
+    <div class="prep-intel-columns">
+      <article class="prep-intel-card">
+        <strong>Skill gap analysis</strong>
+        <div class="prep-mini-bars">
+          ${Object.entries(skillGap).slice(0, 6).map(([label, score]) => renderMiniBar(label, score)).join('') || '<p class="availability-summary-note">No major skill gaps detected.</p>'}
+        </div>
+      </article>
+      <article class="prep-intel-card">
+        <strong>Topic readiness</strong>
+        <div class="prep-mini-bars">
+          ${Object.entries(topicReadiness).slice(0, 8).map(([label, score]) => renderMiniBar(label, score)).join('') || '<p class="availability-summary-note">Topic readiness appears after interviews and resume parsing.</p>'}
+        </div>
+      </article>
+    </div>
+    <article class="prep-intel-card">
+      <div class="prep-card-head"><strong>Job description matching</strong>${latestMatch ? `<span class="badge badge-green">Match ${clampPercent(latestMatch.matchPercent)}%</span>` : '<span class="badge badge-gray">No match yet</span>'}</div>
+      <div class="form-group">
+        <label for="jd-text">Paste job description</label>
+        <textarea id="jd-text" rows="5" placeholder="Paste the JD for your target role..."></textarea>
+      </div>
+      <div class="resume-jd-actions">
+        <button class="btn btn-primary btn-sm" type="button" onclick="runJobDescriptionMatch()" ${jdMatchSubmitting ? 'disabled' : ''}>${jdMatchSubmitting ? 'Analyzing...' : 'Analyze JD match'}</button>
+        <label class="btn btn-outline btn-sm" for="jd-upload">Upload JD file</label>
+        <input id="jd-upload" class="hidden-file-input" type="file" accept=".txt,.md,.pdf,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="uploadJobDescriptionFile(event)" />
+      </div>
+      ${latestMatch ? `
+        <div class="prep-jd-result-grid">
+          <div><strong>Coverage</strong><p>${clampPercent(latestMatch.keywordCoverage)}%</p></div>
+          <div><strong>Matched keywords</strong><p>${(latestMatch.matchedKeywords || []).slice(0, 6).map(esc).join(', ') || 'None'}</p></div>
+          <div><strong>Missing keywords</strong><p>${(latestMatch.missingKeywords || []).slice(0, 6).map(esc).join(', ') || 'None'}</p></div>
+          <div><strong>Summary</strong><p>${esc(latestMatch.summary || '')}</p></div>
+        </div>
+      ` : ''}
+    </article>
+    <div class="prep-intel-columns">
+      <article class="prep-intel-card">
+        <strong>Weak areas</strong>
+        <div class="tag-row">${weak.length ? weak.slice(0, 8).map(item => `<span>${esc(item)}</span>`).join('') : '<span>No weak areas flagged</span>'}</div>
+      </article>
+      <article class="prep-intel-card">
+        <strong>Recommended topics</strong>
+        <div class="tag-row">${recommendedTopics.length ? recommendedTopics.slice(0, 10).map(item => `<span>${esc(item)}</span>`).join('') : '<span>Recommendations pending</span>'}</div>
+      </article>
+    </div>
+    ${recommendations.length ? `
+      <div class="prep-intel-reco-grid">
+        ${recommendations.slice(0, 4).map(card => `
+          <article class="prep-intel-card">
+            <div class="prep-card-head">
+              <strong>${esc(card.title || 'Recommendation')}</strong>
+              <span class="badge badge-${String(card.priority || '').toLowerCase() === 'high' ? 'red' : 'gray'}">${esc(card.priority || 'Medium')}</span>
+            </div>
+            <p>${esc(card.description || '')}</p>
+            <div class="tag-row subtle">${(card.actions || []).slice(0, 4).map(action => `<span>${esc(action)}</span>`).join('')}</div>
+          </article>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderPrepHistoryPanel() {
+  const host = document.getElementById('prep-history-panel');
+  if (!host) return;
+  if (resumeIntelligenceLoading && !resumeIntelligence) {
+    host.innerHTML = `<h2>Progress and history</h2><div class="prep-skeleton-grid">${skeletonCards(3)}</div>`;
+    return;
+  }
+  const atsTrend = Array.isArray(resumeIntelligence?.atsScoreTrend) ? resumeIntelligence.atsScoreTrend : [];
+  const readinessTrend = Array.isArray(resumeIntelligence?.readinessTrend) ? resumeIntelligence.readinessTrend : [];
+  const roadmap = Array.isArray(resumeIntelligence?.roadmap) ? resumeIntelligence.roadmap : [];
+  const completedModules = Number(resumeIntelligence?.completedPrepModules || 0);
+  host.innerHTML = `
+    <div class="panel-head"><h2>Progress and history</h2><span class="badge badge-gray">${completedModules} modules</span></div>
+    <div class="prep-history-columns">
+      <article class="prep-intel-card">
+        <strong>ATS trend</strong>
+        <div class="prep-mini-bars">
+          ${atsTrend.length ? atsTrend.map(point => renderMiniBar(point.label || 'Point', point.value || 0)).join('') : '<p class="availability-summary-note">No ATS history yet.</p>'}
+        </div>
+      </article>
+      <article class="prep-intel-card">
+        <strong>Readiness trend</strong>
+        <div class="prep-mini-bars">
+          ${readinessTrend.length ? readinessTrend.map(point => renderMiniBar(point.label || 'Point', point.value || 0)).join('') : '<p class="availability-summary-note">No readiness history yet.</p>'}
+        </div>
+      </article>
+    </div>
+    <article class="prep-intel-card">
+      <strong>Preparation roadmap</strong>
+      <div class="prep-roadmap-list">
+        ${roadmap.length ? roadmap.slice(0, 5).map(step => `
+          <div class="prep-roadmap-item">
+            <div class="prep-card-head">
+              <strong>${esc(`${step.sequence || '-'} · ${step.title || 'Step'}`)}</strong>
+              <span class="badge badge-gray">${esc(step.difficulty || 'Medium')}</span>
+            </div>
+            <p>${esc(step.description || '')}</p>
+            <div class="tag-row subtle">
+              <span>${esc(step.status || 'Queued')}</span>
+              ${(step.focusAreas || []).slice(0, 4).map(item => `<span>${esc(item)}</span>`).join('')}
+            </div>
+          </div>
+        `).join('') : '<p class="availability-summary-note">Roadmap appears after resume intelligence is available.</p>'}
+      </div>
+    </article>
+  `;
+}
+
+function renderMiniBar(label, value) {
+  const score = clampPercent(value);
+  return `
+    <div class="prep-mini-bar">
+      <span>${esc(label || '')}</span>
+      <div><i style="width:${score}%"></i></div>
+      <strong>${score}%</strong>
+    </div>
+  `;
+}
+
+function renderIntelMetric(label, value) {
+  const score = clampPercent(value);
+  return `
+    <article class="prep-intel-card prep-intel-metric">
+      <strong>${esc(label)}</strong>
+      <span>${score}%</span>
+      <div class="prep-progress"><i style="width:${score}%"></i></div>
+    </article>
+  `;
+}
+
+async function activateResumeVersion(resumeVersionId) {
+  if (!resumeVersionId) return;
+  try {
+    const data = await api('/api/prep/resume/activate', {
+      method: 'POST',
+      body: JSON.stringify({ resumeVersionId }),
+    });
+    resumeIntelligence = data;
+    toast('Active resume updated.', 'success');
+    renderResumePanel();
+    renderResumeIntelligencePanel();
+    renderPrepHistoryPanel();
+  } catch (err) {
+    toast(err.message || 'Could not activate resume version.', 'error');
+  }
+}
+
+async function runJobDescriptionMatch() {
+  const textarea = document.getElementById('jd-text');
+  const jobDescription = textarea?.value?.trim();
+  if (!jobDescription) {
+    toast('Paste a job description first.', 'error');
+    return;
+  }
+  jdMatchSubmitting = true;
+  renderResumeIntelligencePanel();
+  try {
+    await api('/api/prep/jd/match', {
+      method: 'POST',
+      body: JSON.stringify({ jobDescription, roleHint: currentUser?.currentRole || '' }),
+    });
+    toast('JD match generated.', 'success');
+    await loadResumeIntelligence(true);
+  } catch (err) {
+    toast(err.message || 'Could not run JD match.', 'error');
+  } finally {
+    jdMatchSubmitting = false;
+    renderResumeIntelligencePanel();
+  }
+}
+
+async function uploadJobDescriptionFile(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('roleHint', currentUser?.currentRole || '');
+  jdMatchSubmitting = true;
+  renderResumeIntelligencePanel();
+  try {
+    await api('/api/prep/jd/match-upload', { method: 'POST', body: formData });
+    toast('JD file analyzed successfully.', 'success');
+    await loadResumeIntelligence(true);
+  } catch (err) {
+    toast(err.message || 'Could not analyze JD file.', 'error');
+  } finally {
+    jdMatchSubmitting = false;
+    if (event?.target) event.target.value = '';
+    renderResumeIntelligencePanel();
+  }
 }
 
 function renderPrepPanels() {
@@ -4086,15 +4388,22 @@ async function uploadResume(event) {
   if (!file) return;
   const formData = new FormData();
   formData.append('file', file);
+  resumeUploadState = 'uploading';
+  renderResumePanel();
   try {
     currentUser = await api('/api/users/me/resume', { method: 'POST', body: formData });
     localStorage.setItem('ip_user', JSON.stringify(currentUser));
     toast('Resume uploaded.', 'success');
     prepHubSignature = '';
+    resumeIntelligence = null;
     renderResumePanel();
-    loadPrepHub();
+    await Promise.all([loadPrepHub(), loadResumeIntelligence(true)]);
   } catch (err) {
     toast(err.message || 'Could not upload resume.', 'error');
+  } finally {
+    resumeUploadState = 'idle';
+    renderResumePanel();
+    if (event?.target) event.target.value = '';
   }
 }
 
@@ -4104,8 +4413,9 @@ async function removeResume() {
     localStorage.setItem('ip_user', JSON.stringify(currentUser));
     toast('Resume removed.', 'success');
     prepHubSignature = '';
+    resumeIntelligence = null;
     renderResumePanel();
-    loadPrepHub();
+    await Promise.all([loadPrepHub(), loadResumeIntelligence(true)]);
   } catch (err) {
     toast(err.message || 'Could not remove resume.', 'error');
   }

@@ -66,6 +66,9 @@ class UserServiceTest {
     @Mock
     private VerificationOtpRepository verificationOtpRepository;
 
+    @Mock
+    private ResumeIntelligenceService resumeIntelligenceService;
+
     private UserService userService;
 
     @BeforeEach
@@ -83,7 +86,8 @@ class UserServiceTest {
                 refreshTokenRepository,
                 passwordResetTokenRepository,
                 verificationOtpRepository,
-                new AccountIdentityService(userRepository)
+                new AccountIdentityService(userRepository),
+                resumeIntelligenceService
         );
     }
 
