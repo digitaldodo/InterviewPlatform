@@ -43,7 +43,7 @@ public class UserPrincipal implements UserDetails {
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return true; }
+    public boolean isEnabled() { return !Boolean.FALSE.equals(user.getAccountEnabled()); }
 
     private String normalizeRoleAuthority(String role) {
         if (role == null || role.isBlank()) {

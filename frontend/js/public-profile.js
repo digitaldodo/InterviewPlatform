@@ -1,0 +1,258 @@
+const API_BASE = window.INTERVIEW_API_BASE;
+
+window.addEventListener('DOMContentLoaded', loadPublicProfile);
+
+async function loadPublicProfile() {
+  const root = document.getElementById('public-profile-root');
+  const username = resolveUsername();
+  if (!username) {
+    root.innerHTML = renderMessage('Interviewer profile not found.');
+    return;
+  }
+  try {
+    const profile = await api(`/api/interviewers/public/${encodeURIComponent(username)}`);
+    setDocumentMeta(profile);
+    root.innerHTML = renderProfile(profile);
+  } catch (err) {
+    root.innerHTML = renderMessage(err.message || 'Could not load interviewer profile.');
+  }
+}
+
+function resolveUsername() {
+  const url = new URL(window.location.href);
+  const query = url.searchParams.get('username');
+  if (query) return query;
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  if (hash) return hash;
+  const parts = url.pathname.split('/').filter(Boolean);
+  return parts[parts.length - 1] === 'interviewer.html' ? '' : parts[parts.length - 1];
+}
+
+async function api(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  const payload = await readPayload(res);
+  if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
+  return payload?.data ?? payload;
+}
+
+async function readPayload(res) {
+  const text = await res.text();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return { message: text }; }
+}
+
+function renderProfile(profile) {
+  const topics = Array.isArray(profile.interviewTopics) ? profile.interviewTopics : [];
+  const skills = Array.isArray(profile.skills) ? profile.skills : [];
+  const domains = Array.isArray(profile.preferredDomains) ? profile.preferredDomains : [];
+  const durations = Array.isArray(profile.sessionDurations) ? profile.sessionDurations : [];
+  const reviews = Array.isArray(profile.reviews) ? profile.reviews : [];
+  const slots = Array.isArray(profile.availabilityPreview) ? profile.availabilityPreview : [];
+  const reliability = Number(profile.reliabilityScore || 0);
+  const publicUrl = window.location.href;
+  return `
+    <section class="public-profile-hero">
+      <div class="public-profile-hero-head">
+        <a class="btn btn-outline btn-sm" href="../index.html">Back to InterviewPrep</a>
+        <div class="card-actions">
+          <button class="btn btn-outline btn-sm" type="button" onclick="copyProfileLink()">Copy link</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="shareProfileLink()">Share</button>
+        </div>
+      </div>
+      <article class="public-profile-card">
+        <div class="public-profile-head">
+          ${avatarMarkup(profile)}
+          <div class="public-profile-copy">
+            <div class="profile-status-row">
+              <span class="badge badge-purple">${esc(profile.currentRole || 'Interview coach')}</span>
+              ${profile.interviewerVerified ? '<span class="badge badge-green">Verified interviewer</span>' : ''}
+              <span class="badge badge-gray">${esc(String(reliability.toFixed(1)))}% reliability</span>
+            </div>
+            <h1>${esc(profile.displayName || profile.username || 'Interviewer')}</h1>
+            <p>${esc(profile.company || 'InterviewPrep marketplace')}</p>
+            <div class="stats-inline">
+              <span>${ratingStars(profile.averageRating)} ${esc(String(profile.averageRating || 0))}/5</span>
+              <span>${esc(String(profile.reviewCount || reviews.length || 0))} reviews</span>
+              <span>${esc(String(profile.completedInterviews || 0))} completed sessions</span>
+            </div>
+            <div class="stats-inline">
+              <span>${esc(String(profile.yearsExperience || 0))}+ years experience</span>
+              <span>${esc(profile.language || 'Language flexible')}</span>
+              <span>${esc(profile.timeZone || 'Timezone flexible')}</span>
+              ${durations.length ? `<span>${esc(durations.join(' / '))} min</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <p class="public-profile-bio">${esc(profile.bio || 'No bio available yet.')}</p>
+        ${skills.length ? `<div class="tag-row">${skills.map(skill => `<span>${esc(skill)}</span>`).join('')}</div>` : ''}
+        ${topics.length ? `<div class="tag-row subtle">${topics.map(topic => `<span>${esc(topic)}</span>`).join('')}</div>` : ''}
+        ${domains.length ? `<div class="public-profile-detail-grid">
+          <div class="public-profile-detail-card">
+            <strong>Focus areas</strong>
+            <div class="tag-row subtle">${domains.map(domain => `<span>${esc(domain)}</span>`).join('')}</div>
+          </div>
+          <div class="public-profile-detail-card">
+            <strong>Profile link</strong>
+            <p><a href="${esc(publicUrl)}" target="_blank" rel="noreferrer">${esc(publicUrl)}</a></p>
+          </div>
+        </div>` : ''}
+      </article>
+    </section>
+    <section class="content-grid public-profile-sections">
+      <article class="panel">
+        <div class="panel-head"><h2>Availability preview</h2><a class="btn btn-primary btn-sm" href="./dashboard.html#/booking">Book session</a></div>
+        <div class="public-slot-list">
+          ${slots.map(slot => `
+            <div class="public-slot-card">
+              <strong>${esc(formatDate(slot))}</strong>
+              <span>${esc(formatTimeWindow(slot))}</span>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No upcoming availability published yet.</p></div>'}
+        </div>
+      </article>
+      <article class="panel">
+        <div class="panel-head"><h2>Trust signals</h2><span class="badge badge-gray">${esc(String(profile.completedSessions || profile.completedInterviews || 0))} total sessions</span></div>
+        <div class="public-profile-detail-grid">
+          <div class="public-profile-detail-card">
+            <strong>Review quality</strong>
+            <p>${esc(String(profile.reviewCount || reviews.length || 0))} public reviews with an average rating of ${esc(String(profile.averageRating || 0))}/5.</p>
+          </div>
+          <div class="public-profile-detail-card">
+            <strong>Reliability</strong>
+            <p>${esc(String(reliability.toFixed(1)))}% session reliability based on completed versus cancelled sessions.</p>
+          </div>
+          <div class="public-profile-detail-card">
+            <strong>Booking status</strong>
+            <p>${profile.acceptingBookings === false ? 'Currently not accepting new bookings.' : 'Open to new booking requests.'}</p>
+          </div>
+        </div>
+      </article>
+    </section>
+    <section class="panel public-review-section">
+      <div class="panel-head"><h2>Interviewer reviews</h2><span class="badge badge-gray">${esc(String(profile.reviewCount || reviews.length || 0))} reviews</span></div>
+      <div class="public-review-grid">
+        ${reviews.map(renderReviewCard).join('') || '<div class="empty-state"><p>No public reviews yet.</p></div>'}
+      </div>
+    </section>
+  `;
+}
+
+function renderReviewCard(review) {
+  const topics = Array.isArray(review.topicSummaries) ? review.topicSummaries : [];
+  return `
+    <article class="public-review-card">
+      <div class="public-review-head">
+        <div class="public-review-identity">
+          ${review.reviewerAvatarUrl ? `<img class="avatar avatar-compact" src="${esc(review.reviewerAvatarUrl)}" alt="${esc(review.reviewerName || 'Reviewer')}" />` : '<div class="avatar avatar-compact">R</div>'}
+          <div>
+            <strong>${esc(review.reviewerName || 'InterviewPrep member')}</strong>
+            <small>${esc(review.sessionTitle || 'Interview session')} • ${esc(formatDate(review.createdAt))}</small>
+          </div>
+        </div>
+        <span class="badge badge-green">${ratingStars(review.rating)} ${esc(String(review.rating || 0))}/5</span>
+      </div>
+      <p>${esc(review.comments || 'No written review provided.')}</p>
+      ${topics.length ? `<div class="tag-row subtle">${topics.map(topic => `<span>${esc(topic.topic)}${topic.rating ? ` · ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
+    </article>
+  `;
+}
+
+function setDocumentMeta(profile) {
+  const title = `${profile.displayName || profile.username || 'Interviewer'} • InterviewPrep`;
+  document.title = title;
+  const description = `${profile.displayName || profile.username || 'Interviewer'}${profile.currentRole ? `, ${profile.currentRole}` : ''}${profile.company ? ` at ${profile.company}` : ''}. Book InterviewPrep practice sessions and review live availability.`;
+  const meta = document.querySelector('meta[name="description"]');
+  if (meta) meta.setAttribute('content', description);
+
+  let script = document.getElementById('profile-structured-data');
+  if (!script) {
+    script = document.createElement('script');
+    script.type = 'application/ld+json';
+    script.id = 'profile-structured-data';
+    document.head.appendChild(script);
+  }
+  script.textContent = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'Person',
+    name: profile.displayName || profile.username || 'Interviewer',
+    jobTitle: profile.currentRole || undefined,
+    worksFor: profile.company ? { '@type': 'Organization', name: profile.company } : undefined,
+    image: profile.avatarUrl || undefined,
+    description,
+    url: window.location.href,
+  });
+}
+
+async function copyProfileLink() {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    toast('Profile link copied.');
+  } catch {
+    toast('Copy failed on this device.');
+  }
+}
+
+async function shareProfileLink() {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: document.title, url: window.location.href });
+      return;
+    } catch {}
+  }
+  await copyProfileLink();
+}
+
+function renderMessage(message) {
+  return `<div class="panel"><p>${esc(message)}</p></div>`;
+}
+
+function avatarMarkup(profile) {
+  const name = profile.displayName || profile.username || 'Interviewer';
+  if (profile.avatarUrl) {
+    return `<img class="avatar large" src="${esc(profile.avatarUrl)}" alt="${esc(name)}" />`;
+  }
+  return `<div class="avatar large">${esc(name.charAt(0).toUpperCase())}</div>`;
+}
+
+function ratingStars(value) {
+  const count = Math.max(0, Math.min(5, Math.round(Number(value || 0))));
+  return '★'.repeat(count) + '☆'.repeat(Math.max(0, 5 - count));
+}
+
+function formatDate(value) {
+  if (!value) return 'Flexible';
+  try {
+    return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return String(value);
+  }
+}
+
+function formatTimeWindow(value) {
+  if (!value) return 'Flexible timing';
+  try {
+    return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return String(value);
+  }
+}
+
+function toast(message) {
+  const root = document.getElementById('public-profile-toast') || (() => {
+    const div = document.createElement('div');
+    div.id = 'public-profile-toast';
+    div.className = 'toast public-profile-toast';
+    document.body.appendChild(div);
+    return div;
+  })();
+  root.textContent = message;
+  root.classList.add('show');
+  clearTimeout(root.__timer);
+  root.__timer = setTimeout(() => root.classList.remove('show'), 2200);
+}
+
+function esc(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}

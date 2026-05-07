@@ -17,9 +17,17 @@ public class UserDtos {
         private String bio;
         private List<String> skills;
         private String language;
+        private String timeZone;
         private List<String> preferredDomains;
+        private List<String> interviewTopics;
+        private List<Integer> sessionDurations;
         private String experienceLevel;
+        private String company;
+        private String currentRole;
+        private Integer yearsExperience;
         private List<String> availability;
+        private Boolean acceptingBookings;
+        private Boolean publicProfileVisible;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
@@ -35,12 +43,28 @@ public class UserDtos {
         public void setSkills(List<String> skills) { this.skills = skills; }
         public String getLanguage() { return language; }
         public void setLanguage(String language) { this.language = language; }
+        public String getTimeZone() { return timeZone; }
+        public void setTimeZone(String timeZone) { this.timeZone = timeZone; }
         public List<String> getPreferredDomains() { return preferredDomains; }
         public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains; }
+        public List<String> getInterviewTopics() { return interviewTopics; }
+        public void setInterviewTopics(List<String> interviewTopics) { this.interviewTopics = interviewTopics; }
+        public List<Integer> getSessionDurations() { return sessionDurations; }
+        public void setSessionDurations(List<Integer> sessionDurations) { this.sessionDurations = sessionDurations; }
         public String getExperienceLevel() { return experienceLevel; }
         public void setExperienceLevel(String experienceLevel) { this.experienceLevel = experienceLevel; }
+        public String getCompany() { return company; }
+        public void setCompany(String company) { this.company = company; }
+        public String getCurrentRole() { return currentRole; }
+        public void setCurrentRole(String currentRole) { this.currentRole = currentRole; }
+        public Integer getYearsExperience() { return yearsExperience; }
+        public void setYearsExperience(Integer yearsExperience) { this.yearsExperience = yearsExperience; }
         public List<String> getAvailability() { return availability; }
         public void setAvailability(List<String> availability) { this.availability = availability; }
+        public Boolean getAcceptingBookings() { return acceptingBookings; }
+        public void setAcceptingBookings(Boolean acceptingBookings) { this.acceptingBookings = acceptingBookings; }
+        public Boolean getPublicProfileVisible() { return publicProfileVisible; }
+        public void setPublicProfileVisible(Boolean publicProfileVisible) { this.publicProfileVisible = publicProfileVisible; }
     }
 
     public static class AddRoleRequest {

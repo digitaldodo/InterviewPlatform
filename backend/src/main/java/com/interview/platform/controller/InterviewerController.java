@@ -3,9 +3,13 @@ package com.interview.platform.controller;
 import com.interview.platform.api.ApiResponse;
 import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.dto.InterviewerFilterOptions;
+import com.interview.platform.dto.MarketplaceDtos;
 import com.interview.platform.dto.PageResponse;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.User;
+import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.InterviewerService;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,7 +26,7 @@ public class InterviewerController {
     }
 
     @GetMapping("/search")
-    public ResponseEntity<ApiResponse<PageResponse<User>>> search(
+    public ResponseEntity<ApiResponse<PageResponse<MarketplaceDtos.InterviewerCard>>> search(
             @RequestParam(required = false) String q,
             @RequestParam(required = false) String expertise,
             @RequestParam(required = false) String company,
@@ -35,13 +39,18 @@ public class InterviewerController {
             @RequestParam(required = false) String language,
             @RequestParam(required = false) String experienceLevel,
             @RequestParam(required = false) Boolean verified,
+            @RequestParam(required = false) String timezone,
+            @RequestParam(required = false) String topic,
+            @RequestParam(required = false) Boolean availableToday,
+            @RequestParam(required = false) Integer sessionDuration,
+            @RequestParam(required = false) String viewerTimezone,
             @RequestParam(required = false) String excludeUserId,
             @RequestParam(defaultValue = "top-rated") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "9") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Interviewers fetched",
-                interviewerService.search(q, expertise, company, role, minExperience, maxExperience, minRating, available, free, language, experienceLevel, verified, excludeUserId, sort, page, size)));
+                interviewerService.search(q, expertise, company, role, minExperience, maxExperience, minRating, available, free, language, experienceLevel, verified, timezone, topic, availableToday, sessionDuration, viewerTimezone, excludeUserId, sort, page, size)));
     }
 
     @GetMapping("/filter-options")
@@ -50,7 +59,7 @@ public class InterviewerController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<User>> get(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<MarketplaceDtos.InterviewerCard>> get(@PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.success("Interviewer fetched", interviewerService.getById(id)));
     }
 
@@ -68,17 +77,40 @@ public class InterviewerController {
     }
 
     @GetMapping("/top-rated")
-    public ResponseEntity<ApiResponse<List<User>>> topRated(@RequestParam(required = false) String excludeUserId) {
+    public ResponseEntity<ApiResponse<List<MarketplaceDtos.InterviewerCard>>> topRated(@RequestParam(required = false) String excludeUserId) {
         return ResponseEntity.ok(ApiResponse.success("Top-rated interviewers fetched", interviewerService.topRated(excludeUserId)));
     }
 
     @GetMapping("/recommended")
-    public ResponseEntity<ApiResponse<List<User>>> recommended(@RequestParam(required = false) String intervieweeId) {
+    public ResponseEntity<ApiResponse<List<MarketplaceDtos.InterviewerCard>>> recommended(@RequestParam(required = false) String intervieweeId) {
         return ResponseEntity.ok(ApiResponse.success("Recommended interviewers fetched", interviewerService.recommended(intervieweeId)));
     }
 
+    @GetMapping("/autocomplete")
+    public ResponseEntity<ApiResponse<List<MarketplaceDtos.SearchSuggestion>>> autocomplete(@RequestParam String q) {
+        return ResponseEntity.ok(ApiResponse.success("Autocomplete suggestions fetched", interviewerService.autocomplete(q)));
+    }
+
+    @GetMapping("/public/{username}")
+    public ResponseEntity<ApiResponse<MarketplaceDtos.PublicInterviewerProfile>> publicProfile(@PathVariable String username) {
+        return ResponseEntity.ok(ApiResponse.success("Public interviewer profile fetched", interviewerService.publicProfile(username)));
+    }
+
     @PostMapping("/{id}/favorite")
-    public ResponseEntity<ApiResponse<User>> favorite(@PathVariable String id, @RequestBody Map<String, String> request) {
-        return ResponseEntity.ok(ApiResponse.success("Favorite updated", interviewerService.toggleFavorite(request.get("userId"), id)));
+    public ResponseEntity<ApiResponse<User>> favorite(@PathVariable String id,
+                                                      @RequestBody(required = false) Map<String, String> request,
+                                                      Authentication authentication) {
+        User current = currentUser(authentication);
+        if (request != null && request.get("userId") != null && !current.getId().equals(request.get("userId"))) {
+            throw new UnauthorizedException("You can only update your own favorites");
+        }
+        return ResponseEntity.ok(ApiResponse.success("Favorite updated", interviewerService.toggleFavorite(current.getId(), id)));
+    }
+
+    private User currentUser(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal principal)) {
+            throw new UnauthorizedException("Authentication required");
+        }
+        return principal.getUser();
     }
 }

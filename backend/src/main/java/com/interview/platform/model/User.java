@@ -42,15 +42,27 @@ public class User {
     private String bio;
     private String avatarUrl;
     private String language;
+    private String timeZone;
     private List<String> preferredDomains = new ArrayList<>();
+    private List<String> interviewTopics = new ArrayList<>();
+    private List<Integer> sessionDurations = new ArrayList<>();
     private String experienceLevel;
     private Integer yearsExperience = 0;
     private Integer completedInterviews = 0;
+    private Integer completedSessions = 0;
+    private Integer cancelledSessions = 0;
     private Double averageRating = 0.0;
     private Integer reviewCount = 0;
     private Integer priceCents = 0;
     private Boolean acceptingBookings = true;
     private Boolean isVerified = false;
+    private Boolean interviewerVerified = false;
+    private Boolean publicProfileVisible = true;
+    private Boolean accountEnabled = true;
+    private String resumeUrl;
+    private String resumeFileName;
+    private String resumeContentType;
+    private Instant resumeUpdatedAt;
     private Instant createdAt;
     private Instant lastLogin;
 
@@ -187,8 +199,28 @@ public class User {
     public String getLanguage() { return language; }
     public void setLanguage(String language) { this.language = language; }
 
+    public String getTimeZone() { return timeZone; }
+    public void setTimeZone(String timeZone) { this.timeZone = trimToNull(timeZone); }
+
     public List<String> getPreferredDomains() { return preferredDomains; }
     public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains == null ? new ArrayList<>() : preferredDomains; }
+
+    public List<String> getInterviewTopics() { return interviewTopics; }
+    public void setInterviewTopics(List<String> interviewTopics) { this.interviewTopics = interviewTopics == null ? new ArrayList<>() : interviewTopics; }
+
+    public List<Integer> getSessionDurations() { return sessionDurations == null ? new ArrayList<>() : sessionDurations; }
+    public void setSessionDurations(List<Integer> sessionDurations) {
+        if (sessionDurations == null) {
+            this.sessionDurations = new ArrayList<>();
+            return;
+        }
+        List<Integer> normalized = new ArrayList<>();
+        for (Integer value : sessionDurations) {
+            if (value == null || value <= 0) continue;
+            if (!normalized.contains(value)) normalized.add(value);
+        }
+        this.sessionDurations = normalized;
+    }
 
     public String getExperienceLevel() { return experienceLevel; }
     public void setExperienceLevel(String experienceLevel) { this.experienceLevel = experienceLevel; }
@@ -198,6 +230,12 @@ public class User {
 
     public Integer getCompletedInterviews() { return completedInterviews; }
     public void setCompletedInterviews(Integer completedInterviews) { this.completedInterviews = completedInterviews == null ? 0 : completedInterviews; }
+
+    public Integer getCompletedSessions() { return completedSessions; }
+    public void setCompletedSessions(Integer completedSessions) { this.completedSessions = completedSessions == null ? 0 : completedSessions; }
+
+    public Integer getCancelledSessions() { return cancelledSessions; }
+    public void setCancelledSessions(Integer cancelledSessions) { this.cancelledSessions = cancelledSessions == null ? 0 : cancelledSessions; }
 
     public Double getAverageRating() { return averageRating; }
     public void setAverageRating(Double averageRating) { this.averageRating = averageRating == null ? 0.0 : averageRating; }
@@ -214,6 +252,29 @@ public class User {
     public Boolean getIsVerified() { return isVerified; }
     public void setIsVerified(Boolean verified) { isVerified = verified != null && verified; }
 
+    public Boolean getInterviewerVerified() { return interviewerVerified; }
+    public void setInterviewerVerified(Boolean interviewerVerified) { this.interviewerVerified = interviewerVerified != null && interviewerVerified; }
+
+    public Boolean getPublicProfileVisible() { return publicProfileVisible; }
+    public void setPublicProfileVisible(Boolean publicProfileVisible) {
+        this.publicProfileVisible = publicProfileVisible == null || publicProfileVisible;
+    }
+
+    public Boolean getAccountEnabled() { return accountEnabled; }
+    public void setAccountEnabled(Boolean accountEnabled) { this.accountEnabled = accountEnabled == null || accountEnabled; }
+
+    public String getResumeUrl() { return resumeUrl; }
+    public void setResumeUrl(String resumeUrl) { this.resumeUrl = trimToNull(resumeUrl); }
+
+    public String getResumeFileName() { return resumeFileName; }
+    public void setResumeFileName(String resumeFileName) { this.resumeFileName = trimToNull(resumeFileName); }
+
+    public String getResumeContentType() { return resumeContentType; }
+    public void setResumeContentType(String resumeContentType) { this.resumeContentType = trimToNull(resumeContentType); }
+
+    public Instant getResumeUpdatedAt() { return resumeUpdatedAt; }
+    public void setResumeUpdatedAt(Instant resumeUpdatedAt) { this.resumeUpdatedAt = resumeUpdatedAt; }
+
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 
@@ -227,11 +288,20 @@ public class User {
 
     private String normalizeRole(String value) {
         if (value == null || value.isBlank()) return null;
-        return value.trim().toUpperCase();
+        String normalized = value.trim().toUpperCase();
+        return switch (normalized) {
+            case "INTERVIEWER", "INTERVIEWEE", "ADMIN" -> normalized;
+            default -> normalized;
+        };
     }
 
     private String normalizeUsernameKey(String value) {
         if (value == null || value.isBlank()) return null;
         return value.trim().toLowerCase();
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim();
     }
 }

@@ -3,10 +3,13 @@ package com.interview.platform.service;
 import com.interview.platform.dto.PageResponse;
 import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.dto.InterviewerFilterOptions;
+import com.interview.platform.dto.MarketplaceDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.model.Feedback;
 import com.interview.platform.model.User;
+import com.interview.platform.repository.FeedbackRepository;
+import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -14,110 +17,235 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
 public class InterviewerService {
+    private static final int SEARCH_WINDOW_SIZE = 120;
+
     private final MongoTemplate mongoTemplate;
     private final UserRepository userRepository;
+    private final SessionRepository sessionRepository;
+    private final FeedbackRepository feedbackRepository;
     private final AvailabilitySlotService availabilitySlotService;
 
-    public InterviewerService(MongoTemplate mongoTemplate, UserRepository userRepository, AvailabilitySlotService availabilitySlotService) {
+    public InterviewerService(MongoTemplate mongoTemplate,
+                              UserRepository userRepository,
+                              SessionRepository sessionRepository,
+                              FeedbackRepository feedbackRepository,
+                              AvailabilitySlotService availabilitySlotService) {
         this.mongoTemplate = mongoTemplate;
         this.userRepository = userRepository;
+        this.sessionRepository = sessionRepository;
+        this.feedbackRepository = feedbackRepository;
         this.availabilitySlotService = availabilitySlotService;
     }
 
-    public PageResponse<User> search(String q, String expertise, String company, String role, Integer minExperience,
-                                     Integer maxExperience, Double minRating, Boolean available, Boolean free, String language,
-                                     String experienceLevel, Boolean verified, String excludeUserId, String sort, int page, int size) {
+    public PageResponse<MarketplaceDtos.InterviewerCard> search(String q, String expertise, String company, String role, Integer minExperience,
+                                                                Integer maxExperience, Double minRating, Boolean available, Boolean free, String language,
+                                                                String experienceLevel, Boolean verified, String timezone, String topic,
+                                                                Boolean availableToday, Integer sessionDuration, String viewerTimezone, String excludeUserId,
+                                                                String sort, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 24));
         Query query = new Query();
         List<Criteria> criteria = new ArrayList<>();
         criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
+        criteria.add(Criteria.where("accountEnabled").ne(false));
         if (!isBlank(excludeUserId)) criteria.add(Criteria.where("id").ne(excludeUserId.trim()));
         if (!isBlank(q)) {
             Pattern pattern = Pattern.compile(Pattern.quote(q.trim()), Pattern.CASE_INSENSITIVE);
             criteria.add(new Criteria().orOperator(
                     Criteria.where("username").regex(pattern),
+                    Criteria.where("displayName").regex(pattern),
                     Criteria.where("company").regex(pattern),
                     Criteria.where("currentRole").regex(pattern),
                     Criteria.where("bio").regex(pattern),
-                    Criteria.where("skills").regex(pattern)
+                    Criteria.where("skills").regex(pattern),
+                    Criteria.where("interviewTopics").regex(pattern)
             ));
         }
         if (!isBlank(expertise)) criteria.add(Criteria.where("skills").regex(Pattern.compile(Pattern.quote(expertise.trim()), Pattern.CASE_INSENSITIVE)));
         if (!isBlank(company)) criteria.add(Criteria.where("company").regex(Pattern.compile(Pattern.quote(company.trim()), Pattern.CASE_INSENSITIVE)));
         if (!isBlank(role)) criteria.add(Criteria.where("currentRole").regex(Pattern.compile(Pattern.quote(role.trim()), Pattern.CASE_INSENSITIVE)));
         if (!isBlank(language)) criteria.add(Criteria.where("language").regex(Pattern.compile(Pattern.quote(language.trim()), Pattern.CASE_INSENSITIVE)));
+        if (!isBlank(timezone)) criteria.add(Criteria.where("timeZone").regex(Pattern.compile(Pattern.quote(timezone.trim()), Pattern.CASE_INSENSITIVE)));
+        if (!isBlank(topic)) {
+            Pattern topicPattern = Pattern.compile(Pattern.quote(topic.trim()), Pattern.CASE_INSENSITIVE);
+            criteria.add(new Criteria().orOperator(
+                    Criteria.where("interviewTopics").regex(topicPattern),
+                    Criteria.where("skills").regex(topicPattern),
+                    Criteria.where("preferredDomains").regex(topicPattern)
+            ));
+        }
         if (minExperience != null) criteria.add(Criteria.where("yearsExperience").gte(minExperience));
         if (maxExperience != null) criteria.add(Criteria.where("yearsExperience").lte(maxExperience));
         if (minRating != null) criteria.add(Criteria.where("averageRating").gte(minRating));
         if (Boolean.TRUE.equals(available)) criteria.add(Criteria.where("acceptingBookings").is(true));
         if (Boolean.TRUE.equals(free)) criteria.add(new Criteria().orOperator(Criteria.where("priceCents").is(0), Criteria.where("priceCents").exists(false)));
         if (!isBlank(experienceLevel)) criteria.add(Criteria.where("experienceLevel").regex(Pattern.compile(Pattern.quote(experienceLevel.trim()), Pattern.CASE_INSENSITIVE)));
-        if (Boolean.TRUE.equals(verified)) criteria.add(Criteria.where("isVerified").is(true));
+        if (Boolean.TRUE.equals(verified)) criteria.add(Criteria.where("interviewerVerified").is(true));
         query.addCriteria(new Criteria().andOperator(criteria.toArray(new Criteria[0])));
 
-        long total = mongoTemplate.count(query, User.class);
-        query.with(sortBy(sort));
-        query.skip((long) safePage * safeSize).limit(safeSize);
-        return new PageResponse<>(mongoTemplate.find(query, User.class), total, safePage, safeSize);
+        List<User> filtered = mongoTemplate.find(query, User.class).stream()
+                .filter(user -> matchesDynamicFilters(user, availableToday, sessionDuration))
+                .sorted(sortComparator(sort, viewerTimezone))
+                .toList();
+        int fromIndex = Math.min(safePage * safeSize, filtered.size());
+        int toIndex = Math.min(fromIndex + safeSize, filtered.size());
+        return new PageResponse<>(
+                filtered.subList(fromIndex, toIndex).stream().map(this::toInterviewerCard).toList(),
+                filtered.size(),
+                safePage,
+                safeSize
+        );
     }
 
-    public User getById(String id) {
+    public MarketplaceDtos.InterviewerCard getById(String id) {
         User user = userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
         if (!user.hasRole("INTERVIEWER")) {
             throw new ResourceNotFoundException("Interviewer not found");
         }
-        return user;
+        return toInterviewerCard(user);
     }
 
-    public List<User> topRated(String excludeUserId) {
+    public List<MarketplaceDtos.InterviewerCard> topRated(String excludeUserId) {
         return userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER").stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
                 .filter(user -> isBlank(excludeUserId) || !excludeUserId.equals(user.getId()))
                 .limit(6)
+                .map(this::toInterviewerCard)
                 .toList();
     }
 
-    public List<User> recommended(String intervieweeId) {
+    public List<MarketplaceDtos.InterviewerCard> recommended(String intervieweeId) {
         List<User> candidates = userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
                 .filter(user -> isBlank(intervieweeId) || !intervieweeId.equals(user.getId()))
-                .limit(60)
+                .limit(SEARCH_WINDOW_SIZE)
                 .toList();
         if (isBlank(intervieweeId)) {
-            return candidates.stream().limit(8).toList();
+            return candidates.stream().limit(8).map(this::toInterviewerCard).toList();
         }
         User interviewee = userRepository.findById(intervieweeId).orElse(null);
         if (interviewee == null) {
-            return candidates.stream().limit(8).toList();
+            return candidates.stream().limit(8).map(this::toInterviewerCard).toList();
         }
+        Set<String> historyTopics = interviewHistoryTopics(intervieweeId);
         return candidates.stream()
-                .sorted(Comparator.comparingDouble(user -> -recommendationScore(interviewee, user)))
+                .sorted(Comparator.comparingDouble(user -> -recommendationScore(interviewee, historyTopics, user)))
                 .limit(8)
+                .map(this::toInterviewerCard)
                 .toList();
     }
 
-    private double recommendationScore(User interviewee, User interviewer) {
+    public List<MarketplaceDtos.SearchSuggestion> autocomplete(String q) {
+        String query = normalizeOption(q).toLowerCase(Locale.ROOT);
+        if (query.isBlank()) {
+            return List.of();
+        }
+        List<MarketplaceDtos.SearchSuggestion> suggestions = new ArrayList<>();
+        filterOptions().getExpertise().stream()
+                .filter(item -> item.toLowerCase(Locale.ROOT).contains(query))
+                .limit(4)
+                .forEach(item -> suggestions.add(new MarketplaceDtos.SearchSuggestion(item, "expertise")));
+        filterOptions().getCompanies().stream()
+                .filter(item -> item.toLowerCase(Locale.ROOT).contains(query))
+                .limit(3)
+                .forEach(item -> suggestions.add(new MarketplaceDtos.SearchSuggestion(item, "company")));
+        filterOptions().getTopics().stream()
+                .filter(item -> item.toLowerCase(Locale.ROOT).contains(query))
+                .limit(4)
+                .forEach(item -> suggestions.add(new MarketplaceDtos.SearchSuggestion(item, "topic")));
+        userRepository.findByRole("INTERVIEWER").stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .map(this::interviewerIdentity)
+                .filter(item -> item.toLowerCase(Locale.ROOT).contains(query))
+                .distinct()
+                .limit(4)
+                .forEach(item -> suggestions.add(new MarketplaceDtos.SearchSuggestion(item, "interviewer")));
+        return suggestions.stream().distinct().limit(12).toList();
+    }
+
+    public MarketplaceDtos.PublicInterviewerProfile publicProfile(String username) {
+        String normalized = normalizeOption(username).toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            throw new ResourceNotFoundException("Interviewer not found");
+        }
+        User interviewer = userRepository.findByUsernameKey(normalized)
+                .or(() -> userRepository.findFirstByUsernamePattern("^" + Pattern.quote(normalized) + "$"))
+                .filter(this::hasRole)
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        if (!interviewer.hasRole("INTERVIEWER") || Boolean.FALSE.equals(interviewer.getPublicProfileVisible()) || Boolean.FALSE.equals(interviewer.getAccountEnabled())) {
+            throw new ResourceNotFoundException("Interviewer not found");
+        }
+        List<String> availabilityPreview = availabilitySlotService.availableSlotStartTimes(interviewer.getId(), 7).stream()
+                .limit(6)
+                .toList();
+        List<MarketplaceDtos.PublicReview> reviews = feedbackRepository.findByInterviewerIdAndPublicReviewTrueOrderByCreatedAtDesc(interviewer.getId()).stream()
+                .limit(6)
+                .map(this::toPublicReview)
+                .toList();
+        return new MarketplaceDtos.PublicInterviewerProfile(
+                interviewer.getId(),
+                interviewer.getUsername(),
+                interviewer.getDisplayName(),
+                interviewer.getAvatarUrl(),
+                interviewer.getCompany(),
+                interviewer.getCurrentRole(),
+                interviewer.getBio(),
+                interviewer.getLanguage(),
+                interviewer.getTimeZone(),
+                interviewer.getSkills(),
+                interviewer.getInterviewTopics(),
+                interviewer.getPreferredDomains(),
+                interviewer.getSessionDurations(),
+                interviewer.getExperienceLevel(),
+                interviewer.getYearsExperience(),
+                interviewer.getAverageRating(),
+                interviewer.getReviewCount(),
+                interviewer.getCompletedInterviews(),
+                interviewer.getCompletedSessions(),
+                interviewer.getCancelledSessions(),
+                reliabilityScore(interviewer),
+                interviewer.getInterviewerVerified(),
+                interviewer.getAcceptingBookings(),
+                availabilityPreview,
+                reviews
+        );
+    }
+
+    private double recommendationScore(User interviewee, Set<String> historyTopics, User interviewer) {
         double rating = interviewer.getAverageRating() == null ? 0.0 : interviewer.getAverageRating();
         int completed = interviewer.getCompletedInterviews() == null ? 0 : interviewer.getCompletedInterviews();
         int years = interviewer.getYearsExperience() == null ? 0 : interviewer.getYearsExperience();
         int overlap = preferenceOverlap(interviewee, interviewer);
-        double languageBonus = !isBlank(interviewee.getLanguage()) && !isBlank(interviewer.getLanguage())
-                && interviewer.getLanguage().toLowerCase(Locale.ROOT).contains(interviewee.getLanguage().toLowerCase(Locale.ROOT))
-                ? 2.5
-                : 0.0;
-        return (overlap * 6.0) + languageBonus + (rating * 2.0) + (Math.min(30, completed) * 0.15) + (Math.min(15, years) * 0.2);
+        int topicCompatibility = topicCompatibility(interviewee, historyTopics, interviewer);
+        double languageBonus = languageMatchScore(interviewee, interviewer);
+        double timezoneBonus = timezoneMatchScore(interviewee, interviewer);
+        double availabilityBonus = availabilityOverlapScore(interviewee, interviewer);
+        double verificationBonus = Boolean.TRUE.equals(interviewer.getInterviewerVerified()) ? 2.0 : 0.0;
+        return (overlap * 5.5)
+                + (topicCompatibility * 3.5)
+                + languageBonus
+                + timezoneBonus
+                + availabilityBonus
+                + verificationBonus
+                + (rating * 2.0)
+                + (Math.min(30, completed) * 0.15)
+                + (Math.min(15, years) * 0.2);
     }
 
     private int preferenceOverlap(User interviewee, User interviewer) {
         List<String> preferred = interviewee.getPreferredDomains();
-        List<String> skills = interviewer.getSkills();
+        List<String> skills = combinedInterviewerTopics(interviewer);
         if (preferred == null || preferred.isEmpty() || skills == null || skills.isEmpty()) {
             return 0;
         }
@@ -147,19 +275,31 @@ public class InterviewerService {
 
     public InterviewerFilterOptions filterOptions() {
         Query query = new Query(interviewerCriteria());
-        query.fields().include("skills").include("language").include("company").include("experienceLevel");
+        query.fields()
+                .include("skills")
+                .include("language")
+                .include("company")
+                .include("experienceLevel")
+                .include("timeZone")
+                .include("interviewTopics")
+                .include("sessionDurations");
         List<User> interviewers = mongoTemplate.find(query, User.class);
         return new InterviewerFilterOptions(
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getSkills()).stream()).toList()),
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getLanguage()).stream()).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getCompany).toList()),
-                uniqueNormalized(interviewers.stream().map(User::getExperienceLevel).toList())
+                uniqueNormalized(interviewers.stream().map(User::getExperienceLevel).toList()),
+                uniqueNormalized(interviewers.stream().map(User::getTimeZone).toList()),
+                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getInterviewTopics()).stream()).toList()),
+                uniqueIntegers(interviewers.stream().flatMap(user -> user.getSessionDurations().stream()).toList())
         );
     }
 
     public User toggleFavorite(String userId, String interviewerId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        getById(interviewerId);
+        userRepository.findById(interviewerId)
+                .filter(this::hasRole)
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
         List<String> favorites = new ArrayList<>(user.getFavoriteInterviewerIds());
         if (favorites.contains(interviewerId)) {
             favorites.remove(interviewerId);
@@ -170,18 +310,36 @@ public class InterviewerService {
         return userRepository.save(user);
     }
 
-    private Sort sortBy(String sort) {
+    private Comparator<User> sortComparator(String sort, String viewerTimezone) {
         String normalized = sort == null ? "top-rated" : sort.toLowerCase(Locale.ROOT);
         return switch (normalized) {
-            case "most-experienced" -> Sort.by(Sort.Direction.DESC, "yearsExperience");
-            case "most-active" -> Sort.by(Sort.Direction.DESC, "completedInterviews");
-            case "newest" -> Sort.by(Sort.Direction.DESC, "createdAt");
-            default -> Sort.by(Sort.Direction.DESC, "averageRating");
+            case "most-experienced" -> Comparator.comparing(User::getYearsExperience, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(defaultMarketplaceComparator(viewerTimezone));
+            case "most-active" -> Comparator.comparing(User::getCompletedInterviews, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(defaultMarketplaceComparator(viewerTimezone));
+            case "newest" -> Comparator.comparing(User::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                    .thenComparing(defaultMarketplaceComparator(viewerTimezone));
+            default -> defaultMarketplaceComparator(viewerTimezone);
         };
     }
 
+    private Comparator<User> defaultMarketplaceComparator(String viewerTimezone) {
+        Map<String, Integer> availabilityScoreCache = new HashMap<>();
+        return Comparator
+                .comparingInt((User user) -> timezoneAffinityScore(user, viewerTimezone)).reversed()
+                .thenComparing(Comparator.comparingInt((User user) -> verificationScore(user)).reversed())
+                .thenComparing(Comparator.comparingInt((User user) -> bookingAvailabilityScore(user, availabilityScoreCache)).reversed())
+                .thenComparing(User::getAverageRating, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(User::getCompletedInterviews, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(User::getYearsExperience, Comparator.nullsLast(Comparator.reverseOrder()))
+                .thenComparing(User::getReviewCount, Comparator.nullsLast(Comparator.reverseOrder()));
+    }
+
     private Criteria interviewerCriteria() {
-        return new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER"));
+        return new Criteria().andOperator(
+                new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")),
+                Criteria.where("accountEnabled").ne(false)
+        );
     }
 
     private List<String> splitOptions(List<String> values) {
@@ -214,11 +372,248 @@ public class InterviewerService {
                 .toList();
     }
 
+    private List<Integer> uniqueIntegers(List<Integer> values) {
+        return values.stream()
+                .filter(value -> value != null && value > 0)
+                .distinct()
+                .sorted()
+                .toList();
+    }
+
+    private boolean matchesDynamicFilters(User user, Boolean availableToday, Integer sessionDuration) {
+        if (Boolean.TRUE.equals(availableToday) && !hasMatchingSlot(user, 1, sessionDuration)) {
+            return false;
+        }
+        if (sessionDuration != null && !supportsDuration(user, sessionDuration) && !hasMatchingSlot(user, 14, sessionDuration)) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean hasMatchingSlot(User user, int days, Integer sessionDuration) {
+        return availabilitySlotService.generatedSlotResponses(user.getId(), days, false).stream()
+                .anyMatch(slot -> sessionDuration == null || sessionDuration.equals(slot.getDurationMinutes()));
+    }
+
+    private boolean supportsDuration(User user, Integer sessionDuration) {
+        return sessionDuration == null || user.getSessionDurations().isEmpty() || user.getSessionDurations().contains(sessionDuration);
+    }
+
+    private Set<String> interviewHistoryTopics(String intervieweeId) {
+        Set<String> topics = new HashSet<>();
+        sessionRepository.findByCandidateId(intervieweeId).forEach(session ->
+                session.getTopics().forEach(topic -> {
+                    String normalized = normalizeOption(topic).toLowerCase(Locale.ROOT);
+                    if (!normalized.isBlank()) topics.add(normalized);
+                }));
+        return topics;
+    }
+
+    private int topicCompatibility(User interviewee, Set<String> historyTopics, User interviewer) {
+        List<String> targets = new ArrayList<>();
+        targets.addAll(splitOptions(interviewee.getPreferredDomains()));
+        targets.addAll(splitOptions(interviewee.getInterviewTopics()));
+        Set<String> normalizedTarget = new HashSet<>();
+        targets.forEach(topic -> {
+            String normalized = normalizeOption(topic).toLowerCase(Locale.ROOT);
+            if (!normalized.isBlank()) normalizedTarget.add(normalized);
+        });
+        normalizedTarget.addAll(historyTopics);
+        if (normalizedTarget.isEmpty()) {
+            return 0;
+        }
+        int score = 0;
+        for (String interviewerTopic : combinedInterviewerTopics(interviewer)) {
+            String normalized = interviewerTopic.toLowerCase(Locale.ROOT);
+            if (normalizedTarget.stream().anyMatch(normalized::contains) || normalizedTarget.contains(normalized)) {
+                score += 1;
+            }
+        }
+        return score;
+    }
+
+    private double languageMatchScore(User interviewee, User interviewer) {
+        Set<String> intervieweeLanguages = normalizedOptionSet(interviewee.getLanguage());
+        Set<String> interviewerLanguages = normalizedOptionSet(interviewer.getLanguage());
+        if (intervieweeLanguages.isEmpty() || interviewerLanguages.isEmpty()) {
+            return 0.0;
+        }
+        long overlap = intervieweeLanguages.stream().filter(interviewerLanguages::contains).count();
+        return overlap * 1.8;
+    }
+
+    private double timezoneMatchScore(User interviewee, User interviewer) {
+        String intervieweeZone = normalizeOption(interviewee.getTimeZone()).toLowerCase(Locale.ROOT);
+        String interviewerZone = normalizeOption(interviewer.getTimeZone()).toLowerCase(Locale.ROOT);
+        if (intervieweeZone.isBlank() || interviewerZone.isBlank()) {
+            return 0.0;
+        }
+        if (intervieweeZone.equals(interviewerZone)) {
+            return 3.0;
+        }
+        return interviewerZone.contains(intervieweeZone) || intervieweeZone.contains(interviewerZone) ? 1.25 : 0.0;
+    }
+
+    private double availabilityOverlapScore(User interviewee, User interviewer) {
+        List<String> preferences = splitOptions(interviewee.getAvailability());
+        if (preferences.isEmpty()) {
+            return hasMatchingSlot(interviewer, 3, null) ? 1.0 : 0.0;
+        }
+        List<AvailabilityDtos.GeneratedSlotResponse> slots = availabilitySlotService.generatedSlotResponses(interviewer.getId(), 5, false);
+        if (slots.isEmpty()) {
+            return 0.0;
+        }
+        String joined = String.join(" ", preferences).toLowerCase(Locale.ROOT);
+        boolean weekdays = joined.contains("weekday");
+        boolean weekends = joined.contains("weekend");
+        if (!weekdays && !weekends) {
+            return 1.5;
+        }
+        long matches = slots.stream()
+                .filter(slot -> slot.getStartTime() != null)
+                .filter(slot -> {
+                    try {
+                        java.time.DayOfWeek day = java.time.OffsetDateTime.parse(slot.getStartTime()).getDayOfWeek();
+                        return weekdays ? day.getValue() <= 5 : day.getValue() >= 6;
+                    } catch (RuntimeException ex) {
+                        return false;
+                    }
+                })
+                .count();
+        return matches > 0 ? 2.0 : 0.0;
+    }
+
+    private List<String> combinedInterviewerTopics(User interviewer) {
+        List<String> combined = new ArrayList<>();
+        combined.addAll(splitOptions(interviewer.getSkills()));
+        combined.addAll(splitOptions(interviewer.getInterviewTopics()));
+        return combined.stream().distinct().toList();
+    }
+
+    private Set<String> normalizedOptionSet(String values) {
+        return splitOptions(values).stream()
+                .map(value -> normalizeOption(value).toLowerCase(Locale.ROOT))
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    private String interviewerIdentity(User user) {
+        return !isBlank(user.getDisplayName()) ? user.getDisplayName() : user.getUsername();
+    }
+
+    private String reviewerName(String reviewerId) {
+        return userRepository.findById(reviewerId)
+                .map(this::interviewerIdentity)
+                .orElse("InterviewPrep member");
+    }
+
+    private String reviewerAvatar(String reviewerId) {
+        return userRepository.findById(reviewerId).map(User::getAvatarUrl).orElse(null);
+    }
+
+    private String sessionTitle(String sessionId) {
+        return sessionRepository.findById(sessionId).map(session -> session.getTitle() == null ? "Interview session" : session.getTitle()).orElse("Interview session");
+    }
+
+    private MarketplaceDtos.PublicReview toPublicReview(Feedback review) {
+        return new MarketplaceDtos.PublicReview(
+                review.getId(),
+                reviewerName(review.getReviewerId()),
+                reviewerAvatar(review.getReviewerId()),
+                review.getRating(),
+                review.getComments(),
+                sessionTitle(review.getSessionId()),
+                review.getCreatedAt() == null ? null : review.getCreatedAt().toString(),
+                review.getTopicFeedback().stream()
+                        .map(topic -> new MarketplaceDtos.TopicReviewSummary(
+                                topic.getTopic(),
+                                topic.getRating(),
+                                topic.getSkillRatings(),
+                                topic.getStrengths(),
+                                topic.getImprovementAreas(),
+                                topic.getComments()
+                        ))
+                        .toList()
+        );
+    }
+
+    private MarketplaceDtos.InterviewerCard toInterviewerCard(User user) {
+        return new MarketplaceDtos.InterviewerCard(
+                user.getId(),
+                user.getUsername(),
+                user.getDisplayName(),
+                user.getAvatarUrl(),
+                user.getCompany(),
+                user.getCurrentRole(),
+                user.getBio(),
+                user.getLanguage(),
+                user.getTimeZone(),
+                user.getSkills(),
+                user.getInterviewTopics(),
+                user.getPreferredDomains(),
+                user.getSessionDurations(),
+                user.getExperienceLevel(),
+                user.getYearsExperience(),
+                user.getAverageRating(),
+                user.getReviewCount(),
+                user.getCompletedInterviews(),
+                user.getCompletedSessions(),
+                user.getCancelledSessions(),
+                reliabilityScore(user),
+                user.getInterviewerVerified(),
+                user.getAcceptingBookings(),
+                user.getPublicProfileVisible()
+        );
+    }
+
+    private double reliabilityScore(User user) {
+        int completed = user.getCompletedSessions() == null ? 0 : user.getCompletedSessions();
+        int cancelled = user.getCancelledSessions() == null ? 0 : user.getCancelledSessions();
+        int total = completed + cancelled;
+        if (total <= 0) {
+            return 100.0;
+        }
+        return Math.round((completed * 1000.0) / total) / 10.0;
+    }
+
+    private int timezoneAffinityScore(User user, String viewerTimezone) {
+        String viewer = normalizeOption(viewerTimezone).toLowerCase(Locale.ROOT);
+        if (viewer.isBlank()) {
+            return 0;
+        }
+        String interviewerZone = normalizeOption(user.getTimeZone()).toLowerCase(Locale.ROOT);
+        if (interviewerZone.isBlank()) {
+            return 0;
+        }
+        if (viewer.equals(interviewerZone)) {
+            return 3;
+        }
+        if (interviewerZone.contains(viewer) || viewer.contains(interviewerZone)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    private int verificationScore(User user) {
+        return Boolean.TRUE.equals(user.getInterviewerVerified()) ? 1 : 0;
+    }
+
+    private int bookingAvailabilityScore(User user, Map<String, Integer> cache) {
+        if (!Boolean.TRUE.equals(user.getAcceptingBookings())) {
+            return 0;
+        }
+        return cache.computeIfAbsent(user.getId(), ignored -> hasMatchingSlot(user, 7, null) ? 2 : 1);
+    }
+
     private String normalizeOption(String value) {
         if (value == null) {
             return "";
         }
         return value.trim().replaceAll("\\s+", " ");
+    }
+
+    private boolean hasRole(User user) {
+        return user != null && user.hasRole("INTERVIEWER");
     }
 
     private boolean isBlank(String value) {

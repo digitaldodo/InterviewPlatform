@@ -88,6 +88,19 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success("Profile image uploaded successfully", updated));
     }
 
+    @PostMapping(value = "/me/resume", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<User>> uploadOwnResume(Authentication authentication,
+                                                             @RequestParam("file") MultipartFile file) {
+        User updated = userService.uploadOwnResume(currentUser(authentication).getId(), file);
+        return ResponseEntity.ok(ApiResponse.success("Resume uploaded successfully", updated));
+    }
+
+    @DeleteMapping("/me/resume")
+    public ResponseEntity<ApiResponse<User>> removeOwnResume(Authentication authentication) {
+        User updated = userService.removeOwnResume(currentUser(authentication).getId());
+        return ResponseEntity.ok(ApiResponse.success("Resume removed successfully", updated));
+    }
+
     @PostMapping("/me/change-password")
     public ResponseEntity<ApiResponse<Void>> changeOwnPassword(Authentication authentication,
                                                                @Valid @RequestBody UserDtos.ChangePasswordRequest request) {

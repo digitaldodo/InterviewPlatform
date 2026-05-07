@@ -19,14 +19,20 @@
       <img class="brand-logo brand-logo-sidebar" src="../assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1503" height="236" />
     </div>
     <nav class="nav-menu" aria-label="Dashboard navigation">
-      <button class="nav-link active" data-section="overview" onclick="showSection('overview')">Home</button>
-      <button class="nav-link interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
-      <button class="nav-link interviewee-workspace" data-section="booking" onclick="showSection('booking')">Booking</button>
-      <button class="nav-link" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
-      <button class="nav-link" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
-      <button class="nav-link" data-section="notifications" onclick="showSection('notifications')">Notifications</button>
-      <button class="nav-link" data-section="profile" onclick="showSection('profile')">Profile</button>
-      <button class="nav-link interviewer-only" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
+      <button class="nav-link active user-workspace" data-section="overview" onclick="showSection('overview')">Home</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="booking" onclick="showSection('booking')">Booking</button>
+      <button class="nav-link user-workspace" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
+      <button class="nav-link user-workspace" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="career" onclick="showSection('career')">Prep</button>
+      <button class="nav-link user-workspace" data-section="notifications" onclick="showSection('notifications')">Notifications</button>
+      <button class="nav-link user-workspace" data-section="profile" onclick="showSection('profile')">Profile</button>
+      <button class="nav-link interviewer-only user-workspace" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
+      <button class="nav-link admin-only" data-section="admin-overview" onclick="showSection('admin-overview')">Control Center</button>
+      <button class="nav-link admin-only" data-section="admin-users" onclick="showSection('admin-users')">Users</button>
+      <button class="nav-link admin-only" data-section="admin-sessions" onclick="showSection('admin-sessions')">Sessions</button>
+      <button class="nav-link admin-only" data-section="admin-reports" onclick="showSection('admin-reports')">Moderation</button>
+      <button class="nav-link admin-only" data-section="profile" onclick="showSection('profile')">Profile</button>
     </nav>
     <div class="sidebar-bottom">
       <label class="workspace-switcher" id="workspace-switcher-wrap">
@@ -55,7 +61,7 @@
       <div class="notification-panel" id="notification-panel"></div>
     </header>
 
-    <section id="section-overview" class="dashboard-section">
+    <section id="section-overview" class="dashboard-section user-workspace-section">
       <div class="stats-grid">
         <div class="stat-card"><span id="stat-upcoming">0</span><p>Upcoming</p></div>
         <div class="stat-card"><span id="stat-completed">0</span><p>Completed</p></div>
@@ -86,12 +92,17 @@
       </div>
     </section>
 
-    <section id="section-discover" class="dashboard-section" hidden>
+    <section id="section-discover" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Discovery</p><h1>Find your next interviewer</h1></div>
       </div>
-      <div class="filter-panel">
+      <div class="filter-toolbar">
+        <button class="btn btn-outline btn-sm filter-toggle-btn" type="button" onclick="toggleDiscoverFilters()">Filters</button>
+        <div class="filter-chip-row" id="active-filter-chips"></div>
+      </div>
+      <div class="filter-panel" id="discover-filter-panel">
         <input id="search-q" type="search" placeholder="Search by skill, company, role, or name" />
+        <div class="search-suggestions" id="search-suggestions" hidden></div>
         <select id="filter-sort">
           <option value="top-rated">Top rated</option>
           <option value="most-experienced">Most experienced</option>
@@ -101,6 +112,8 @@
         <input id="filter-expertise" type="hidden" aria-label="Expertise" />
         <input id="filter-company" type="hidden" aria-label="Company" />
         <input id="filter-language" type="hidden" aria-label="Language" />
+        <input id="filter-timezone" type="hidden" aria-label="Timezone" />
+        <input id="filter-topic" type="hidden" aria-label="Interview topic" />
         <select id="filter-years">
           <option value="">Any experience</option>
           <option value="1">1+ years</option>
@@ -121,7 +134,17 @@
           <option value="4.5">4.5+ stars</option>
           <option value="5">5 stars</option>
         </select>
+        <select id="filter-duration">
+          <option value="">Any duration</option>
+          <option value="15">15 min</option>
+          <option value="30">30 min</option>
+          <option value="45">45 min</option>
+          <option value="60">60 min</option>
+          <option value="90">90 min</option>
+          <option value="120">120 min</option>
+        </select>
         <label class="check-row"><input id="filter-available" type="checkbox" /> Available</label>
+        <label class="check-row"><input id="filter-available-today" type="checkbox" /> Available today</label>
         <label class="check-row"><input id="filter-free" type="checkbox" /> Free</label>
         <label class="check-row"><input id="filter-verified" type="checkbox" /> Verified</label>
       </div>
@@ -133,7 +156,7 @@
       </div>
     </section>
 
-    <section id="section-booking" class="dashboard-section" hidden>
+    <section id="section-booking" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Booking</p><h1>Schedule a mock interview</h1></div>
       </div>
@@ -150,7 +173,7 @@
       </div>
     </section>
 
-    <section id="section-sessions" class="dashboard-section" hidden>
+    <section id="section-sessions" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Sessions</p><h1>Upcoming and history</h1></div>
         <button class="btn btn-outline" onclick="loadSessions()">Refresh</button>
@@ -168,7 +191,7 @@
       <div id="sessions-list" class="session-grid"></div>
     </section>
 
-    <section id="section-meeting" class="dashboard-section" hidden>
+    <section id="section-meeting" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Meeting Room</p><h1 id="meeting-page-heading">Interview room</h1></div>
         <div class="topbar-actions">
@@ -210,7 +233,7 @@
       </div>
     </section>
 
-    <section id="section-feedback" class="dashboard-section" hidden>
+    <section id="section-feedback" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Feedback</p><h1>Structured review</h1></div>
       </div>
@@ -241,7 +264,7 @@
       </div>
     </section>
 
-    <section id="section-interviewer" class="dashboard-section" hidden>
+    <section id="section-interviewer" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Interviewer</p><h1>Requests, calendar, and ratings</h1></div>
       </div>
@@ -252,7 +275,7 @@
       <section class="panel" id="availability-management-panel"></section>
     </section>
 
-    <section id="section-notifications" class="dashboard-section" hidden>
+    <section id="section-notifications" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
         <div><p class="eyebrow">Notifications</p><h1>Updates and reminders</h1></div>
         <button class="btn btn-outline" onclick="loadNotifications()">Refresh</button>
@@ -260,6 +283,74 @@
       <section class="panel">
         <div id="notifications-list"></div>
       </section>
+    </section>
+
+    <section id="section-career" class="dashboard-section user-workspace-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Career Prep</p><h1>Resume and interview prep hub</h1></div>
+      </div>
+      <div class="content-grid">
+        <section class="panel" id="resume-panel"></section>
+        <section class="panel" id="prep-resources-panel"></section>
+      </div>
+      <section class="panel" id="prep-tracks-panel"></section>
+    </section>
+
+    <section id="section-admin-overview" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Console</p><h1>Platform control center</h1></div>
+        <button class="btn btn-outline" onclick="loadAdminData(true)">Refresh</button>
+      </div>
+      <div class="stats-grid admin-stats-grid" id="admin-metrics-grid"></div>
+      <div class="content-grid admin-content-grid">
+        <section class="panel admin-panel" id="admin-analytics-panel"></section>
+        <section class="panel admin-panel" id="admin-live-sessions-panel"></section>
+      </div>
+    </section>
+
+    <section id="section-admin-users" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Users</p><h1>User and interviewer management</h1></div>
+      </div>
+      <div class="session-filter-row">
+        <input class="input" id="admin-user-search" placeholder="Search users" oninput="renderAdminUsers()" />
+        <select class="input" id="admin-user-role" onchange="renderAdminUsers()">
+          <option value="">All roles</option>
+          <option value="INTERVIEWEE">Interviewee</option>
+          <option value="INTERVIEWER">Interviewer</option>
+          <option value="ADMIN">Admin</option>
+        </select>
+        <select class="input" id="admin-user-enabled" onchange="renderAdminUsers()">
+          <option value="">All access states</option>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </select>
+      </div>
+      <section class="panel admin-panel" id="admin-users-panel"></section>
+    </section>
+
+    <section id="section-admin-sessions" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Sessions</p><h1>Session monitoring</h1></div>
+      </div>
+      <div class="session-filter-row">
+        <input class="input" id="admin-session-search" placeholder="Search sessions, topics, participants" oninput="renderAdminSessions()" />
+        <select class="input" id="admin-session-status" onchange="renderAdminSessions()">
+          <option value="">All statuses</option>
+          <option value="PENDING">Pending</option>
+          <option value="CONFIRMED">Confirmed</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
+      </div>
+      <section class="panel admin-panel" id="admin-sessions-panel"></section>
+    </section>
+
+    <section id="section-admin-reports" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Moderation</p><h1>Reports and trust queue</h1></div>
+      </div>
+      <section class="panel admin-panel" id="admin-reports-panel"></section>
     </section>
 
     <section id="section-profile" class="dashboard-section" hidden>
@@ -281,7 +372,7 @@
     <button data-section="overview" onclick="showSection('overview')">Home</button>
     <button data-section="sessions" onclick="showSection('sessions')">Sessions</button>
     <button class="interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
-    <button data-section="feedback" onclick="showSection('feedback')">Feedback</button>
+    <button class="interviewee-workspace" data-section="career" onclick="showSection('career')">Prep</button>
     <button data-section="profile" onclick="showSection('profile')">Profile</button>
   </nav>
 

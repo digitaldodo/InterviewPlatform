@@ -169,14 +169,38 @@ public class UserService {
         if (request.getLanguage() != null) {
             user.setLanguage(trimToNull(request.getLanguage()));
         }
+        if (request.getTimeZone() != null) {
+            user.setTimeZone(trimToNull(request.getTimeZone()));
+        }
         if (request.getPreferredDomains() != null) {
             user.setPreferredDomains(cleanList(request.getPreferredDomains()));
+        }
+        if (request.getInterviewTopics() != null) {
+            user.setInterviewTopics(cleanList(request.getInterviewTopics()));
+        }
+        if (request.getSessionDurations() != null) {
+            user.setSessionDurations(request.getSessionDurations());
         }
         if (request.getExperienceLevel() != null) {
             user.setExperienceLevel(trimToNull(request.getExperienceLevel()));
         }
+        if (request.getCompany() != null) {
+            user.setCompany(trimToNull(request.getCompany()));
+        }
+        if (request.getCurrentRole() != null) {
+            user.setCurrentRole(trimToNull(request.getCurrentRole()));
+        }
+        if (request.getYearsExperience() != null) {
+            user.setYearsExperience(request.getYearsExperience());
+        }
         if (request.getAvailability() != null) {
             user.setAvailability(cleanList(request.getAvailability()));
+        }
+        if (request.getAcceptingBookings() != null) {
+            user.setAcceptingBookings(request.getAcceptingBookings());
+        }
+        if (request.getPublicProfileVisible() != null) {
+            user.setPublicProfileVisible(request.getPublicProfileVisible());
         }
         return userRepository.save(user);
     }
@@ -251,6 +275,27 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setAvatarUrl(cloudinaryImageService.uploadProfileImage(userId, file));
+        return userRepository.save(user);
+    }
+
+    public User uploadOwnResume(String userId, MultipartFile file) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        CloudinaryImageService.UploadedAsset asset = cloudinaryImageService.uploadResumeDocument(userId, file);
+        user.setResumeUrl(asset.url());
+        user.setResumeFileName(asset.fileName());
+        user.setResumeContentType(asset.contentType());
+        user.setResumeUpdatedAt(Instant.now());
+        return userRepository.save(user);
+    }
+
+    public User removeOwnResume(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setResumeUrl(null);
+        user.setResumeFileName(null);
+        user.setResumeContentType(null);
+        user.setResumeUpdatedAt(null);
         return userRepository.save(user);
     }
 

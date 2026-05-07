@@ -28,7 +28,7 @@ let profileAvatarFile = null;
 let profileAvatarPreviewUrl = '';
 let profileUsernameTimer = null;
 let profileUsernameState = { value: '', available: true };
-let discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [] };
+let discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [], timeZones: [], topics: [], sessionDurations: [] };
 let notificationsCache = [];
 let notificationStreamController = null;
 let notificationStreamRetryTimer = null;
@@ -36,6 +36,21 @@ let activeInterviewReport = null;
 let sessionViewMode = 'upcoming';
 let sessionSearchQuery = '';
 let sessionTopicFilter = '';
+let prepHub = null;
+let adminOverview = null;
+let adminUsers = [];
+let adminSessions = [];
+let adminReports = [];
+let adminReviews = [];
+let adminLoading = false;
+let discoverFiltersOpen = false;
+let searchSuggestionTimer = null;
+const adminState = {
+  users: { page: 0, size: 6 },
+  sessions: { page: 0, size: 8 },
+  reports: { page: 0, size: 5 },
+  reviews: { page: 0, size: 5, visibility: '' },
+};
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
@@ -43,6 +58,7 @@ const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const TOPIC_OPTIONS = ['Java', 'DSA', 'Spring Boot', 'System Design', 'React', 'Node.js', 'SQL', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
 const DOMAIN_SUGGESTIONS = ['Backend', 'Frontend', 'Full Stack', 'DevOps', 'HR', 'DSA', 'System Design', 'Java', 'React', 'Spring Boot'];
+const TIMEZONE_SUGGESTIONS = ['Asia/Kolkata', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Singapore'];
 const AVAILABILITY_PREFERENCES = [
   'Weekday mornings',
   'Weekday afternoons',
@@ -52,7 +68,7 @@ const AVAILABILITY_PREFERENCES = [
   'Late night availability',
   'Early morning availability',
 ];
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-users', 'admin-sessions', 'admin-reports']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 let analyticsSummary = null;
@@ -86,10 +102,22 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   activeWorkspace = savedWorkspace();
+  restoreDiscoveryFilters();
   initUi();
   bindFilters();
   bindFeedbackForm();
-  await Promise.all([loadFilterOptions(), loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications(), loadAvailabilityManagement()]);
+  await Promise.all([
+    loadFilterOptions(),
+    loadMeetingProviders(),
+    loadSessions(),
+    loadInterviewers(),
+    loadRecommended(),
+    loadFeedback(),
+    loadNotifications(),
+    loadAvailabilityManagement(),
+    loadPrepHub(),
+    loadAdminData(),
+  ]);
   startNotificationStream();
   showSection(routeFromHash(), false);
 });
@@ -117,26 +145,37 @@ function initUi() {
   localStorage.setItem('ip_user', JSON.stringify(currentUser));
   const workspace = activeWorkspace.toLowerCase();
   document.getElementById('welcome-heading').textContent = `Welcome back, ${accountDisplayName(currentUser)}`;
-  document.getElementById('role-eyebrow').textContent = workspace === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
+  document.getElementById('role-eyebrow').textContent = activeWorkspace === 'ADMIN'
+    ? 'Admin control center'
+    : workspace === 'interviewer'
+      ? 'Interviewer workspace'
+      : 'Interviewee workspace';
   document.getElementById('sidebar-user-info').innerHTML = `
     <div class="sidebar-profile-card">
       ${avatarMarkup(currentUser)}
       <div class="sidebar-profile-copy">
         <strong>${esc(accountDisplayName(currentUser))}</strong>
         <span>${esc(currentUser.email || '')}</span>
-        <span class="badge badge-purple">${esc(workspace)}</span>
+        <span class="badge ${activeWorkspace === 'ADMIN' ? 'badge-gold' : 'badge-purple'}">${esc(workspace)}</span>
       </div>
     </div>
   `;
   renderWorkspaceSwitcher(roles);
   applyWorkspaceVisibility();
-  document.getElementById('primary-action').textContent = workspace === 'interviewer' ? 'View requests' : 'Book session';
+  document.getElementById('primary-action').textContent = activeWorkspace === 'ADMIN'
+    ? 'Open console'
+    : workspace === 'interviewer'
+      ? 'View requests'
+      : 'Book session';
   renderBookingStep();
+  renderResumePanel();
+  renderPrepPanels();
+  renderAdminPanels();
 }
 
 function userRoles() {
   const roles = Array.isArray(currentUser.roles) && currentUser.roles.length ? currentUser.roles : [currentUser.role || 'INTERVIEWEE'];
-  return [...new Set(roles.map(role => String(role || '').toUpperCase()).filter(role => ['INTERVIEWEE', 'INTERVIEWER'].includes(role)))];
+  return [...new Set(roles.map(role => String(role || '').toUpperCase()).filter(role => ['INTERVIEWEE', 'INTERVIEWER', 'ADMIN'].includes(role)))];
 }
 
 function savedWorkspace() {
@@ -152,6 +191,10 @@ function hasInterviewerRole() {
 
 function hasIntervieweeRole() {
   return userRoles().includes('INTERVIEWEE');
+}
+
+function hasAdminRole() {
+  return userRoles().includes('ADMIN');
 }
 
 function renderWorkspaceSwitcher(roles) {
@@ -175,9 +218,15 @@ function switchWorkspace(workspace) {
   loadRecommended();
   loadInterviewers();
   loadAvailabilityManagement();
+  loadAnalyticsSummary();
+  loadAdminData();
 }
 
 function primaryWorkspaceAction() {
+  if (activeWorkspace === 'ADMIN') {
+    showSection('admin-overview');
+    return;
+  }
   showSection(activeWorkspace === 'INTERVIEWER' ? 'interviewer' : 'booking');
 }
 
@@ -190,19 +239,29 @@ function openAvailabilityManager() {
 }
 
 function workspaceLabel(role) {
-  return role === 'INTERVIEWER' ? 'Interviewer Workspace' : 'Interviewee Workspace';
+  if (role === 'INTERVIEWER') return 'Interviewer Workspace';
+  if (role === 'ADMIN') return 'Admin Workspace';
+  return 'Interviewee Workspace';
 }
 
 function applyWorkspaceVisibility() {
+  const isAdmin = activeWorkspace === 'ADMIN';
   const isInterviewer = activeWorkspace === 'INTERVIEWER';
-  document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = isInterviewer ? 'flex' : 'none');
-  document.querySelectorAll('.interviewee-workspace').forEach(el => el.style.display = isInterviewer ? 'none' : '');
+  document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? '' : 'none');
+  document.querySelectorAll('.user-workspace').forEach(el => el.style.display = isAdmin ? 'none' : '');
+  document.querySelectorAll('.user-workspace-section').forEach(el => { if (isAdmin) el.hidden = true; });
+  document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = !isAdmin && isInterviewer ? 'flex' : 'none');
+  document.querySelectorAll('.interviewee-workspace').forEach(el => el.style.display = !isAdmin && isInterviewer ? 'none' : '');
   document.body.classList.toggle('interviewer-workspace-active', isInterviewer);
+  document.body.classList.toggle('admin-workspace-active', isAdmin);
+  document.querySelector('.bottom-nav')?.classList.toggle('hidden', isAdmin);
 }
 
 function routeAllowed(route) {
+  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-users', 'admin-sessions', 'admin-reports', 'profile'].includes(route);
   if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
   if (route === 'interviewer') return false;
+  if (route.startsWith('admin-')) return false;
   return true;
 }
 
@@ -235,8 +294,8 @@ function routeFromHash() {
 }
 
 function showSection(name, updateRoute = true) {
-  let targetName = ROUTES.has(name) ? name : 'overview';
-  if (!routeAllowed(targetName)) targetName = 'overview';
+  let targetName = ROUTES.has(name) ? name : defaultWorkspaceRoute();
+  if (!routeAllowed(targetName)) targetName = defaultWorkspaceRoute();
   const meetingWasVisible = !document.getElementById('section-meeting').hidden;
   if (meetingWasVisible && targetName !== 'meeting') destroyMeetingFrame();
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
@@ -257,12 +316,25 @@ function showSection(name, updateRoute = true) {
   if (targetName === 'sessions') renderSessions('upcoming');
   if (targetName === 'notifications') loadNotifications();
   if (targetName === 'profile') renderProfile();
+  if (targetName === 'career') {
+    renderResumePanel();
+    renderPrepPanels();
+  }
+  if (targetName.startsWith('admin-')) {
+    loadAdminData();
+    renderAdminPanels();
+  }
   document.querySelector('.topbar')?.classList.toggle('compact', targetName !== 'overview');
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
   syncShellState();
   if (updateRoute && window.location.hash !== `#/${targetName}`) {
     history.pushState(null, '', `#/${targetName}`);
   }
+}
+
+function defaultWorkspaceRoute() {
+  if (activeWorkspace === 'ADMIN') return 'admin-overview';
+  return 'overview';
 }
 
 function handleResponsiveShell() {
@@ -329,7 +401,7 @@ async function readPayload(res) {
 
 function bindFilters() {
   initDiscoveryFilterControls();
-  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-years', 'filter-level', 'filter-rating', 'filter-available', 'filter-free', 'filter-verified', 'filter-sort']
+  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-timezone', 'filter-topic', 'filter-years', 'filter-level', 'filter-rating', 'filter-duration', 'filter-available', 'filter-available-today', 'filter-free', 'filter-verified', 'filter-sort']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -338,10 +410,17 @@ function bindFilters() {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
           interviewerPage = 0;
+          persistDiscoveryFilters();
+          renderActiveFilterChips();
           loadInterviewers();
         }, 280);
       });
     });
+  document.getElementById('search-q')?.addEventListener('input', () => {
+    clearTimeout(searchSuggestionTimer);
+    searchSuggestionTimer = setTimeout(loadSearchSuggestions, 180);
+  });
+  renderActiveFilterChips();
 }
 
 function initDiscoveryFilterControls() {
@@ -363,6 +442,19 @@ function initDiscoveryFilterControls() {
     className: 'discovery-filter-control',
     options: discoveryFilterOptions.languages,
   });
+  FormUx.initSearchSelect('filter-timezone', {
+    placeholder: 'Timezone',
+    label: 'Filter by timezone',
+    className: 'discovery-filter-control',
+    options: discoveryFilterOptions.timeZones.length ? discoveryFilterOptions.timeZones : TIMEZONE_SUGGESTIONS,
+    preserveCase: true,
+  });
+  FormUx.initSearchSelect('filter-topic', {
+    placeholder: 'Topic',
+    label: 'Filter by interview topic',
+    className: 'discovery-filter-control',
+    options: discoveryFilterOptions.topics.length ? discoveryFilterOptions.topics : TOPIC_OPTIONS,
+  });
 }
 
 async function loadFilterOptions() {
@@ -373,10 +465,13 @@ async function loadFilterOptions() {
       languages: Array.isArray(data?.languages) ? data.languages : [],
       companies: Array.isArray(data?.companies) ? data.companies : [],
       experienceLevels: Array.isArray(data?.experienceLevels) ? data.experienceLevels : [],
+      timeZones: Array.isArray(data?.timeZones) ? data.timeZones : [],
+      topics: Array.isArray(data?.topics) ? data.topics : [],
+      sessionDurations: Array.isArray(data?.sessionDurations) ? data.sessionDurations : [],
     };
     updateDiscoveryFilterOptions();
   } catch (err) {
-    discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [] };
+    discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [], timeZones: [], topics: [], sessionDurations: [] };
   }
 }
 
@@ -384,6 +479,8 @@ function updateDiscoveryFilterOptions() {
   document.getElementById('filter-expertise')?.__searchSelectControl?.setOptions(discoveryFilterOptions.expertise);
   document.getElementById('filter-company')?.__searchSelectControl?.setOptions(discoveryFilterOptions.companies);
   document.getElementById('filter-language')?.__searchSelectControl?.setOptions(discoveryFilterOptions.languages);
+  document.getElementById('filter-timezone')?.__searchSelectControl?.setOptions(discoveryFilterOptions.timeZones.length ? discoveryFilterOptions.timeZones : TIMEZONE_SUGGESTIONS);
+  document.getElementById('filter-topic')?.__searchSelectControl?.setOptions(discoveryFilterOptions.topics.length ? discoveryFilterOptions.topics : TOPIC_OPTIONS);
   const levelSelect = document.getElementById('filter-level');
   if (levelSelect) {
     const current = levelSelect.value;
@@ -391,6 +488,13 @@ function updateDiscoveryFilterOptions() {
     levelSelect.innerHTML = `<option value="">Any level</option>${levels.map(level => `<option value="${esc(level)}">${esc(level)}</option>`).join('')}`;
     if (current) levelSelect.value = current;
   }
+  const durationSelect = document.getElementById('filter-duration');
+  if (durationSelect && Array.isArray(discoveryFilterOptions.sessionDurations) && discoveryFilterOptions.sessionDurations.length) {
+    const current = durationSelect.value;
+    durationSelect.innerHTML = `<option value="">Any duration</option>${discoveryFilterOptions.sessionDurations.map(value => `<option value="${value}">${value} min</option>`).join('')}`;
+    if (current) durationSelect.value = current;
+  }
+  renderActiveFilterChips();
 }
 
 function rememberInterviewers(list) {
@@ -409,8 +513,14 @@ function refreshSessionSurfaces() {
 async function loadInterviewers() {
   const grid = document.getElementById('interviewer-grid');
   if (!grid) return;
+  persistDiscoveryFilters();
+  renderActiveFilterChips();
   if (activeWorkspace === 'INTERVIEWER') {
     grid.innerHTML = emptyState('Switch to the interviewee workspace to browse interviewers.');
+    return;
+  }
+  if (activeWorkspace === 'ADMIN') {
+    grid.innerHTML = emptyState('Admin workspace uses the control center instead of interviewer search.');
     return;
   }
   grid.innerHTML = skeletonCards(6);
@@ -420,6 +530,8 @@ async function loadInterviewers() {
       expertise: val('filter-expertise'),
       company: val('filter-company'),
       language: val('filter-language'),
+      timezone: val('filter-timezone'),
+      topic: val('filter-topic'),
       sort: val('filter-sort'),
       excludeUserId: currentUser.id,
       page: interviewerPage,
@@ -428,9 +540,12 @@ async function loadInterviewers() {
     if (val('filter-years')) params.set('minExperience', val('filter-years'));
     if (val('filter-level')) params.set('experienceLevel', val('filter-level'));
     if (val('filter-rating')) params.set('minRating', val('filter-rating'));
+    if (val('filter-duration')) params.set('sessionDuration', val('filter-duration'));
     if (document.getElementById('filter-available').checked) params.set('available', 'true');
+    if (document.getElementById('filter-available-today').checked) params.set('availableToday', 'true');
     if (document.getElementById('filter-free').checked) params.set('free', 'true');
     if (document.getElementById('filter-verified').checked) params.set('verified', 'true');
+    params.set('viewerTimezone', viewerTimezone());
     const page = await api(`/api/interviewers/search?${params.toString()}`);
     interviewers = filterSelf(page.items || []);
     rememberInterviewers(interviewers);
@@ -485,6 +600,9 @@ function renderInterviewerGrid(list) {
 
 function renderInterviewerCard(interviewer) {
   const skills = Array.isArray(interviewer.skills) ? interviewer.skills.slice(0, 5) : [];
+  const topics = Array.isArray(interviewer.interviewTopics) ? interviewer.interviewTopics.slice(0, 3) : [];
+  const durations = Array.isArray(interviewer.sessionDurations) ? interviewer.sessionDurations.slice(0, 3) : [];
+  const reliability = Number(interviewer.reliabilityScore || 0);
   return `
     <article class="interviewer-card">
       <div class="interviewer-card-main">
@@ -504,13 +622,18 @@ function renderInterviewerCard(interviewer) {
             <strong>${ratingLabel(interviewer)}</strong>
             <span>${Number(interviewer.reviewCount || 0)} reviews</span>
             <span>${Number(interviewer.completedInterviews || 0)} sessions</span>
+            ${Number.isFinite(reliability) ? `<span>${esc(String(reliability.toFixed(1)))}% reliability</span>` : ''}
+            ${interviewer.interviewerVerified ? '<span class="badge badge-green">Verified</span>' : ''}
           </div>
           <div class="tag-row">${skills.map(skill => `<span>${esc(skill)}</span>`).join('') || '<span>Interview coaching</span>'}</div>
+          ${topics.length ? `<div class="tag-row subtle">${topics.map(topic => `<span>${esc(topic)}</span>`).join('')}</div>` : ''}
         </div>
       </div>
       <p class="bio interviewer-bio">${esc(bioPreview(interviewer.bio))}</p>
       <div class="interviewer-card-footer">
         <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
+        <span class="availability-pill">${esc(interviewer.timeZone || 'Timezone flexible')}</span>
+        ${durations.length ? `<span class="availability-pill">${esc(durations.join(' / '))} min</span>` : ''}
         <div class="card-actions">
           <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
           <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
@@ -542,6 +665,8 @@ async function openProfile(id) {
     const interviewer = await api(`/api/interviewers/${id}`);
     selectedInterviewer = interviewer;
     rememberInterviewers([interviewer]);
+    const publicUrl = publicProfileUrl(interviewer.username || interviewer.id);
+    const reliability = Number(interviewer.reliabilityScore || 0);
     modal(`
       <div class="profile-modal">
         ${avatarMarkup(interviewer, 'avatar large')}
@@ -550,7 +675,13 @@ async function openProfile(id) {
         <div class="tag-row">${(interviewer.skills || []).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
         <p>${esc(interviewer.bio || 'No bio yet.')}</p>
         <div class="stats-inline"><span>${interviewer.yearsExperience || 0}+ years</span><span>${ratingSummary(interviewer)}</span><span>${interviewer.completedInterviews || 0} completed</span></div>
-        <button class="btn btn-primary btn-full" onclick="closeModal(); selectInterviewer('${interviewer.id}')">Book this interviewer</button>
+        <div class="stats-inline"><span>${esc(interviewer.timeZone || 'Timezone flexible')}</span><span>${esc(String(reliability.toFixed(1)))}% reliability</span>${interviewer.interviewerVerified ? '<span>Verified interviewer</span>' : ''}</div>
+        <div class="profile-modal-actions">
+          <a class="btn btn-outline btn-full" href="${esc(publicUrl)}" target="_blank" rel="noreferrer">Open public profile</a>
+          <button class="btn btn-outline btn-full" onclick="copyText(${jsArg(publicUrl)}, 'Public profile link copied.')">Copy profile link</button>
+          <button class="btn btn-outline btn-full" onclick="reportUser('${interviewer.id}')">Report profile</button>
+          <button class="btn btn-primary btn-full" onclick="closeModal(); selectInterviewer('${interviewer.id}')">Book this interviewer</button>
+        </div>
       </div>
     `);
   } catch (err) {
@@ -2187,6 +2318,16 @@ function renderProfile() {
       </div>
       <div class="form-grid">
         <div class="form-group">
+          <label for="profile-company">Company</label>
+          <input id="profile-company" value="${esc(currentUser.company || '')}" placeholder="OpenAI" />
+        </div>
+        <div class="form-group">
+          <label for="profile-current-role">Current role / headline</label>
+          <input id="profile-current-role" value="${esc(currentUser.currentRole || '')}" placeholder="Senior Backend Engineer" />
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
           <label for="profile-domains">Preferred interview domains</label>
           <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
           <small class="field-hint">Press Enter or comma to add a domain. Suggestions and custom domains are both supported.</small>
@@ -2198,6 +2339,43 @@ function renderProfile() {
           </select>
         </div>
       </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-years">Years of experience</label>
+          <input id="profile-years" type="number" min="0" max="40" value="${esc(String(currentUser.yearsExperience || 0))}" />
+        </div>
+        <div class="form-group">
+          <label for="profile-timezone">Timezone</label>
+          <input id="profile-timezone" value="${esc(currentUser.timeZone || '')}" placeholder="Asia/Kolkata" />
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-topics">Interview topics</label>
+          <input id="profile-topics" value="${esc((currentUser.interviewTopics || []).join(', '))}" placeholder="System Design, Behavioral, DSA" />
+        </div>
+        <div class="form-group">
+          <label for="profile-durations">Session durations</label>
+          <select id="profile-durations" multiple>
+            ${AVAILABILITY_DURATIONS.map(duration => `<option value="${duration}" ${(currentUser.sessionDurations || []).includes(duration) ? 'selected' : ''}>${duration} minutes</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${showInterviewerSetup ? `
+        <div class="availability-preference-card">
+          <h3>Public marketplace controls</h3>
+          <div class="form-grid">
+            <label class="check-row"><input id="profile-accepting-bookings" type="checkbox" ${currentUser.acceptingBookings === false ? '' : 'checked'} /> Accept new bookings</label>
+            <label class="check-row"><input id="profile-public-profile" type="checkbox" ${currentUser.publicProfileVisible === false ? '' : 'checked'} /> Show public profile</label>
+          </div>
+          <div class="profile-link-row">
+            <p class="availability-summary-note">Your public profile link: <a href="${esc(publicProfileUrl(currentUser.username || currentUser.id))}" target="_blank" rel="noreferrer">${esc(publicProfileUrl(currentUser.username || currentUser.id))}</a></p>
+            <div class="card-actions">
+              <button class="btn btn-outline btn-sm" type="button" onclick="copyPublicProfileLink()">Copy link</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
       ${showIntervieweePreferences ? `
         <div class="availability-preference-card">
           <h3>Interviewee availability preferences</h3>
@@ -2333,7 +2511,18 @@ function initProfileControls() {
     commitOnTab: false,
     suggestionClickCommits: false,
   });
+  FormUx.initTagInput('profile-topics', {
+    placeholder: 'Add interview topic',
+    label: 'Add interview topic',
+    suggestions: TOPIC_OPTIONS,
+  });
   FormUx.initLanguageSelect('profile-language', { placeholder: 'Search languages' });
+  FormUx.initSearchSelect('profile-timezone', {
+    placeholder: 'Search timezone',
+    label: 'Search timezone',
+    options: discoveryFilterOptions.timeZones.length ? discoveryFilterOptions.timeZones : TIMEZONE_SUGGESTIONS,
+    preserveCase: true,
+  });
 }
 
 function intervieweeAvailabilityValues() {
@@ -2361,6 +2550,14 @@ function profileAvailabilityPayload() {
     val('profile-availability-days'),
     val('profile-availability-notes'),
   ].filter(Boolean);
+}
+
+function selectedProfileDurations() {
+  const select = document.getElementById('profile-durations');
+  if (!select) return [];
+  return Array.from(select.selectedOptions || [])
+    .map(option => Number(option.value))
+    .filter(value => Number.isFinite(value) && value > 0);
 }
 
 function filterSelf(list) {
@@ -2851,9 +3048,17 @@ async function saveProfile(event) {
       bio: val('profile-bio'),
       skills: FormUx.getTagValues('profile-skills'),
       language: FormUx.getLanguageString('profile-language'),
+      timeZone: val('profile-timezone'),
       preferredDomains: FormUx.getTagValues('profile-domains'),
+      interviewTopics: FormUx.getTagValues('profile-topics'),
+      sessionDurations: selectedProfileDurations(),
       experienceLevel: val('profile-experience'),
+      company: val('profile-company'),
+      currentRole: val('profile-current-role'),
+      yearsExperience: Number(val('profile-years') || 0),
     };
+    if (document.getElementById('profile-accepting-bookings')) payload.acceptingBookings = document.getElementById('profile-accepting-bookings').checked;
+    if (document.getElementById('profile-public-profile')) payload.publicProfileVisible = document.getElementById('profile-public-profile').checked;
     if (document.getElementById('profile-availability-preference')) {
       payload.availability = profileAvailabilityPayload();
     }
@@ -3353,6 +3558,667 @@ function skeletonCards(count) {
 
 function emptyState(text) {
   return `<div class="empty-state"><p>${esc(text)}</p></div>`;
+}
+
+function publicProfileUrl(username) {
+  return new URL(`./interviewer.html?username=${encodeURIComponent(username)}`, window.location.href).toString();
+}
+
+function discoveryStorageKey() {
+  return `ip_discovery_${currentUser?.id || 'guest'}`;
+}
+
+function collectDiscoveryFilters() {
+  return {
+    q: val('search-q'),
+    expertise: val('filter-expertise'),
+    company: val('filter-company'),
+    language: val('filter-language'),
+    timezone: val('filter-timezone'),
+    topic: val('filter-topic'),
+    years: val('filter-years'),
+    level: val('filter-level'),
+    rating: val('filter-rating'),
+    duration: val('filter-duration'),
+    sort: val('filter-sort'),
+    available: document.getElementById('filter-available')?.checked || false,
+    availableToday: document.getElementById('filter-available-today')?.checked || false,
+    free: document.getElementById('filter-free')?.checked || false,
+    verified: document.getElementById('filter-verified')?.checked || false,
+  };
+}
+
+function persistDiscoveryFilters() {
+  if (!currentUser?.id) return;
+  localStorage.setItem(discoveryStorageKey(), JSON.stringify(collectDiscoveryFilters()));
+}
+
+function restoreDiscoveryFilters() {
+  if (!currentUser?.id) return;
+  const saved = readJson(discoveryStorageKey());
+  if (!saved) return;
+  const apply = () => {
+    setInputValue('search-q', saved.q);
+    document.getElementById('filter-expertise')?.__searchSelectControl?.setValue(saved.expertise || '');
+    document.getElementById('filter-company')?.__searchSelectControl?.setValue(saved.company || '');
+    document.getElementById('filter-language')?.__searchSelectControl?.setValue(saved.language || '');
+    document.getElementById('filter-timezone')?.__searchSelectControl?.setValue(saved.timezone || '');
+    document.getElementById('filter-topic')?.__searchSelectControl?.setValue(saved.topic || '');
+    setInputValue('filter-years', saved.years);
+    setInputValue('filter-level', saved.level);
+    setInputValue('filter-rating', saved.rating);
+    setInputValue('filter-duration', saved.duration);
+    setInputValue('filter-sort', saved.sort || 'top-rated');
+    if (document.getElementById('filter-available')) document.getElementById('filter-available').checked = Boolean(saved.available);
+    if (document.getElementById('filter-available-today')) document.getElementById('filter-available-today').checked = Boolean(saved.availableToday);
+    if (document.getElementById('filter-free')) document.getElementById('filter-free').checked = Boolean(saved.free);
+    if (document.getElementById('filter-verified')) document.getElementById('filter-verified').checked = Boolean(saved.verified);
+  };
+  setTimeout(apply, 0);
+}
+
+function setInputValue(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = value || '';
+}
+
+function renderActiveFilterChips() {
+  const host = document.getElementById('active-filter-chips');
+  if (!host) return;
+  const filters = collectDiscoveryFilters();
+  const chips = [
+    filters.expertise && ['filter-expertise', filters.expertise],
+    filters.company && ['filter-company', filters.company],
+    filters.language && ['filter-language', filters.language],
+    filters.timezone && ['filter-timezone', filters.timezone],
+    filters.topic && ['filter-topic', filters.topic],
+    filters.years && ['filter-years', `${filters.years}+ years`],
+    filters.level && ['filter-level', filters.level],
+    filters.rating && ['filter-rating', `${filters.rating}+ stars`],
+    filters.duration && ['filter-duration', `${filters.duration} min`],
+    filters.available && ['filter-available', 'Available'],
+    filters.availableToday && ['filter-available-today', 'Today'],
+    filters.free && ['filter-free', 'Free'],
+    filters.verified && ['filter-verified', 'Verified'],
+  ].filter(Boolean);
+  host.innerHTML = chips.map(([key, label]) => `<button class="chip active" type="button" onclick="clearDiscoveryFilter('${key}')">${esc(label)} ×</button>`).join('');
+}
+
+function clearDiscoveryFilter(key) {
+  const checkbox = document.getElementById(key);
+  if (checkbox?.type === 'checkbox') {
+    checkbox.checked = false;
+  } else if (checkbox?.__searchSelectControl) {
+    checkbox.__searchSelectControl.setValue('');
+  } else if (checkbox) {
+    checkbox.value = '';
+  }
+  interviewerPage = 0;
+  persistDiscoveryFilters();
+  renderActiveFilterChips();
+  loadInterviewers();
+}
+
+function toggleDiscoverFilters() {
+  discoverFiltersOpen = !discoverFiltersOpen;
+  document.getElementById('discover-filter-panel')?.classList.toggle('open', discoverFiltersOpen);
+}
+
+async function loadSearchSuggestions() {
+  const query = val('search-q').trim();
+  const host = document.getElementById('search-suggestions');
+  if (!host) return;
+  if (query.length < 2) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  try {
+    const suggestions = await api(`/api/interviewers/autocomplete?q=${encodeURIComponent(query)}`);
+    host.innerHTML = (suggestions || []).map(item => `
+      <button type="button" class="search-suggestion-item" onclick="applySearchSuggestion(${jsArg(item.label)}, ${jsArg(item.type)})">
+        <strong>${esc(item.label)}</strong><span>${esc(item.type)}</span>
+      </button>
+    `).join('');
+    host.hidden = !host.innerHTML;
+  } catch {
+    host.hidden = true;
+  }
+}
+
+function applySearchSuggestion(label, type) {
+  const normalizedType = String(type || '');
+  if (normalizedType === 'company') {
+    document.getElementById('filter-company')?.__searchSelectControl?.setValue(label);
+  } else if (normalizedType === 'expertise') {
+    document.getElementById('filter-expertise')?.__searchSelectControl?.setValue(label);
+  } else if (normalizedType === 'topic') {
+    document.getElementById('filter-topic')?.__searchSelectControl?.setValue(label);
+  } else {
+    setInputValue('search-q', label);
+  }
+  document.getElementById('search-suggestions').hidden = true;
+  interviewerPage = 0;
+  persistDiscoveryFilters();
+  renderActiveFilterChips();
+  loadInterviewers();
+}
+
+async function loadPrepHub() {
+  if (!hasIntervieweeRole()) {
+    prepHub = null;
+    return;
+  }
+  try {
+    prepHub = await api('/api/prep/hub');
+  } catch {
+    prepHub = null;
+  } finally {
+    renderPrepPanels();
+  }
+}
+
+function renderResumePanel() {
+  const host = document.getElementById('resume-panel');
+  if (!host) return;
+  const hasResume = Boolean(currentUser?.resumeUrl);
+  const updatedLabel = currentUser?.resumeUpdatedAt ? fmtDate(currentUser.resumeUpdatedAt) : '';
+  host.innerHTML = `
+    <div class="panel-head"><h2>Resume manager</h2>${hasResume ? `<button class="btn btn-outline btn-sm" type="button" onclick="removeResume()">Remove</button>` : ''}</div>
+    <p class="availability-summary-note">Upload a resume once and keep it handy for mock interviews, targeted prep, and interviewer context.</p>
+    ${hasResume ? `
+      <div class="resume-card">
+        <strong>${esc(currentUser.resumeFileName || 'Uploaded resume')}</strong>
+        <span>${esc(currentUser.resumeContentType || 'Document')}</span>
+        ${updatedLabel ? `<small class="availability-summary-note">Last updated ${esc(updatedLabel)}</small>` : ''}
+        <div class="card-actions">
+          <a class="btn btn-outline btn-sm" href="${esc(currentUser.resumeUrl)}" target="_blank" rel="noreferrer">Preview</a>
+        </div>
+      </div>
+    ` : '<div class="empty-state"><p>No resume uploaded yet.</p></div>'}
+    <div class="form-group" style="margin-top:1rem;">
+      <label for="resume-upload">Upload resume</label>
+      <input id="resume-upload" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="uploadResume(event)" />
+    </div>
+  `;
+}
+
+function renderPrepPanels() {
+  const resourcesHost = document.getElementById('prep-resources-panel');
+  const tracksHost = document.getElementById('prep-tracks-panel');
+  if (!resourcesHost || !tracksHost) return;
+  if (!prepHub) {
+    resourcesHost.innerHTML = '<h2>Prep resources</h2>' + emptyState('Prep resources are loading.');
+    tracksHost.innerHTML = '<h2>Interview tracks</h2>' + emptyState('Interview tracks will appear here.');
+    return;
+  }
+  resourcesHost.innerHTML = `
+    <h2>Preparation resources</h2>
+    <div class="resource-list">
+      ${(prepHub.resources || []).map(item => `
+        <article class="resource-item">
+          <div><strong>${esc(item.title)}</strong><p>${esc(item.description)}</p></div>
+          <span class="badge badge-gray">${esc(item.type)}</span>
+        </article>
+      `).join('')}
+    </div>
+  `;
+  const sections = [
+    ['Company-specific tracks', prepHub.companyTracks || []],
+    ['Behavioral prep', prepHub.behavioralTracks || []],
+    ['Coding prep', prepHub.codingTracks || []],
+  ];
+  tracksHost.innerHTML = sections.map(([title, items]) => `
+    <div class="prep-section-block">
+      <div class="panel-head"><h2>${esc(title)}</h2></div>
+      <div class="prep-track-grid">
+        ${items.map(item => `
+          <article class="prep-track-card">
+            <strong>${esc(item.title)}</strong>
+            <p>${esc(item.summary)}</p>
+            <div class="tag-row">${(item.focusAreas || []).map(point => `<span>${esc(point)}</span>`).join('')}</div>
+          </article>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function uploadResume(event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    currentUser = await api('/api/users/me/resume', { method: 'POST', body: formData });
+    localStorage.setItem('ip_user', JSON.stringify(currentUser));
+    toast('Resume uploaded.', 'success');
+    renderResumePanel();
+  } catch (err) {
+    toast(err.message || 'Could not upload resume.', 'error');
+  }
+}
+
+async function removeResume() {
+  try {
+    currentUser = await api('/api/users/me/resume', { method: 'DELETE' });
+    localStorage.setItem('ip_user', JSON.stringify(currentUser));
+    toast('Resume removed.', 'success');
+    renderResumePanel();
+  } catch (err) {
+    toast(err.message || 'Could not remove resume.', 'error');
+  }
+}
+
+async function loadAdminData(force = false) {
+  if (!hasAdminRole()) return;
+  if (!force && adminOverview && adminUsers.length && adminSessions.length) {
+    renderAdminPanels();
+    return;
+  }
+  adminLoading = true;
+  renderAdminPanels();
+  try {
+    const [overview, users, sessionsData, reports, reviews] = await Promise.all([
+      api('/api/admin/overview'),
+      api('/api/admin/users'),
+      api('/api/admin/sessions'),
+      api('/api/admin/reports'),
+      api('/api/admin/reviews'),
+    ]);
+    adminOverview = overview;
+    adminUsers = Array.isArray(users) ? users : [];
+    adminSessions = Array.isArray(sessionsData) ? sessionsData : [];
+    adminReports = Array.isArray(reports) ? reports : [];
+    adminReviews = Array.isArray(reviews) ? reviews : [];
+  } catch (err) {
+    toast(err.message || 'Could not load admin data.', 'error');
+  } finally {
+    adminLoading = false;
+    renderAdminPanels();
+  }
+}
+
+function renderAdminPanels() {
+  if (!hasAdminRole()) return;
+  const metricsHost = document.getElementById('admin-metrics-grid');
+  const analyticsHost = document.getElementById('admin-analytics-panel');
+  const liveHost = document.getElementById('admin-live-sessions-panel');
+  if (adminLoading && metricsHost && !adminOverview) {
+    metricsHost.innerHTML = skeletonCards(4);
+  }
+  if (metricsHost && adminOverview) {
+    metricsHost.innerHTML = [
+      ['Users', adminOverview.totalUsers],
+      ['Interviewers', adminOverview.totalInterviewers],
+      ['Verified', adminOverview.verifiedInterviewers],
+      ['Open Reports', adminOverview.openReports],
+      ['Public Reviews', adminOverview.visiblePublicReviews],
+      ['Hidden Reviews', adminOverview.hiddenPublicReviews],
+      ['Sessions', adminOverview.totalSessions],
+      ['Completion Rate', `${adminOverview.completionRate}%`],
+      ['Cancellation Rate', `${adminOverview.cancellationRate}%`],
+    ].map(([label, value]) => `
+      <div class="stat-card admin-stat-card">
+        <span>${esc(String(value))}</span>
+        <p>${esc(label)}</p>
+      </div>
+    `).join('');
+  }
+  if (analyticsHost) {
+    analyticsHost.innerHTML = adminLoading && !adminOverview
+      ? skeletonCards(2)
+      : adminOverview ? `
+        <div class="panel-head"><h2>Platform analytics</h2><span class="badge badge-gray">${esc(String(adminOverview.totalSessions || 0))} sessions tracked</span></div>
+        <div class="admin-analytics-copy">
+          <div class="admin-analytics-metric"><span>Average public rating</span><strong>${esc(String(adminOverview.platformAverageRating || 0))}</strong></div>
+          <div class="admin-analytics-metric"><span>Completion rate</span><strong>${esc(String(adminOverview.completionRate || 0))}%</strong></div>
+          <div class="admin-analytics-metric"><span>Cancellation rate</span><strong>${esc(String(adminOverview.cancellationRate || 0))}%</strong></div>
+        </div>
+        <div class="admin-topic-bars">
+          ${(adminOverview.topTopics || []).map(item => `
+            <div class="admin-topic-bar">
+              <span>${esc(item.topic)}</span>
+              <div><i style="width:${Math.max(10, Math.min(100, Number(item.count || 0) * 10))}%"></i></div>
+              <strong>${esc(String(item.count || 0))}</strong>
+            </div>
+          `).join('') || '<div class="empty-state"><p>No topic analytics yet.</p></div>'}
+        </div>
+      ` : emptyState('Admin analytics unavailable.');
+  }
+  if (liveHost) {
+    liveHost.innerHTML = adminLoading && !adminSessions.length
+      ? skeletonCards(2)
+      : `
+        <div class="panel-head"><h2>Upcoming session monitoring</h2><span class="badge badge-gray">${esc(String(adminSessions.length || 0))} total</span></div>
+        <div class="admin-list">
+          ${adminSessions.slice(0, 6).map(session => `
+            <article class="admin-list-item">
+              <div>
+                <strong>${esc(sessionTitle(session))}</strong>
+                <p>${esc(fmtDate(session.startTime))}</p>
+                <small>${esc(providerLabel(session.meetingProvider))}</small>
+              </div>
+              <span class="badge badge-${statusClass((session.status || '').toUpperCase())}">${esc(session.status || 'PENDING')}</span>
+            </article>
+          `).join('') || emptyState('No sessions to monitor right now.')}
+        </div>
+      `;
+  }
+  renderAdminUsers();
+  renderAdminSessions();
+  renderAdminReports();
+}
+
+function renderAdminUsers() {
+  const host = document.getElementById('admin-users-panel');
+  if (!host) return;
+  const query = String(document.getElementById('admin-user-search')?.value || '').trim().toLowerCase();
+  const role = String(document.getElementById('admin-user-role')?.value || '').trim().toUpperCase();
+  const enabled = String(document.getElementById('admin-user-enabled')?.value || '').trim().toLowerCase();
+  if (adminLoading && !adminUsers.length) {
+    host.innerHTML = skeletonCards(2);
+    return;
+  }
+  const rows = adminUsers.filter(user => {
+    const roleMatch = !role || (Array.isArray(user.roles) ? user.roles : [user.role]).includes(role);
+    const searchMatch = !query || [user.username, user.displayName, user.email, user.company].some(value => String(value || '').toLowerCase().includes(query));
+    const enabledMatch = !enabled || (enabled === 'enabled' ? user.accountEnabled !== false : user.accountEnabled === false);
+    return roleMatch && enabledMatch && searchMatch;
+  });
+  const page = paginateCollection(rows, adminState.users);
+  host.innerHTML = `
+    <div class="admin-table-shell">
+      <div class="admin-table-meta"><strong>${esc(String(rows.length))}</strong><span>matching users</span></div>
+      <div class="admin-table">
+      ${page.items.map(user => `
+        <article class="admin-table-row">
+          <div>
+            <strong>${esc(accountDisplayName(user))}</strong>
+            <p>${esc(user.email || '')}</p>
+            <div class="tag-row">
+              ${(user.roles || [user.role]).map(roleName => `<span>${esc(roleName)}</span>`).join('')}
+              ${user.interviewerVerified ? '<span>Verified interviewer</span>' : ''}
+            </div>
+          </div>
+          <div class="card-actions">
+            ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', ${user.interviewerVerified ? 'false' : 'true'})">${user.interviewerVerified ? 'Unverify' : 'Verify'}</button>` : ''}
+            <button class="btn btn-outline btn-sm" type="button" onclick="togglePublicProfileVisibility('${user.id}', ${user.publicProfileVisible === false ? 'true' : 'false'})">${user.publicProfileVisible === false ? 'Show profile' : 'Hide profile'}</button>
+            <button class="btn ${user.accountEnabled === false ? 'btn-success' : 'btn-danger'} btn-sm" type="button" onclick="toggleUserAccess('${user.id}', ${user.accountEnabled === false ? 'true' : 'false'})">${user.accountEnabled === false ? 'Reactivate' : 'Deactivate'}</button>
+          </div>
+        </article>
+      `).join('') || emptyState('No users match the current filters.')}
+      </div>
+      ${renderAdminPagination('users', page)}
+    </div>
+  `;
+}
+
+function renderAdminSessions() {
+  const host = document.getElementById('admin-sessions-panel');
+  if (!host) return;
+  if (adminLoading && !adminSessions.length) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const query = String(document.getElementById('admin-session-search')?.value || '').trim().toLowerCase();
+  const status = String(document.getElementById('admin-session-status')?.value || '').trim().toUpperCase();
+  const rows = adminSessions.filter(session => {
+    const statusMatch = !status || String(session.status || '').toUpperCase() === status;
+    const searchText = [sessionTitle(session), providerLabel(session.meetingProvider), ...(sessionTopics(session) || [])].join(' ').toLowerCase();
+    return statusMatch && (!query || searchText.includes(query));
+  });
+  const page = paginateCollection(rows, adminState.sessions);
+  host.innerHTML = `
+    <div class="admin-table-shell">
+      <div class="admin-table-meta"><strong>${esc(String(rows.length))}</strong><span>matching sessions</span></div>
+      <div class="admin-table">
+      ${page.items.map(session => `
+        <article class="admin-table-row">
+          <div>
+            <strong>${esc(sessionTitle(session))}</strong>
+            <p>${esc(fmtDate(session.startTime))}</p>
+            <div class="tag-row">${sessionTopics(session).map(topic => `<span>${esc(topic)}</span>`).join('')}</div>
+          </div>
+          <div class="card-actions">
+            <span class="badge badge-${statusClass((session.status || '').toUpperCase())}">${esc(session.status || 'PENDING')}</span>
+            <span class="badge badge-gray">${esc(providerLabel(session.meetingProvider))}</span>
+          </div>
+        </article>
+      `).join('') || emptyState('No sessions found.')}
+      </div>
+      ${renderAdminPagination('sessions', page)}
+    </div>
+  `;
+}
+
+function renderAdminReports() {
+  const host = document.getElementById('admin-reports-panel');
+  if (!host) return;
+  if (adminLoading && !adminReports.length && !adminReviews.length) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const reportQuery = String(adminState.reports.query || '').trim().toLowerCase();
+  const reportStatus = String(adminState.reports.status || '').trim().toUpperCase();
+  const filteredReports = adminReports.filter(report => {
+    const statusMatch = !reportStatus || String(report.status || '').toUpperCase() === reportStatus;
+    const searchText = [report.reason, report.details, report.reporterId, report.reportedUserId].filter(Boolean).join(' ').toLowerCase();
+    return statusMatch && (!reportQuery || searchText.includes(reportQuery));
+  });
+  const reportPage = paginateCollection(filteredReports, adminState.reports);
+  const reviewQuery = String(adminState.reviews.query || '').trim().toLowerCase();
+  const visibility = String(adminState.reviews.visibility || '').trim().toLowerCase();
+  const filteredReviews = adminReviews.filter(review => {
+    const visibilityMatch = !visibility || (visibility === 'visible' ? review.publicReview === true : review.publicReview !== true);
+    const topicText = Array.isArray(review.topicSummaries) ? review.topicSummaries.map(item => item.topic).join(' ') : '';
+    const searchText = [review.reviewerName, review.interviewerName, review.comments, review.sessionTitle, topicText].filter(Boolean).join(' ').toLowerCase();
+    return visibilityMatch && (!reviewQuery || searchText.includes(reviewQuery));
+  });
+  const reviewPage = paginateCollection(filteredReviews, adminState.reviews);
+  host.innerHTML = `
+    <div class="admin-moderation-grid">
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Trust reports</h2><span class="badge badge-gray">${esc(String(filteredReports.length))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
+            <option value="">All statuses</option>
+            <option value="OPEN" ${reportStatus === 'OPEN' ? 'selected' : ''}>Open</option>
+            <option value="REVIEWED" ${reportStatus === 'REVIEWED' ? 'selected' : ''}>Reviewed</option>
+            <option value="ACTIONED" ${reportStatus === 'ACTIONED' ? 'selected' : ''}>Actioned</option>
+          </select>
+        </div>
+        <div class="admin-table">
+          ${reportPage.items.map(report => `
+            <article class="admin-table-row">
+              <div>
+                <strong>${esc(report.reason || 'Trust report')}</strong>
+                <p>${esc(report.details || 'No details provided.')}</p>
+                <small>${esc(fmtDate(report.createdAt))}</small>
+              </div>
+              <div class="card-actions">
+                <span class="badge badge-${report.status === 'OPEN' ? 'yellow' : report.status === 'ACTIONED' ? 'red' : 'gray'}">${esc(report.status || 'OPEN')}</span>
+                <button class="btn btn-outline btn-sm" type="button" onclick="resolveAdminReport('${report.id}', 'REVIEWED')">Review</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="resolveAdminReport('${report.id}', 'ACTIONED')">Action</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No moderation reports queued.')}
+        </div>
+        ${renderAdminPagination('reports', reportPage)}
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Public review moderation</h2><span class="badge badge-gray">${esc(String(filteredReviews.length))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reviews.query || '')}" placeholder="Search reviews" oninput="setAdminFilter('reviews', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reviews', 'visibility', this.value)">
+            <option value="">All visibility</option>
+            <option value="visible" ${visibility === 'visible' ? 'selected' : ''}>Visible</option>
+            <option value="hidden" ${visibility === 'hidden' ? 'selected' : ''}>Hidden</option>
+          </select>
+        </div>
+        <div class="admin-table">
+          ${reviewPage.items.map(review => `
+            <article class="admin-table-row admin-review-row">
+              <div>
+                <strong>${esc(review.reviewerName || 'InterviewPrep member')} → ${esc(review.interviewerName || 'Interviewer')}</strong>
+                <p>${esc(review.comments || 'No written review provided.')}</p>
+                ${Array.isArray(review.topicSummaries) && review.topicSummaries.length ? `<div class="tag-row subtle">${review.topicSummaries.map(topic => `<span>${esc(topic.topic)}${topic.rating ? ` · ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
+                <small>${esc(review.sessionTitle || 'Interview session')} • ${esc(fmtDate(review.createdAt))}</small>
+              </div>
+              <div class="card-actions">
+                <span class="badge badge-${review.publicReview ? 'green' : 'gray'}">${review.publicReview ? 'Visible' : 'Hidden'}</span>
+                <span class="badge badge-gray">${esc(String(review.rating || 0))}/5</span>
+                <button class="btn btn-outline btn-sm" type="button" onclick="toggleAdminReviewVisibility('${review.id}', ${review.publicReview ? 'false' : 'true'})">${review.publicReview ? 'Hide' : 'Republish'}</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No public reviews need moderation right now.')}
+        </div>
+        ${renderAdminPagination('reviews', reviewPage)}
+      </article>
+    </div>
+  `;
+}
+
+async function toggleUserAccess(userId, enabled) {
+  try {
+    await api(`/api/admin/users/${userId}/moderation`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    });
+    toast('User access updated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update user access.', 'error');
+  }
+}
+
+async function togglePublicProfileVisibility(userId, publicProfileVisible) {
+  try {
+    await api(`/api/admin/users/${userId}/moderation`, {
+      method: 'PATCH',
+      body: JSON.stringify({ publicProfileVisible }),
+    });
+    toast('Public profile visibility updated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update profile visibility.', 'error');
+  }
+}
+
+async function toggleInterviewerVerification(userId, verified) {
+  try {
+    await api(`/api/admin/interviewers/${userId}/verify`, {
+      method: 'PATCH',
+      body: JSON.stringify({ verified }),
+    });
+    toast('Interviewer verification updated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update interviewer verification.', 'error');
+  }
+}
+
+async function resolveAdminReport(reportId, status) {
+  const resolutionNotes = window.prompt(`Add a note for this ${status.toLowerCase()} decision`, '');
+  try {
+    await api(`/api/admin/reports/${reportId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, resolutionNotes }),
+    });
+    toast('Report updated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update report.', 'error');
+  }
+}
+
+async function toggleAdminReviewVisibility(reviewId, visible) {
+  const moderationNotes = window.prompt(visible ? 'Add a note for republishing this review' : 'Why are you hiding this review?', '');
+  try {
+    await api(`/api/admin/reviews/${reviewId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visible, moderationNotes }),
+    });
+    toast('Review visibility updated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update review visibility.', 'error');
+  }
+}
+
+function paginateCollection(items, state) {
+  const safeSize = Math.max(1, Number(state?.size || 1));
+  const totalPages = Math.max(1, Math.ceil((items.length || 0) / safeSize) || 1);
+  state.page = Math.min(Math.max(0, Number(state?.page || 0)), totalPages - 1);
+  const start = state.page * safeSize;
+  return {
+    items: items.slice(start, start + safeSize),
+    page: state.page,
+    totalPages,
+    total: items.length,
+  };
+}
+
+function renderAdminPagination(section, page) {
+  if (!page || page.totalPages <= 1) return '';
+  return `
+    <div class="pagination-row admin-pagination-row">
+      <button class="btn btn-outline btn-sm" type="button" onclick="setAdminPage('${section}', -1)" ${page.page <= 0 ? 'disabled' : ''}>Previous</button>
+      <span>Page ${page.page + 1} of ${page.totalPages}</span>
+      <button class="btn btn-outline btn-sm" type="button" onclick="setAdminPage('${section}', 1)" ${page.page >= page.totalPages - 1 ? 'disabled' : ''}>Next</button>
+    </div>
+  `;
+}
+
+function setAdminPage(section, delta) {
+  if (!adminState[section]) return;
+  adminState[section].page = Math.max(0, Number(adminState[section].page || 0) + Number(delta || 0));
+  if (section === 'users') renderAdminUsers();
+  if (section === 'sessions') renderAdminSessions();
+  if (section === 'reports' || section === 'reviews') renderAdminReports();
+}
+
+function setAdminFilter(section, key, value) {
+  if (!adminState[section]) return;
+  adminState[section][key] = value;
+  adminState[section].page = 0;
+  if (section === 'users') renderAdminUsers();
+  if (section === 'sessions') renderAdminSessions();
+  if (section === 'reports' || section === 'reviews') renderAdminReports();
+}
+
+function copyPublicProfileLink() {
+  copyText(publicProfileUrl(currentUser.username || currentUser.id), 'Public profile link copied.');
+}
+
+async function copyText(text, successMessage = 'Copied.') {
+  try {
+    await navigator.clipboard.writeText(String(text || ''));
+    toast(successMessage, 'success');
+  } catch {
+    toast('Copy failed on this device.', 'error');
+  }
+}
+
+async function reportUser(reportedUserId, sessionId = '') {
+  const reason = window.prompt('Report reason', 'Spam or inappropriate conduct');
+  if (!reason) return;
+  const details = window.prompt('Additional details', '');
+  try {
+    await api('/api/trust/reports', {
+      method: 'POST',
+      body: JSON.stringify({ reportedUserId, sessionId, reason, details }),
+    });
+    toast('Report submitted for moderation.', 'success');
+  } catch (err) {
+    toast(err.message || 'Could not submit report.', 'error');
+  }
+}
+
+function viewerTimezone() {
+  return currentUser?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || '';
 }
 
 function esc(value) {

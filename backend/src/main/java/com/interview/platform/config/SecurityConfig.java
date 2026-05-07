@@ -4,6 +4,7 @@ import com.interview.platform.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -41,9 +42,19 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/api/users/register",
                                 "/api/users/login",
-                                "/api/users/username-availability",
-                                "/api/users/interviewers",
-                                "/api/interviewers/**"
+                                "/api/users/username-availability"
+                        ).permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/interviewers/search",
+                                "/api/interviewers/filter-options",
+                                "/api/interviewers/top-rated",
+                                "/api/interviewers/recommended",
+                                "/api/interviewers/autocomplete",
+                                "/api/interviewers/public/**",
+                                "/api/interviewers/*",
+                                "/api/interviewers/*/availability",
+                                "/api/interviewers/*/slots",
+                                "/api/feedback/interviewer/*/public"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

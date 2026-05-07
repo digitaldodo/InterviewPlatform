@@ -117,6 +117,9 @@ public class AuthService {
         if (!matchesPassword(user, request.getPassword())) {
             throw new UnauthorizedException("Invalid username/email or password");
         }
+        if (Boolean.FALSE.equals(user.getAccountEnabled())) {
+            throw new UnauthorizedException("This account has been disabled");
+        }
         if (!Boolean.TRUE.equals(user.getIsVerified()) && user.getCreatedAt() == null) {
             user.setIsVerified(true);
         }
@@ -164,6 +167,9 @@ public class AuthService {
         }
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+        if (Boolean.FALSE.equals(user.getAccountEnabled())) {
+            throw new UnauthorizedException("This account has been disabled");
+        }
         if (accountIdentityService.ensureIdentity(user)) {
             userRepository.save(user);
         }

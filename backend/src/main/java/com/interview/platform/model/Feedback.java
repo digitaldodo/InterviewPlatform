@@ -18,6 +18,10 @@ public class Feedback {
     private String sessionId;
     @Indexed
     private String reviewerId;
+    @Indexed
+    private String targetUserId;
+    @Indexed
+    private String interviewerId;
     private String comments;
     private int rating;
     private String strengths;
@@ -26,6 +30,11 @@ public class Feedback {
     private Integer technicalSkills = 0;
     private String recommendations;
     private String improvementAreas;
+    private String reviewType;
+    private Boolean publicReview = false;
+    private String moderationNotes;
+    private String moderatedByAdminId;
+    private Instant moderatedAt;
     private List<TopicFeedback> topicFeedback = new ArrayList<>();
     private Instant createdAt;
 
@@ -44,6 +53,10 @@ public class Feedback {
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public String getReviewerId() { return reviewerId; }
     public void setReviewerId(String reviewerId) { this.reviewerId = reviewerId; }
+    public String getTargetUserId() { return targetUserId; }
+    public void setTargetUserId(String targetUserId) { this.targetUserId = targetUserId; }
+    public String getInterviewerId() { return interviewerId; }
+    public void setInterviewerId(String interviewerId) { this.interviewerId = interviewerId; }
     public String getComments() { return comments; }
     public void setComments(String comments) { this.comments = comments; }
     public int getRating() { return rating; }
@@ -65,6 +78,16 @@ public class Feedback {
         return improvementAreas;
     }
     public void setImprovementAreas(String improvementAreas) { this.improvementAreas = improvementAreas; }
+    public String getReviewType() { return reviewType; }
+    public void setReviewType(String reviewType) { this.reviewType = reviewType; }
+    public Boolean getPublicReview() { return publicReview; }
+    public void setPublicReview(Boolean publicReview) { this.publicReview = publicReview != null && publicReview; }
+    public String getModerationNotes() { return moderationNotes; }
+    public void setModerationNotes(String moderationNotes) { this.moderationNotes = moderationNotes; }
+    public String getModeratedByAdminId() { return moderatedByAdminId; }
+    public void setModeratedByAdminId(String moderatedByAdminId) { this.moderatedByAdminId = moderatedByAdminId; }
+    public Instant getModeratedAt() { return moderatedAt; }
+    public void setModeratedAt(Instant moderatedAt) { this.moderatedAt = moderatedAt; }
     public List<TopicFeedback> getTopicFeedback() { return topicFeedback == null ? new ArrayList<>() : topicFeedback; }
     public void setTopicFeedback(List<TopicFeedback> topicFeedback) { this.topicFeedback = topicFeedback == null ? new ArrayList<>() : topicFeedback; }
     public Instant getCreatedAt() { return createdAt; }

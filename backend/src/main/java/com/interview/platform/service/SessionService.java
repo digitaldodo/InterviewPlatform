@@ -154,14 +154,14 @@ public class SessionService {
     }
 
     public List<Session> getByInterviewerId(String interviewerId, User actor) {
-        if (!actor.getId().equals(interviewerId)) {
+        if (!isAdmin(actor) && !actor.getId().equals(interviewerId)) {
             throw new UnauthorizedException("You can only view your own interviewer sessions");
         }
         return sortSessions(sessionRepository.findByInterviewerId(interviewerId));
     }
 
     public List<Session> getByIntervieweeId(String intervieweeId, User actor) {
-        if (!actor.getId().equals(intervieweeId)) {
+        if (!isAdmin(actor) && !actor.getId().equals(intervieweeId)) {
             throw new UnauthorizedException("You can only view your own interview sessions");
         }
         return sortSessions(sessionRepository.findByCandidateId(intervieweeId));
@@ -200,6 +200,8 @@ public class SessionService {
         }
         session.setUpdatedAt(Instant.now());
         Session saved = sessionRepository.save(session);
+        refreshUserSessionStats(saved.getInterviewerId());
+        refreshUserSessionStats(saved.getCandidateId());
         notifyStatusChanged(saved);
         return saved;
     }
@@ -324,7 +326,7 @@ public class SessionService {
     private Session requireParticipant(String sessionId, User actor) {
         Session session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
-        if (!actor.getId().equals(session.getCandidateId()) && !actor.getId().equals(session.getInterviewerId())) {
+        if (!isAdmin(actor) && !actor.getId().equals(session.getCandidateId()) && !actor.getId().equals(session.getInterviewerId())) {
             throw new UnauthorizedException("You do not have access to this session");
         }
         return session;
@@ -440,6 +442,29 @@ public class SessionService {
                 .filter(value -> !value.isBlank())
                 .distinct()
                 .toList();
+    }
+
+    private void refreshUserSessionStats(String userId) {
+        if (userId == null || userId.isBlank()) return;
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) return;
+        List<Session> sessions = sessionRepository.findByInterviewerIdOrCandidateId(userId, userId);
+        long completed = sessions.stream().filter(session -> "COMPLETED".equalsIgnoreCase(session.getStatus())).count();
+        long cancelled = sessions.stream().filter(session -> "CANCELLED".equalsIgnoreCase(session.getStatus())).count();
+        user.setCompletedSessions((int) completed);
+        user.setCancelledSessions((int) cancelled);
+        if (user.hasRole("INTERVIEWER")) {
+            long interviewerCompleted = sessions.stream()
+                    .filter(session -> userId.equals(session.getInterviewerId()))
+                    .filter(session -> "COMPLETED".equalsIgnoreCase(session.getStatus()))
+                    .count();
+            user.setCompletedInterviews((int) interviewerCompleted);
+        }
+        userRepository.save(user);
+    }
+
+    private boolean isAdmin(User actor) {
+        return actor != null && actor.hasRole("ADMIN");
     }
 }
 
