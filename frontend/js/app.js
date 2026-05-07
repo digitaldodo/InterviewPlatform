@@ -3,7 +3,7 @@
    Backend base URL comes from window.INTERVIEW_API_BASE when deployed separately.
    ============================================================ */
 
-const API_BASE = (window.INTERVIEW_API_BASE || '').replace(/\/$/, '');
+const API_BASE = window.INTERVIEW_API_BASE;
 
 /* ── Tab switching ── */
 function switchTab(tab) {

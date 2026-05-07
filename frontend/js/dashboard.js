@@ -3,7 +3,7 @@
    API base comes from window.INTERVIEW_API_BASE when deployed separately.
    ============================================================ */
 
-const API = (window.INTERVIEW_API_BASE || '').replace(/\/$/, '');
+const API_BASE = window.INTERVIEW_API_BASE;
 
 let currentUser  = null;
 let displayedUsers = [];  // cache for client-side filter
@@ -193,7 +193,7 @@ async function loadUsers() {
   grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
 
   try {
-    const res = await fetchWithTimeout(`${API}/api/users`);
+    const res = await fetchWithTimeout(`${API_BASE}/api/users`);
     if (!res.ok) throw new Error(`Server responded with ${res.status}`);
 
     displayedUsers = unwrapApiResponse(await res.json());
@@ -213,8 +213,8 @@ async function loadInterviewers(skill = '') {
 
   try {
     const url = skill
-      ? `${API}/api/users/interviewers?skill=${encodeURIComponent(skill)}`
-      : `${API}/api/users/interviewers`;
+      ? `${API_BASE}/api/users/interviewers?skill=${encodeURIComponent(skill)}`
+      : `${API_BASE}/api/users/interviewers`;
 
     const res = await fetchWithTimeout(url);
 
@@ -313,7 +313,7 @@ document.getElementById('session-form').addEventListener('submit', async functio
   setLoading(btn, true, 'Requesting…');
 
   try {
-    const res = await fetchWithTimeout(`${API}/api/sessions`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/sessions`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
@@ -340,8 +340,8 @@ document.getElementById('session-form').addEventListener('submit', async functio
 async function fetchMySessions() {
   const role     = (currentUser.role || '').toLowerCase();
   const endpoint = role === 'interviewer'
-    ? `${API}/api/sessions/interviewer/${currentUser.id}`
-    : `${API}/api/sessions/interviewee/${currentUser.id}`;
+    ? `${API_BASE}/api/sessions/interviewer/${currentUser.id}`
+    : `${API_BASE}/api/sessions/interviewee/${currentUser.id}`;
 
   const res = await fetchWithTimeout(endpoint);
   if (!res.ok) throw new Error(`Server error ${res.status}`);
@@ -460,7 +460,7 @@ document.getElementById('action-confirm-btn').addEventListener('click', async ()
   closeModal();
 
   try {
-    const res = await fetchWithTimeout(`${API}/api/sessions/${sessionId}/${action}`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/sessions/${sessionId}/${action}`, {
       method: 'PATCH',
     });
 
@@ -506,7 +506,7 @@ document.getElementById('feedback-form')?.addEventListener('submit', async funct
   setLoading(btn, true, 'Submitting...');
 
   try {
-    const res = await fetchWithTimeout(`${API}/api/feedback`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/feedback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -541,7 +541,7 @@ async function loadFeedback() {
   wrapper.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading feedback...</p></div>`;
 
   try {
-    const res = await fetchWithTimeout(`${API}/api/feedback`);
+    const res = await fetchWithTimeout(`${API_BASE}/api/feedback`);
     if (!res.ok) throw new Error(`Server error ${res.status}`);
     const feedback = unwrapApiResponse(await res.json());
 
