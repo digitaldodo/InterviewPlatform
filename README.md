@@ -62,10 +62,10 @@ The API listens on `PORT` when it is provided by the host, otherwise it defaults
 
 ### Frontend
 
-For local development, `frontend/js/env.js` points to `http://localhost:8080` by default:
+For local development, `frontend/js/env.js` provides the backend base URL used by all frontend API helpers:
 
 ```js
-window.INTERVIEW_API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
+window.INTERVIEW_API_BASE = "https://interview-platform-api-iv6x.onrender.com";
 ```
 
 You can open `frontend/index.html` directly in a browser, or serve the folder:
@@ -74,7 +74,7 @@ You can open `frontend/index.html` directly in a browser, or serve the folder:
 npx serve frontend
 ```
 
-If your backend runs somewhere else, update `frontend/js/env.js` locally or override `window.INTERVIEW_API_BASE` before loading `app.js` and `dashboard.js`.
+If your backend runs somewhere else, update `frontend/js/env.js` locally or override `window.INTERVIEW_API_BASE` before loading `app.js` and `dashboard.js`. Application code should continue to call APIs through `window.INTERVIEW_API_BASE`, not a hardcoded backend host.
 
 ## Environment Variables
 
@@ -98,7 +98,7 @@ If your backend runs somewhere else, update `frontend/js/env.js` locally or over
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `INTERVIEW_API_HOST` | Render-managed | Render injects the backend host into the static build. |
+| `INTERVIEW_API_BASE` | Render-managed | Render writes this complete backend base URL into `frontend/js/env.js`. |
 
 During Render deployment, the frontend build command writes `frontend/js/env.js` with the deployed backend URL.
 
@@ -130,7 +130,7 @@ It creates:
 2. The Docker build caches Maven dependencies, packages the Spring Boot jar, and runs it on a slim Java 17 runtime image as a non-root user.
 3. Render provides `PORT`; Spring Boot binds through `server.port=${PORT:8080}`.
 4. Render builds the static frontend from `frontend/`.
-5. The frontend build writes `js/env.js` with the backend service URL from Render's `fromService` reference.
+5. The frontend build writes `js/env.js` with the complete backend base URL from `INTERVIEW_API_BASE`.
 6. Browser requests go from the static frontend to the deployed backend through `window.INTERVIEW_API_BASE`.
 7. Spring CORS allows configured frontend origins through `CORS_ALLOWED_ORIGIN_PATTERNS`.
 

@@ -28,12 +28,9 @@ services:
     name: interview-platform-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: printf "window.INTERVIEW_API_BASE = window.INTERVIEW_API_BASE || 'https://%s';\n" "$INTERVIEW_API_HOST" > js/env.js
+    buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\n" "$INTERVIEW_API_BASE" > js/env.js
     staticPublishPath: .
     autoDeploy: true
     envVars:
-      - key: INTERVIEW_API_HOST
-        fromService:
-          type: web
-          name: interview-platform-api
-          property: host
+      - key: INTERVIEW_API_BASE
+        value: https://interview-platform-api-iv6x.onrender.com
