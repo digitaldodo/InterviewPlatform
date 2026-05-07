@@ -26,7 +26,10 @@ public class SessionController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<Session>> createSession(@RequestBody Session session) {
+    public ResponseEntity<ApiResponse<Session>> createSession(@RequestBody Session session, Authentication authentication) {
+        User actor = currentUser(authentication);
+        session.setCandidateId(actor.getId());
+        session.setIntervieweeId(actor.getId());
         return ResponseEntity.ok(ApiResponse.success("Session created successfully", sessionService.createSession(session)));
     }
 

@@ -32,20 +32,14 @@ public class UserController {
     }
 
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<User>> register(@RequestBody User user) {
-        return ResponseEntity.ok(ApiResponse.success("User registered successfully", userService.register(user)));
+    public ResponseEntity<ApiResponse<AuthDtos.AuthResponse>> register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Registration started. Verify your email with the OTP.",
+                authService.register(request)));
     }
 
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<User>> login(@RequestBody Map<String, String> credentials) {
-        if (credentials == null) {
-            throw new IllegalArgumentException("Email and password are required");
-        }
-        String email = credentials.get("email");
-        String password = credentials.get("password");
-        User user = userService.loginUser(email, password)
-                .orElseThrow(() -> new UnauthorizedException("Invalid email or password"));
-        return ResponseEntity.ok(ApiResponse.success("Login successful", user));
+    public ResponseEntity<ApiResponse<AuthDtos.AuthResponse>> login(@Valid @RequestBody AuthDtos.LoginRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Login successful", authService.login(request)));
     }
 
     @GetMapping("/{id}")

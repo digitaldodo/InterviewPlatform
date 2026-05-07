@@ -1,5 +1,8 @@
 package com.interview.platform.service;
 
+import com.interview.platform.dto.FeedbackDtos;
+import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
@@ -9,6 +12,7 @@ import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -31,7 +35,7 @@ public class FeedbackService {
         this.interviewReportService = interviewReportService;
     }
 
-    public Feedback submitFeedback(User actor, Feedback feedback) {
+    public FeedbackDtos.FeedbackItem submitFeedback(User actor, Feedback feedback) {
         if (feedback == null) {
             throw new IllegalArgumentException("Feedback details are required");
         }
@@ -44,9 +48,6 @@ public class FeedbackService {
         if (feedback.getComments() == null || feedback.getComments().isBlank()) {
             throw new IllegalArgumentException("Comments are required");
         }
-        if (feedback.getSessionId() == null || !sessionRepository.existsById(feedback.getSessionId())) {
-            throw new IllegalArgumentException("Invalid or non-existent session ID");
-        }
         Session session = sessionRepository.findById(feedback.getSessionId())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid or non-existent session ID"));
         boolean candidateReviewer = actor.getId().equals(session.getCandidateId());
@@ -54,11 +55,11 @@ public class FeedbackService {
         if (!candidateReviewer && !interviewerReviewer) {
             throw new IllegalArgumentException("Only session participants can submit feedback");
         }
+        if (!"COMPLETED".equalsIgnoreCase(session.getStatus())) {
+            throw new IllegalArgumentException("Feedback can only be submitted after the session is completed");
+        }
         if (feedbackRepository.existsBySessionIdAndReviewerId(session.getId(), actor.getId())) {
             throw new IllegalArgumentException("You have already submitted feedback for this session");
-        }
-        if (candidateReviewer && !"COMPLETED".equalsIgnoreCase(session.getStatus())) {
-            throw new IllegalArgumentException("You can review an interviewer only after the session is completed");
         }
         feedback.setComments(feedback.getComments().trim());
         feedback.setReviewerId(actor.getId());
@@ -89,19 +90,49 @@ public class FeedbackService {
                 "New feedback is available for " + session.getTitle() + ".",
                 java.util.Map.of("sessionId", session.getId())
         );
-        return saved;
+        return toFeedbackItem(saved);
     }
 
-    public List<Feedback> getAllFeedback() {
-        return feedbackRepository.findAll();
+    public List<FeedbackDtos.FeedbackItem> getFeedbackForUser(User actor) {
+        requireActor(actor);
+        if (isAdmin(actor)) {
+            return feedbackRepository.findAll().stream()
+                    .sorted(Comparator.comparing(Feedback::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                    .map(this::toFeedbackItem)
+                    .toList();
+        }
+        List<String> sessionIds = sessionRepository.findByInterviewerIdOrCandidateId(actor.getId(), actor.getId()).stream()
+                .map(Session::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+        if (sessionIds.isEmpty()) {
+            return List.of();
+        }
+        return feedbackRepository.findBySessionIdIn(sessionIds).stream()
+                .sorted(Comparator.comparing(Feedback::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(this::toFeedbackItem)
+                .toList();
     }
 
-    public List<Feedback> getFeedbackForSession(String sessionId) {
-        return feedbackRepository.findBySessionId(sessionId);
+    public List<FeedbackDtos.FeedbackItem> getFeedbackForSession(String sessionId, User actor) {
+        requireActor(actor);
+        Session session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+        if (!isAdmin(actor)
+                && !actor.getId().equals(session.getCandidateId())
+                && !actor.getId().equals(session.getInterviewerId())) {
+            throw new UnauthorizedException("You do not have access to this session feedback");
+        }
+        return feedbackRepository.findBySessionId(sessionId).stream()
+                .sorted(Comparator.comparing(Feedback::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(this::toFeedbackItem)
+                .toList();
     }
 
-    public List<Feedback> publicReviewsForInterviewer(String interviewerId) {
-        return feedbackRepository.findByInterviewerIdAndPublicReviewTrueOrderByCreatedAtDesc(interviewerId);
+    public List<FeedbackDtos.PublicFeedbackItem> publicReviewsForInterviewer(String interviewerId) {
+        return feedbackRepository.findByInterviewerIdAndPublicReviewTrueOrderByCreatedAtDesc(interviewerId).stream()
+                .map(this::toPublicFeedbackItem)
+                .toList();
     }
 
     private void updateInterviewerRating(String sessionId) {
@@ -155,5 +186,61 @@ public class FeedbackService {
         if (feedback.getReviewType() != null) {
             feedback.setReviewType(feedback.getReviewType().trim().toUpperCase(Locale.ROOT));
         }
+    }
+
+    private FeedbackDtos.FeedbackItem toFeedbackItem(Feedback feedback) {
+        return new FeedbackDtos.FeedbackItem(
+                feedback.getId(),
+                feedback.getSessionId(),
+                feedback.getReviewerId(),
+                feedback.getInterviewerId(),
+                feedback.getRating(),
+                feedback.getComments(),
+                feedback.getStrengths(),
+                feedback.getWeaknesses(),
+                feedback.getCommunication(),
+                feedback.getTechnicalSkills(),
+                feedback.getRecommendations(),
+                feedback.getImprovementAreas(),
+                feedback.getReviewType(),
+                feedback.getPublicReview(),
+                feedback.getCreatedAt() == null ? null : feedback.getCreatedAt().toString(),
+                feedback.getTopicFeedback().stream()
+                        .map(this::toTopicSummary)
+                        .toList()
+        );
+    }
+
+    private FeedbackDtos.PublicFeedbackItem toPublicFeedbackItem(Feedback feedback) {
+        return new FeedbackDtos.PublicFeedbackItem(
+                feedback.getId(),
+                feedback.getRating(),
+                feedback.getComments(),
+                feedback.getCreatedAt() == null ? null : feedback.getCreatedAt().toString(),
+                feedback.getTopicFeedback().stream()
+                        .map(this::toTopicSummary)
+                        .toList()
+        );
+    }
+
+    private FeedbackDtos.TopicFeedbackSummary toTopicSummary(Feedback.TopicFeedback topic) {
+        return new FeedbackDtos.TopicFeedbackSummary(
+                topic.getTopic(),
+                topic.getRating(),
+                topic.getSkillRatings(),
+                topic.getStrengths(),
+                topic.getImprovementAreas(),
+                topic.getComments()
+        );
+    }
+
+    private void requireActor(User actor) {
+        if (actor == null || actor.getId() == null || actor.getId().isBlank()) {
+            throw new UnauthorizedException("Authentication required");
+        }
+    }
+
+    private boolean isAdmin(User actor) {
+        return actor != null && actor.hasRole("ADMIN");
     }
 }

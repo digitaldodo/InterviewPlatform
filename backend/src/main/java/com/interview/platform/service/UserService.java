@@ -22,12 +22,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Service
 public class UserService {
-
-    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -71,43 +68,6 @@ public class UserService {
         this.accountIdentityService = accountIdentityService;
     }
 
-    public User register(User user) {
-        if (user == null) {
-            throw new IllegalArgumentException("User details are required");
-        }
-        if ((isBlank(user.getUsername()) && !user.hasDisplayName()) || isBlank(user.getEmail()) || isBlank(user.getPassword())) {
-            throw new IllegalArgumentException("Display name, email, and password are required");
-        }
-        String email = user.getEmail().trim().toLowerCase();
-        if (!EMAIL_PATTERN.matcher(email).matches()) {
-            throw new IllegalArgumentException("Valid email is required");
-        }
-        if (user.getPassword().length() < 6) {
-            throw new IllegalArgumentException("Password must be at least 6 characters");
-        }
-        if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
-        }
-        boolean legacySingleName = !user.hasDisplayName();
-        if (legacySingleName) {
-            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getUsername()));
-        } else {
-            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getDisplayName()));
-        }
-        String requestedUsername = legacySingleName && !accountIdentityService.isValidUsername(user.getUsername()) ? null : user.getUsername();
-        String username = accountIdentityService.usernameForRegistration(requestedUsername, user.getDisplayName(), email);
-        user.setUsername(username);
-        user.setEmail(email);
-        if (user.getRoles().isEmpty()) {
-            user.setRole(isBlank(user.getRole()) ? "INTERVIEWEE" : user.getRole());
-        }
-        user.setPasswordHash(passwordEncoder.encode(user.getPassword()));
-        user.setPassword(null);
-        user.setCreatedAt(Instant.now());
-        user.setIsVerified(true);
-        return userRepository.save(user);
-    }
-
     public Optional<User> getById(String id) {
         if (isBlank(id)) {
             return Optional.empty();
@@ -117,19 +77,6 @@ public class UserService {
 
     public List<User> getAllUsers() {
         return userRepository.findAll().stream().map(this::ensureIdentitySaved).toList();
-    }
-
-    public Optional<User> loginUser(String email, String password) {
-        if (isBlank(email) || isBlank(password)) {
-            return Optional.empty();
-        }
-        return userRepository.findByEmail(email.trim().toLowerCase())
-                .filter(user -> matchesPassword(user, password))
-                .map(user -> {
-                    accountIdentityService.ensureIdentity(user);
-                    user.setLastLogin(Instant.now());
-                    return userRepository.save(user);
-                });
     }
 
     public List<User> getInterviewers(String skill) {

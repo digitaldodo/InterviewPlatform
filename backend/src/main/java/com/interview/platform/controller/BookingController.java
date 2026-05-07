@@ -24,12 +24,10 @@ public class BookingController {
     @PostMapping
     public ResponseEntity<ApiResponse<Session>> book(@Valid @RequestBody BookingRequest request, Authentication authentication) {
         User user = currentUser(authentication);
-        if (!user.getId().equals(request.getIntervieweeId())) {
-            throw new UnauthorizedException("You can only create bookings for your own account");
-        }
         Session session = new Session();
         session.setInterviewerId(request.getInterviewerId());
-        session.setCandidateId(request.getIntervieweeId());
+        session.setCandidateId(user.getId());
+        session.setIntervieweeId(user.getId());
         session.setTopics(request.getTopics());
         session.setInterviewType(request.getInterviewType());
         session.setTitle(request.getTopics() != null && !request.getTopics().isEmpty()

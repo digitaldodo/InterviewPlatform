@@ -110,6 +110,7 @@ public class SessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Interviewer does not exist"));
         User interviewee = userRepository.findById(session.getCandidateId())
                 .orElseThrow(() -> new IllegalArgumentException("Interviewee does not exist"));
+        validateBookingParticipants(interviewer, interviewee);
         if (!Boolean.TRUE.equals(interviewer.getAcceptingBookings())) {
             throw new IllegalArgumentException("This interviewer is not accepting bookings right now");
         }
@@ -465,6 +466,24 @@ public class SessionService {
 
     private boolean isAdmin(User actor) {
         return actor != null && actor.hasRole("ADMIN");
+    }
+
+    private void validateBookingParticipants(User interviewer, User interviewee) {
+        if (interviewer == null || interviewee == null) {
+            throw new IllegalArgumentException("Booking participants are required");
+        }
+        if (Boolean.FALSE.equals(interviewer.getAccountEnabled())) {
+            throw new IllegalArgumentException("This interviewer account is disabled");
+        }
+        if (Boolean.FALSE.equals(interviewee.getAccountEnabled())) {
+            throw new IllegalArgumentException("Your account is disabled");
+        }
+        if (!interviewer.hasRole("INTERVIEWER")) {
+            throw new IllegalArgumentException("Bookings can only be created with interviewer accounts");
+        }
+        if (!interviewee.hasRole("INTERVIEWEE")) {
+            throw new IllegalArgumentException("Only interviewee accounts can create bookings");
+        }
     }
 }
 

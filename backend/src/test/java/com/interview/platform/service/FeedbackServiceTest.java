@@ -6,6 +6,7 @@ import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
+import com.interview.platform.dto.FeedbackDtos;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -48,7 +49,6 @@ class FeedbackServiceTest {
         feedback.setComments("Helpful session");
         feedback.setRating(5);
 
-        when(sessionRepository.existsById("session-1")).thenReturn(true);
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
         when(feedbackRepository.existsBySessionIdAndReviewerId("session-1", "candidate-1")).thenReturn(true);
 
@@ -76,7 +76,6 @@ class FeedbackServiceTest {
         feedback.setComments("Helpful session");
         feedback.setRating(5);
 
-        when(sessionRepository.existsById("session-1")).thenReturn(true);
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
         when(feedbackRepository.existsBySessionIdAndReviewerId("session-1", "candidate-1")).thenReturn(false);
         when(feedbackRepository.save(any(Feedback.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -84,10 +83,32 @@ class FeedbackServiceTest {
         when(feedbackRepository.findAll()).thenReturn(java.util.List.of(feedback));
         when(userRepository.findById("interviewer-1")).thenReturn(Optional.of(interviewer));
 
-        Feedback saved = service.submitFeedback(actor, feedback);
+        FeedbackDtos.FeedbackItem saved = service.submitFeedback(actor, feedback);
 
-        assertEquals("INTERVIEWER_REVIEW", saved.getReviewType());
-        assertEquals(true, saved.getPublicReview());
-        assertEquals("interviewer-1", saved.getTargetUserId());
+        assertEquals("INTERVIEWER_REVIEW", saved.reviewType());
+        assertEquals(true, saved.publicReview());
+        assertEquals("interviewer-1", saved.interviewerId());
+    }
+
+    @Test
+    void rejectsFeedbackWhenSessionIsOnlyConfirmed() {
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService);
+        User actor = new User();
+        actor.setId("candidate-1");
+        Session session = new Session();
+        session.setId("session-1");
+        session.setCandidateId("candidate-1");
+        session.setInterviewerId("interviewer-1");
+        session.setStatus("CONFIRMED");
+
+        Feedback feedback = new Feedback();
+        feedback.setSessionId("session-1");
+        feedback.setComments("Helpful session");
+        feedback.setRating(5);
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> service.submitFeedback(actor, feedback));
+        assertEquals("Feedback can only be submitted after the session is completed", ex.getMessage());
     }
 }

@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -146,6 +147,51 @@ class SessionServiceTest {
     }
 
     @Test
+    void createSessionRejectsWhenTargetIsNotInterviewerRole() {
+        Session request = new Session();
+        request.setCandidateId("cand-1");
+        request.setInterviewerId("user-2");
+        request.setTitle("Backend");
+        request.setInterviewType("Backend");
+        request.setStartTime("2026-05-11T10:00:00Z");
+
+        User notInterviewer = candidate("user-2");
+        User candidate = candidate("cand-1");
+
+        when(userRepository.existsById("user-2")).thenReturn(true);
+        when(userRepository.existsById("cand-1")).thenReturn(true);
+        when(userRepository.findById("user-2")).thenReturn(Optional.of(notInterviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+        assertEquals("Bookings can only be created with interviewer accounts", ex.getMessage());
+        verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
+    void createSessionRejectsDisabledInterviewerAccount() {
+        Session request = new Session();
+        request.setCandidateId("cand-1");
+        request.setInterviewerId("int-1");
+        request.setTitle("Backend");
+        request.setInterviewType("Backend");
+        request.setStartTime("2026-05-11T10:00:00Z");
+
+        User interviewer = interviewer("int-1");
+        interviewer.setAccountEnabled(false);
+        User candidate = candidate("cand-1");
+
+        when(userRepository.existsById("int-1")).thenReturn(true);
+        when(userRepository.existsById("cand-1")).thenReturn(true);
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+        assertEquals("This interviewer account is disabled", ex.getMessage());
+        verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
     void getMeetingAccessRejectsNonParticipant() {
         Session session = session("session-1", "int-1", "cand-1", "CONFIRMED");
         User stranger = candidate("other-user");
@@ -227,7 +273,7 @@ class SessionServiceTest {
 
         assertEquals("room-1", result.meetingId());
         verify(meetingProviderService).provision(any(Session.class), any(User.class), any(User.class));
-        verify(sessionRepository).save(any(Session.class));
+        verify(sessionRepository, times(2)).save(any(Session.class));
     }
 
     private Session session(String id, String interviewerId, String candidateId, String status) {

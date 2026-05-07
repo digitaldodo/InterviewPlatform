@@ -1480,12 +1480,15 @@ async function loadFeedback() {
     const html = feedbackItems.slice(0, 6).map(renderFeedback).join('') || emptyState('No feedback yet.');
     document.getElementById('feedback-list').innerHTML = html;
     document.getElementById('recent-feedback').innerHTML = html;
+    populateFeedbackSessions();
     renderOverview();
     renderSessions('upcoming');
     renderInterviewerPanel();
   } catch {
+    feedbackItems = [];
     document.getElementById('feedback-list').innerHTML = emptyState('Feedback will appear here.');
     document.getElementById('recent-feedback').innerHTML = emptyState('Feedback will appear here.');
+    populateFeedbackSessions();
   }
 }
 
@@ -1500,7 +1503,6 @@ function bindFeedbackForm() {
         method: 'POST',
         body: JSON.stringify({
           sessionId: val('fb-session'),
-          reviewerId: currentUser.id,
           rating: Number(val('fb-rating')),
           communication: Number(val('fb-communication')),
           technicalSkills: Number(val('fb-technical')),
@@ -1526,9 +1528,17 @@ function bindFeedbackForm() {
 
 function populateFeedbackSessions() {
   const select = document.getElementById('fb-session');
-  const eligible = sessions.filter(item => ['CONFIRMED', 'COMPLETED'].includes((item.status || '').toUpperCase()));
+  const eligible = sessions.filter(item =>
+    (item.status || '').toUpperCase() === 'COMPLETED'
+    && !hasCurrentUserReviewedSession(item.id)
+  );
   select.innerHTML = eligible.map(item => `<option value="${esc(item.id)}">${esc(sessionTitle(item))} - ${fmtDate(item.startTime)}</option>`).join('') || '<option value="">No eligible sessions</option>';
   renderFeedbackTopicSections();
+}
+
+function hasCurrentUserReviewedSession(sessionId) {
+  if (!sessionId || !currentUser?.id) return false;
+  return feedbackItems.some(item => item?.sessionId === sessionId && item?.reviewerId === currentUser.id);
 }
 
 function renderFeedback(item) {

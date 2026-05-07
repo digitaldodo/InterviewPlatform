@@ -1,6 +1,7 @@
 package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
+import com.interview.platform.dto.FeedbackDtos;
 import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.User;
@@ -23,22 +24,25 @@ public class FeedbackController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<Feedback>> submitFeedback(@RequestBody Feedback feedback, Authentication authentication) {
+    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackItem>> submitFeedback(@RequestBody Feedback feedback, Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Feedback submitted successfully", feedbackService.submitFeedback(currentUser(authentication), feedback)));
     }
 
     @GetMapping("/session/{sessionId}")
-    public ResponseEntity<ApiResponse<List<Feedback>>> getFeedbackBySession(@PathVariable String sessionId) {
-        return ResponseEntity.ok(ApiResponse.success("Feedback fetched successfully", feedbackService.getFeedbackForSession(sessionId)));
+    public ResponseEntity<ApiResponse<List<FeedbackDtos.FeedbackItem>>> getFeedbackBySession(@PathVariable String sessionId,
+                                                                                              Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Feedback fetched successfully",
+                feedbackService.getFeedbackForSession(sessionId, currentUser(authentication))));
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Feedback>>> getAllFeedback() {
-        return ResponseEntity.ok(ApiResponse.success("Feedback fetched successfully", feedbackService.getAllFeedback()));
+    public ResponseEntity<ApiResponse<List<FeedbackDtos.FeedbackItem>>> getAllFeedback(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Feedback fetched successfully",
+                feedbackService.getFeedbackForUser(currentUser(authentication))));
     }
 
     @GetMapping("/interviewer/{interviewerId}/public")
-    public ResponseEntity<ApiResponse<List<Feedback>>> publicReviews(@PathVariable String interviewerId) {
+    public ResponseEntity<ApiResponse<List<FeedbackDtos.PublicFeedbackItem>>> publicReviews(@PathVariable String interviewerId) {
         return ResponseEntity.ok(ApiResponse.success("Public interviewer reviews fetched successfully",
                 feedbackService.publicReviewsForInterviewer(interviewerId)));
     }
