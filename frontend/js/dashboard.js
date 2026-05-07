@@ -18,9 +18,16 @@ let activeMeetingTimer = null;
 let jitsiApi = null;
 let jitsiScriptPromise = null;
 let meetingUiState = { audioMuted: false, videoMuted: false, screenSharing: false, participants: 1, joined: false };
+let availabilitySchedules = [];
+let generatedAvailabilitySlots = [];
+let availabilityEditId = null;
+let availabilityLoading = false;
+let availabilityError = '';
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
+const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
+const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -33,7 +40,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initUi();
   bindFilters();
   bindFeedbackForm();
-  await Promise.all([loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications()]);
+  await Promise.all([loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications(), loadAvailabilityManagement()]);
   showSection(routeFromHash(), false);
 });
 
@@ -77,6 +84,10 @@ function savedWorkspace() {
   return roles.includes(normalized) ? normalized : (roles[0] || 'INTERVIEWEE');
 }
 
+function hasInterviewerRole() {
+  return userRoles().includes('INTERVIEWER');
+}
+
 function renderWorkspaceSwitcher(roles) {
   const wrap = document.getElementById('workspace-switcher-wrap');
   const select = document.getElementById('workspace-switcher');
@@ -97,10 +108,19 @@ function switchWorkspace(workspace) {
   loadSessions();
   loadRecommended();
   loadInterviewers();
+  loadAvailabilityManagement();
 }
 
 function primaryWorkspaceAction() {
   showSection(activeWorkspace === 'INTERVIEWER' ? 'interviewer' : 'discover');
+}
+
+function openAvailabilityManager() {
+  if (!hasInterviewerRole()) return;
+  if (activeWorkspace !== 'INTERVIEWER') {
+    switchWorkspace('INTERVIEWER');
+  }
+  showSection('interviewer');
 }
 
 function workspaceLabel(role) {
@@ -126,6 +146,7 @@ async function loadOwnProfile() {
     localStorage.setItem('ip_user', JSON.stringify(currentUser));
     initUi();
     renderProfile();
+    renderAvailabilityPanels();
   } catch (err) {
     toast(err.message || 'Could not refresh profile.', 'error');
   }
@@ -477,6 +498,42 @@ async function loadSessions() {
   }
 }
 
+async function loadAvailabilityManagement(showErrors = false) {
+  if (!hasInterviewerRole()) {
+    availabilitySchedules = [];
+    generatedAvailabilitySlots = [];
+    availabilityEditId = null;
+    availabilityError = '';
+    availabilityLoading = false;
+    renderAvailabilityPanels();
+    return;
+  }
+  availabilityLoading = true;
+  availabilityError = '';
+  renderAvailabilityPanels();
+  try {
+    const [schedules, slots] = await Promise.all([
+      api('/api/interviewer-availability/me'),
+      api(`/api/interviewers/${currentUser.id}/slots?days=14`),
+    ]);
+    availabilitySchedules = Array.isArray(schedules) ? schedules : [];
+    generatedAvailabilitySlots = Array.isArray(slots) ? slots : [];
+  } catch (err) {
+    availabilitySchedules = [];
+    generatedAvailabilitySlots = [];
+    availabilityError = err.message || 'Could not load availability right now.';
+    if (showErrors) toast(availabilityError, 'error');
+  } finally {
+    availabilityLoading = false;
+    renderAvailabilityPanels();
+  }
+}
+
+function renderAvailabilityPanels() {
+  renderInterviewerAvailabilityPanel();
+  renderProfileAvailabilityPanel();
+}
+
 function renderOverview() {
   const upcoming = sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()));
   const completed = sessions.filter(item => (item.status || '').toUpperCase() === 'COMPLETED');
@@ -604,6 +661,250 @@ function renderInterviewerPanel() {
   if (incomingHost) incomingHost.innerHTML = incoming.map(renderSessionCard).join('') || emptyState('No pending requests.');
   const calendar = document.getElementById('calendar-view');
   if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${new Date(item.startTime).toLocaleDateString()}</strong><span>${esc(item.interviewType || item.title || 'Interview')}</span></div>`).join('') || emptyState('Your calendar is clear.');
+  renderInterviewerAvailabilityPanel();
+}
+
+function renderInterviewerAvailabilityPanel() {
+  const host = document.getElementById('availability-management-panel');
+  if (!host) return;
+  if (!hasInterviewerRole()) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  host.hidden = false;
+  if (availabilityLoading) {
+    host.innerHTML = `
+      <div class="panel-head">
+        <div><h2>Availability management</h2><p class="availability-muted">Weekly schedule and generated slots.</p></div>
+      </div>
+      <div class="availability-shell">${skeletonCards(1)}${skeletonCards(2)}</div>
+    `;
+    return;
+  }
+  const editing = availabilitySchedules.find(item => item.id === availabilityEditId) || null;
+  const formValues = {
+    dayOfWeek: editing?.dayOfWeek || 'MONDAY',
+    startTime: editing?.startTime || '09:00',
+    endTime: editing?.endTime || '17:00',
+    durationMinutes: editing?.durationMinutes || 60,
+  };
+  const scheduleContent = availabilityError
+    ? emptyState(availabilityError)
+    : availabilitySchedules.length
+      ? `<div class="availability-list">${availabilitySchedules.map(item => renderAvailabilityItem(item, true)).join('')}</div>`
+      : `<div class="availability-summary-empty">${emptyState('This interviewer has not added availability yet.')}</div>`;
+  const slotsContent = availabilityError
+    ? emptyState(availabilityError)
+    : generatedAvailabilitySlots.length
+      ? `<div class="availability-slot-list">${generatedAvailabilitySlots.slice(0, 8).map(renderGeneratedSlotItem).join('')}</div>`
+      : `<div class="availability-summary-empty">${emptyState(availabilitySchedules.length ? 'No upcoming generated slots are available yet.' : 'This interviewer has not added availability yet.')}</div>`;
+  host.innerHTML = `
+    <div class="panel-head">
+      <div>
+        <h2>Availability management</h2>
+        <p class="availability-muted">Set recurring weekly schedules, then let the backend generate bookable slots automatically.</p>
+      </div>
+      <button class="btn btn-outline btn-sm" type="button" onclick="resetAvailabilityForm()">${editing ? 'Cancel edit' : 'New availability'}</button>
+    </div>
+    <div class="availability-shell">
+      <div class="availability-form-card">
+        <form class="availability-form" onsubmit="saveAvailability(event)">
+          <div>
+            <h3>${editing ? 'Edit weekly schedule' : 'Add weekly schedule'}</h3>
+            <p class="availability-summary-note">Choose a day, time window, and interview duration. Slots are generated from real API data only.</p>
+          </div>
+          <div class="form-group">
+            <label for="availability-day">Day</label>
+            <select id="availability-day">
+              ${AVAILABILITY_DAYS.map(day => `<option value="${day}" ${day === formValues.dayOfWeek ? 'selected' : ''}>${esc(formatDayLabel(day))}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="availability-start">Start time</label>
+              <input id="availability-start" type="time" value="${esc(formValues.startTime)}" required />
+            </div>
+            <div class="form-group">
+              <label for="availability-end">End time</label>
+              <input id="availability-end" type="time" value="${esc(formValues.endTime)}" required />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="availability-duration">Interview duration</label>
+            <select id="availability-duration">
+              ${AVAILABILITY_DURATIONS.map(minutes => `<option value="${minutes}" ${Number(minutes) === Number(formValues.durationMinutes) ? 'selected' : ''}>${minutes} minutes</option>`).join('')}
+            </select>
+          </div>
+          <div class="availability-form-actions">
+            <button class="btn btn-primary" id="availability-save-btn">${editing ? 'Save changes' : 'Add availability'}</button>
+            ${editing ? '<button class="btn btn-outline" type="button" onclick="resetAvailabilityForm()">Cancel</button>' : ''}
+          </div>
+        </form>
+      </div>
+      <div class="availability-preview-grid">
+        <div class="availability-content-card">
+          <div class="availability-heading-row">
+            <div>
+              <h3>Recurring schedules</h3>
+              <p class="availability-summary-note">Weekly windows currently available for booking.</p>
+            </div>
+            <span class="badge badge-purple">${availabilitySchedules.length} saved</span>
+          </div>
+          ${scheduleContent}
+        </div>
+        <div class="availability-slot-card">
+          <div class="availability-heading-row">
+            <div>
+              <h3>Upcoming generated slots</h3>
+              <p class="availability-summary-note">Pulled from the backend scheduling engine for the next 14 days.</p>
+            </div>
+            <span class="badge badge-green">${generatedAvailabilitySlots.length} open</span>
+          </div>
+          ${slotsContent}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderProfileAvailabilityPanel() {
+  const host = document.getElementById('profile-availability-panel');
+  if (!host) return;
+  if (!hasInterviewerRole()) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  host.hidden = false;
+  if (availabilityLoading) {
+    host.innerHTML = `
+      <div class="panel-head">
+        <div><h2>Availability schedule</h2><p class="availability-muted">Syncing interviewer availability.</p></div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="openAvailabilityManager()">Manage schedule</button>
+      </div>
+      <div class="availability-summary-stack">${skeletonCards(2)}</div>
+    `;
+    return;
+  }
+  const summaryContent = availabilityError
+    ? emptyState(availabilityError)
+    : availabilitySchedules.length
+      ? `<div class="availability-summary-stack">${availabilitySchedules.map(item => renderAvailabilityItem(item, false)).join('')}</div>`
+      : `<div class="availability-summary-empty">${emptyState('This interviewer has not added availability yet.')}</div>`;
+  const nextSlots = availabilityError
+    ? ''
+    : generatedAvailabilitySlots.length
+      ? `
+        <div class="availability-summary-card">
+          <h3>Next generated slots</h3>
+          <div class="availability-slot-list">
+            ${generatedAvailabilitySlots.slice(0, 4).map(renderGeneratedSlotItem).join('')}
+          </div>
+        </div>
+      `
+      : '';
+  host.innerHTML = `
+    <div class="panel-head">
+      <div>
+        <h2>Availability schedule</h2>
+        <p class="availability-muted">Keep your weekly interview hours current without leaving your profile.</p>
+      </div>
+      <button class="btn btn-outline btn-sm" type="button" onclick="openAvailabilityManager()">Manage schedule</button>
+    </div>
+    ${summaryContent}
+    ${nextSlots}
+  `;
+}
+
+function renderAvailabilityItem(item, includeActions) {
+  const actionButtons = includeActions ? `
+    <div class="availability-item-actions">
+      <button class="btn btn-outline btn-sm" type="button" onclick="startAvailabilityEdit('${item.id}')">Edit</button>
+      <button class="btn btn-danger btn-sm" type="button" onclick="deleteAvailability('${item.id}')">Delete</button>
+    </div>
+  ` : '';
+  return `
+    <article class="availability-item">
+      <div class="availability-heading-row">
+        <strong>${esc(formatDayLabel(item.dayOfWeek))}</strong>
+        <span class="badge badge-gray">${esc(String(item.durationMinutes || 0))} min</span>
+      </div>
+      <div class="availability-meta">
+        <span>${esc(formatPlainTime(item.startTime))} - ${esc(formatPlainTime(item.endTime))}</span>
+        <span>${esc(formatWindowSummary(item.startTime, item.endTime, item.durationMinutes))}</span>
+      </div>
+      ${actionButtons}
+    </article>
+  `;
+}
+
+function renderGeneratedSlotItem(slot) {
+  return `
+    <article class="availability-slot-item">
+      <strong>${esc(formatShortDate(slot.startTime))}</strong>
+      <span>${esc(formatDateTimeRange(slot.startTime, slot.endTime))}</span>
+      <small>${esc(String(slot.durationMinutes || 0))} min slot</small>
+    </article>
+  `;
+}
+
+function startAvailabilityEdit(id) {
+  availabilityEditId = id;
+  openAvailabilityManager();
+  renderAvailabilityPanels();
+}
+
+function resetAvailabilityForm() {
+  availabilityEditId = null;
+  renderAvailabilityPanels();
+}
+
+async function saveAvailability(event) {
+  event.preventDefault();
+  const btn = document.getElementById('availability-save-btn');
+  const editing = Boolean(availabilityEditId);
+  const payload = {
+    dayOfWeek: val('availability-day'),
+    startTime: val('availability-start'),
+    endTime: val('availability-end'),
+    durationMinutes: Number(val('availability-duration')),
+  };
+  if (!payload.dayOfWeek || !payload.startTime || !payload.endTime || !payload.durationMinutes) {
+    toast('Please complete all availability fields.', 'error');
+    return;
+  }
+  if (payload.endTime <= payload.startTime) {
+    toast('End time must be later than start time.', 'error');
+    return;
+  }
+  setButtonLoading(btn, true, availabilityEditId ? 'Saving' : 'Adding');
+  try {
+    await api(availabilityEditId ? `/api/interviewer-availability/${availabilityEditId}` : '/api/interviewer-availability', {
+      method: availabilityEditId ? 'PUT' : 'POST',
+      body: JSON.stringify(payload),
+    });
+    availabilityEditId = null;
+    toast(editing ? 'Availability updated.' : 'Availability added.', 'success');
+    await loadAvailabilityManagement(true);
+  } catch (err) {
+    toast(err.message || 'Could not save availability.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function deleteAvailability(id) {
+  if (!id) return;
+  if (!window.confirm('Remove this weekly availability block?')) return;
+  try {
+    await api(`/api/interviewer-availability/${id}`, { method: 'DELETE' });
+    if (availabilityEditId === id) availabilityEditId = null;
+    toast('Availability deleted.', 'success');
+    await loadAvailabilityManagement(true);
+  } catch (err) {
+    toast(err.message || 'Could not delete availability.', 'error');
+  }
 }
 
 async function loadNotifications() {
@@ -644,6 +945,7 @@ function renderProfile() {
   const roles = userRoles().map(workspaceLabel).join(', ');
   const isVerified = Boolean(currentUser.isVerified);
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
+  const showLegacyAvailabilityField = !hasInterviewerRole();
   summary.innerHTML = `
     <div class="preview-profile">
       <div class="avatar large">${currentUser.avatarUrl ? `<img src="${esc(currentUser.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">` : initials(currentUser)}</div>
@@ -724,11 +1026,21 @@ function renderProfile() {
             ${['', 'Student', 'Entry level', 'Mid level', 'Senior', 'Staff+'].map(level => `<option value="${esc(level)}" ${level === (currentUser.experienceLevel || '') ? 'selected' : ''}>${level || 'Select level'}</option>`).join('')}
           </select>
         </div>
-        <div class="form-group">
-          <label for="profile-availability">Availability slots</label>
-          <input id="profile-availability" value="${esc((currentUser.availability || []).join(', '))}" placeholder="2026-05-10T10:30, Fridays 6 PM" />
-        </div>
       </div>
+      ${showLegacyAvailabilityField ? `
+        <div class="form-group">
+          <label for="profile-availability">Availability notes</label>
+          <input id="profile-availability" value="${esc((currentUser.availability || []).join(', '))}" placeholder="Weekday evenings, Saturday mornings" />
+        </div>
+      ` : `
+        <div class="availability-summary-card">
+          <h3>Weekly availability</h3>
+          <p class="availability-summary-note">Manage recurring interviewer schedules from the interviewer workspace. Your generated slots update automatically there.</p>
+          <div class="availability-form-actions">
+            <button class="btn btn-outline btn-sm" type="button" onclick="openAvailabilityManager()">Open availability manager</button>
+          </div>
+        </div>
+      `}
       <button class="btn btn-primary btn-full" id="profile-save-btn">Save profile</button>
     </form>
     <div class="divider"></div>
@@ -752,6 +1064,7 @@ function renderProfile() {
   const savedList = filterSelf(interviewers).filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
   initProfileControls();
+  renderProfileAvailabilityPanel();
 }
 
 function initProfileControls() {
@@ -1152,18 +1465,22 @@ async function saveProfile(event) {
   const btn = document.getElementById('profile-save-btn');
   setButtonLoading(btn, true, 'Saving');
   try {
+    const payload = {
+      name: val('profile-name'),
+      avatarUrl: val('profile-avatar'),
+      bio: val('profile-bio'),
+      skills: FormUx.getTagValues('profile-skills'),
+      language: FormUx.getLanguageString('profile-language'),
+      preferredDomains: splitList(val('profile-domains')),
+      experienceLevel: val('profile-experience'),
+    };
+    const availabilityField = document.getElementById('profile-availability');
+    if (availabilityField) {
+      payload.availability = splitList(availabilityField.value);
+    }
     const updated = await api('/api/users/me/profile', {
       method: 'PUT',
-      body: JSON.stringify({
-        name: val('profile-name'),
-        avatarUrl: val('profile-avatar'),
-        bio: val('profile-bio'),
-        skills: FormUx.getTagValues('profile-skills'),
-        language: FormUx.getLanguageString('profile-language'),
-        preferredDomains: splitList(val('profile-domains')),
-        experienceLevel: val('profile-experience'),
-        availability: splitList(val('profile-availability')),
-      }),
+      body: JSON.stringify(payload),
     });
     currentUser = updated;
     localStorage.setItem('ip_user', JSON.stringify(updated));
@@ -1312,6 +1629,55 @@ function val(id) {
 function initials(user) {
   const name = user.name || user.username || user.email || 'IP';
   return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function formatDayLabel(value) {
+  const index = AVAILABILITY_DAYS.indexOf(String(value || '').toUpperCase());
+  return index === -1 ? String(value || 'Day') : `${AVAILABILITY_DAYS[index].slice(0, 1)}${AVAILABILITY_DAYS[index].slice(1).toLowerCase()}`;
+}
+
+function formatPlainTime(value) {
+  if (!value) return '--';
+  const [hourRaw, minuteRaw] = String(value).split(':');
+  const hour = Number(hourRaw);
+  const minute = Number(minuteRaw);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return String(value);
+  const date = new Date(Date.UTC(2026, 0, 1, hour, minute));
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+}
+
+function formatWindowSummary(startTime, endTime, durationMinutes) {
+  const [startHour, startMinute] = String(startTime || '').split(':').map(Number);
+  const [endHour, endMinute] = String(endTime || '').split(':').map(Number);
+  if (![startHour, startMinute, endHour, endMinute, Number(durationMinutes)].every(Number.isFinite) || Number(durationMinutes) <= 0) {
+    return `${durationMinutes || '--'} min sessions`;
+  }
+  const totalMinutes = ((endHour * 60) + endMinute) - ((startHour * 60) + startMinute);
+  const count = Math.max(0, Math.floor(totalMinutes / Number(durationMinutes)));
+  return `${count} ${count === 1 ? 'slot' : 'slots'} x ${durationMinutes} min`;
+}
+
+function formatShortDate(value) {
+  if (!value) return 'Upcoming';
+  try {
+    return new Date(value).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  } catch {
+    return String(value);
+  }
+}
+
+function formatDateTimeRange(startTime, endTime) {
+  if (!startTime) return 'Flexible';
+  try {
+    const start = new Date(startTime);
+    const end = endTime ? new Date(endTime) : null;
+    const datePart = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    const startPart = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const endPart = end ? end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+    return `${datePart} • ${startPart}${endPart ? ` - ${endPart}` : ''}`;
+  } catch {
+    return String(startTime);
+  }
 }
 
 function fmtDate(value) {
