@@ -306,28 +306,29 @@ textarea:focus-visible {
   object-fit: contain;
   max-width: 100%;
   flex-shrink: 0;
+  image-rendering: -webkit-optimize-contrast;
 }
 
 .brand-logo-nav {
-  width: clamp(148px, 16vw, 196px);
+  width: clamp(152px, 16vw, 198px);
   height: auto;
 }
 
 .brand-logo-sidebar {
-  width: min(196px, 100%);
+  width: min(188px, 100%);
   height: auto;
 }
 
 .brand-logo-auth {
-  width: min(260px, 100%);
+  width: min(252px, 100%);
   height: auto;
 }
 
 .brand-logo-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255,255,255,0.08);
+  width: 40px;
+  height: 40px;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .brand-mark,
@@ -742,8 +743,8 @@ textarea:focus-visible {
 .auth-brand {
   display: grid;
   place-items: center;
-  padding: 0.25rem 0 1rem;
-  margin-bottom: 0.2rem;
+  padding: 0 0 0.85rem;
+  margin-bottom: 0.1rem;
 }
 
 .tab-bar {
@@ -838,7 +839,7 @@ textarea:focus-visible {
 
 .side-brand {
   width: 100%;
-  padding: 0.35rem 0.25rem 0.7rem;
+  padding: 0.1rem 0.15rem 0.5rem;
 }
 
 .nav-menu {
@@ -928,6 +929,7 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
+  margin-right: 0.1rem;
 }
 
 .topbar-copy {
