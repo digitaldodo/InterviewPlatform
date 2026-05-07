@@ -47,6 +47,17 @@ function initUi() {
   renderBookingStep();
 }
 
+async function loadOwnProfile() {
+  try {
+    currentUser = await api('/api/users/me/profile');
+    localStorage.setItem('ip_user', JSON.stringify(currentUser));
+    initUi();
+    renderProfile();
+  } catch (err) {
+    toast(err.message || 'Could not refresh profile.', 'error');
+  }
+}
+
 function toggleSidebar(forceOpen) {
   const sidebar = document.getElementById('sidebar');
   if (typeof forceOpen === 'boolean') {
@@ -71,6 +82,7 @@ function showSection(name, updateRoute = true) {
   if (targetName === 'sessions') renderSessions('upcoming');
   if (targetName === 'notifications') loadNotifications();
   if (targetName === 'profile') renderProfile();
+  document.querySelector('.topbar')?.classList.toggle('compact', targetName !== 'overview');
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
   if (updateRoute && window.location.hash !== `#/${targetName}`) {
     history.pushState(null, '', `#/${targetName}`);
@@ -487,25 +499,241 @@ function renderProfile() {
   const summary = document.getElementById('profile-summary');
   if (!summary) return;
   const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
+  const isVerified = Boolean(currentUser.isVerified);
+  const completion = profileCompletion();
   summary.innerHTML = `
     <div class="preview-profile">
-      <div class="avatar large">${initials(currentUser)}</div>
+      <div class="avatar large">${currentUser.avatarUrl ? `<img src="${esc(currentUser.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">` : initials(currentUser)}</div>
       <div>
         <h2>${esc(currentUser.name || currentUser.username || 'InterviewPrep user')}</h2>
         <p>${esc(currentUser.email || '')}</p>
-        <span class="badge badge-purple">${esc(role)}</span>
+        <div class="profile-status-row">
+          <span class="badge badge-purple">${esc(role)}</span>
+          <span class="badge ${isVerified ? 'badge-green' : 'badge-yellow'}">${isVerified ? 'Verified' : 'Verification pending'}</span>
+        </div>
       </div>
     </div>
     <div class="stats-inline" style="margin-top:1rem;">
       <span>${sessions.length} sessions</span>
       <span>${Number(currentUser.averageRating || 0).toFixed(1)} rating</span>
-      <span>${currentUser.isVerified ? 'Verified' : 'Verification pending'}</span>
+      <span>${completion}% profile complete</span>
     </div>
+    <div class="profile-completion">
+      <div class="progress-track"><i style="width:${completion}%"></i></div>
+    </div>
+    ${isVerified ? '' : `
+      <div class="divider"></div>
+      <div class="security-stack">
+        <h2>Verify email</h2>
+        <p>Enter the OTP sent to ${esc(currentUser.email || 'your email')} or request a fresh one.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="profile-otp">Verification OTP</label>
+            <input id="profile-otp" inputmode="numeric" maxlength="6" placeholder="6-digit code" />
+          </div>
+          <div class="form-group">
+            <label>&nbsp;</label>
+            <div class="profile-actions-row">
+              <button class="btn btn-primary" id="profile-verify-btn" onclick="verifyProfileOtp()">Verify Email</button>
+              <button class="btn btn-outline" id="profile-resend-btn" onclick="resendProfileOtp()">Resend OTP</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `}
+    <div class="divider"></div>
+    <form class="profile-form" onsubmit="saveProfile(event)">
+      <h2>Edit profile</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-name">Full name</label>
+          <input id="profile-name" value="${esc(currentUser.name || currentUser.username || '')}" required />
+        </div>
+        <div class="form-group">
+          <label for="profile-avatar">Avatar URL</label>
+          <input id="profile-avatar" value="${esc(currentUser.avatarUrl || '')}" placeholder="https://..." />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="profile-avatar-file">Upload avatar preview</label>
+        <input id="profile-avatar-file" type="file" accept="image/*" onchange="previewAvatarFile(event)" />
+      </div>
+      <div class="form-group">
+        <label for="profile-bio">Bio/About</label>
+        <textarea id="profile-bio" placeholder="Tell interviewers what you are preparing for">${esc(currentUser.bio || '')}</textarea>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-skills">Skills</label>
+          <input id="profile-skills" value="${esc((currentUser.skills || []).join(', '))}" placeholder="Java, DSA, System Design" />
+        </div>
+        <div class="form-group">
+          <label for="profile-domains">Preferred interview domains</label>
+          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-experience">Experience level</label>
+          <select id="profile-experience">
+            ${['', 'Student', 'Entry level', 'Mid level', 'Senior', 'Staff+'].map(level => `<option value="${esc(level)}" ${level === (currentUser.experienceLevel || '') ? 'selected' : ''}>${level || 'Select level'}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="profile-availability">Availability slots</label>
+          <input id="profile-availability" value="${esc((currentUser.availability || []).join(', '))}" placeholder="2026-05-10T10:30, Fridays 6 PM" />
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="profile-save-btn">Save profile</button>
+    </form>
+    <div class="divider"></div>
+    <form class="profile-form" onsubmit="changePassword(event)">
+      <h2>Security</h2>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-current-password">Current password</label>
+          <input id="profile-current-password" type="password" autocomplete="current-password" />
+        </div>
+        <div class="form-group">
+          <label for="profile-new-password">New password</label>
+          <input id="profile-new-password" type="password" autocomplete="new-password" />
+        </div>
+      </div>
+      <button class="btn btn-outline btn-full" id="profile-password-btn">Change password</button>
+    </form>
   `;
   const saved = document.getElementById('saved-interviewers');
   const ids = currentUser.favoriteInterviewerIds || [];
   const savedList = interviewers.filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
+}
+
+function profileCompletion() {
+  const checks = [
+    currentUser.name || currentUser.username,
+    currentUser.email,
+    currentUser.avatarUrl,
+    currentUser.bio,
+    currentUser.skills?.length,
+    currentUser.preferredDomains?.length,
+    currentUser.experienceLevel,
+    currentUser.availability?.length,
+    currentUser.isVerified,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+async function resendProfileOtp() {
+  const btn = document.getElementById('profile-resend-btn');
+  setButtonLoading(btn, true, 'Sending');
+  try {
+    await api('/api/users/me/resend-otp', { method: 'POST' });
+    toast('Verification OTP sent.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function verifyProfileOtp() {
+  const btn = document.getElementById('profile-verify-btn');
+  setButtonLoading(btn, true, 'Verifying');
+  try {
+    const updated = await api('/api/users/me/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email: currentUser.email, otp: val('profile-otp') }),
+    });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+    toast('Email verified.', 'success');
+    renderProfile();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function saveProfile(event) {
+  event.preventDefault();
+  const btn = document.getElementById('profile-save-btn');
+  setButtonLoading(btn, true, 'Saving');
+  try {
+    const updated = await api('/api/users/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: val('profile-name'),
+        avatarUrl: val('profile-avatar'),
+        bio: val('profile-bio'),
+        skills: splitList(val('profile-skills')),
+        preferredDomains: splitList(val('profile-domains')),
+        experienceLevel: val('profile-experience'),
+        availability: splitList(val('profile-availability')),
+      }),
+    });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+    initUi();
+    renderProfile();
+    toast('Profile saved.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const btn = document.getElementById('profile-password-btn');
+  setButtonLoading(btn, true, 'Updating');
+  try {
+    await api('/api/users/me/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        currentPassword: document.getElementById('profile-current-password').value,
+        newPassword: document.getElementById('profile-new-password').value,
+      }),
+    });
+    document.getElementById('profile-current-password').value = '';
+    document.getElementById('profile-new-password').value = '';
+    toast('Password updated.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+function previewAvatarFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (file.size > 600_000) {
+    toast('Please choose an image under 600 KB.', 'error');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    document.getElementById('profile-avatar').value = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function splitList(value) {
+  return value.split(',').map(item => item.trim()).filter(Boolean);
+}
+
+function setButtonLoading(btn, loading, label = 'Working') {
+  if (!btn) return;
+  if (loading) {
+    btn.disabled = true;
+    btn.dataset.originalText = btn.textContent;
+    btn.innerHTML = `<span class="spinner"></span> ${label}`;
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.originalText || btn.textContent;
+  }
 }
 
 function renderSkillProgress() {

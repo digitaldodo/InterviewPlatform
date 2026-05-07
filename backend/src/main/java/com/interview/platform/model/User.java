@@ -34,6 +34,8 @@ public class User {
     private String bio;
     private String avatarUrl;
     private String language;
+    private List<String> preferredDomains = new ArrayList<>();
+    private String experienceLevel;
     private Integer yearsExperience = 0;
     private Integer completedInterviews = 0;
     private Double averageRating = 0.0;
@@ -96,6 +98,12 @@ public class User {
 
     public String getLanguage() { return language; }
     public void setLanguage(String language) { this.language = language; }
+
+    public List<String> getPreferredDomains() { return preferredDomains; }
+    public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains == null ? new ArrayList<>() : preferredDomains; }
+
+    public String getExperienceLevel() { return experienceLevel; }
+    public void setExperienceLevel(String experienceLevel) { this.experienceLevel = experienceLevel; }
 
     public Integer getYearsExperience() { return yearsExperience; }
     public void setYearsExperience(Integer yearsExperience) { this.yearsExperience = yearsExperience == null ? 0 : yearsExperience; }

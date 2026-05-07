@@ -1,0 +1,45 @@
+package com.interview.platform.dto;
+
+import jakarta.validation.constraints.Size;
+
+import java.util.List;
+
+public class UserDtos {
+    public static class ProfileUpdateRequest {
+        @Size(min = 1, max = 120)
+        private String name;
+        private String avatarUrl;
+        @Size(max = 1000)
+        private String bio;
+        private List<String> skills;
+        private List<String> preferredDomains;
+        private String experienceLevel;
+        private List<String> availability;
+
+        public String getName() { return name; }
+        public void setName(String name) { this.name = name; }
+        public String getAvatarUrl() { return avatarUrl; }
+        public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+        public String getBio() { return bio; }
+        public void setBio(String bio) { this.bio = bio; }
+        public List<String> getSkills() { return skills; }
+        public void setSkills(List<String> skills) { this.skills = skills; }
+        public List<String> getPreferredDomains() { return preferredDomains; }
+        public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains; }
+        public String getExperienceLevel() { return experienceLevel; }
+        public void setExperienceLevel(String experienceLevel) { this.experienceLevel = experienceLevel; }
+        public List<String> getAvailability() { return availability; }
+        public void setAvailability(List<String> availability) { this.availability = availability; }
+    }
+
+    public static class ChangePasswordRequest {
+        private String currentPassword;
+        @Size(min = 6)
+        private String newPassword;
+
+        public String getCurrentPassword() { return currentPassword; }
+        public void setCurrentPassword(String currentPassword) { this.currentPassword = currentPassword; }
+        public String getNewPassword() { return newPassword; }
+        public void setNewPassword(String newPassword) { this.newPassword = newPassword; }
+    }
+}

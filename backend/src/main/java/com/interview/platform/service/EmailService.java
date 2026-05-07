@@ -1,5 +1,6 @@
 package com.interview.platform.service;
 
+import com.interview.platform.exception.EmailDeliveryException;
 import com.sendgrid.Method;
 import com.sendgrid.Request;
 import com.sendgrid.Response;
@@ -33,6 +34,7 @@ public class EmailService {
     }
 
     public void sendVerificationOtp(String to, String otp) {
+        log.info("Preparing verification OTP email for {}", maskEmail(to));
         send(to, "Verify your InterviewPrep account", verificationTemplate(otp));
     }
 
@@ -41,17 +43,23 @@ public class EmailService {
     }
 
     public void sendPasswordResetOtp(String to, String otp) {
+        log.info("Preparing password reset OTP email for {}", maskEmail(to));
         send(to, "Reset your InterviewPrep password", resetOtpTemplate(otp));
     }
 
     public void sendBookingConfirmation(String to, String title, String startTime, String meetingLink) {
+        log.info("Preparing booking confirmation email for {}", maskEmail(to));
         send(to, "Your mock interview is booked", bookingTemplate(title, startTime, meetingLink));
     }
 
     private void send(String to, String subject, String html) {
         if (apiKey == null || apiKey.isBlank()) {
-            log.info("SendGrid not configured. Email '{}' for {} skipped.", subject, to);
-            return;
+            log.error("SendGrid API key is not configured. Email '{}' for {} was not sent.", subject, maskEmail(to));
+            throw new EmailDeliveryException("Email delivery is not configured. Please contact support.");
+        }
+        if (fromEmail == null || fromEmail.isBlank()) {
+            log.error("SendGrid from email is not configured. Email '{}' for {} was not sent.", subject, maskEmail(to));
+            throw new EmailDeliveryException("Email sender is not configured. Please contact support.");
         }
         Mail mail = new Mail(new Email(fromEmail), subject, new Email(to), new Content("text/html", html));
         SendGrid sg = new SendGrid(apiKey);
@@ -60,13 +68,31 @@ public class EmailService {
             request.setMethod(Method.POST);
             request.setEndpoint("mail/send");
             request.setBody(mail.build());
+            log.info("Sending SendGrid email '{}' to {} from {}", subject, maskEmail(to), fromEmail);
             Response response = sg.api(request);
+            log.info("SendGrid response for '{}' to {}: status={}", subject, maskEmail(to), response.getStatusCode());
             if (response.getStatusCode() >= 400) {
-                log.warn("SendGrid email failed with status {} and body {}", response.getStatusCode(), response.getBody());
+                log.error("SendGrid email failed for '{}' to {} with status {} and body {}",
+                        subject, maskEmail(to), response.getStatusCode(), response.getBody());
+                throw new EmailDeliveryException("Email delivery failed. Please verify the sender configuration.");
             }
         } catch (IOException ex) {
-            log.warn("SendGrid email failed", ex);
+            log.error("SendGrid email request failed for '{}' to {}", subject, maskEmail(to), ex);
+            throw new EmailDeliveryException("Email delivery failed. Please try again later.", ex);
+        } catch (RuntimeException ex) {
+            log.error("SendGrid email request failed unexpectedly for '{}' to {}", subject, maskEmail(to), ex);
+            throw new EmailDeliveryException("Email delivery failed. Please try again later.", ex);
         }
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "unknown";
+        }
+        String[] parts = email.split("@", 2);
+        String name = parts[0];
+        String masked = name.length() <= 2 ? name.charAt(0) + "*" : name.substring(0, 2) + "***";
+        return masked + "@" + parts[1];
     }
 
     private String verificationTemplate(String otp) {

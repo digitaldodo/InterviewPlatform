@@ -11,6 +11,8 @@ import com.interview.platform.repository.RefreshTokenRepository;
 import com.interview.platform.repository.UserRepository;
 import com.interview.platform.repository.VerificationOtpRepository;
 import com.interview.platform.security.JwtService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,7 @@ import java.util.Locale;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final VerificationOtpRepository verificationOtpRepository;
@@ -74,7 +77,7 @@ public class AuthService {
         validateNewUser(user);
         String email = normalizeEmail(user.getEmail());
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email is already registered");
+            throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
         user.setUsername(trim(user.getUsername()));
         user.setEmail(email);
@@ -138,6 +141,7 @@ public class AuthService {
             throw new IllegalArgumentException("Please wait before requesting another OTP");
         }
         String otp = tokenService.otp();
+        log.info("Generated verification OTP for {}", maskEmail(normalized));
         VerificationOtp record = new VerificationOtp();
         record.setEmail(normalized);
         record.setOtpHash(passwordEncoder.encode(otp));
@@ -145,7 +149,9 @@ public class AuthService {
         record.setLastSentAt(now);
         record.setExpiresAt(now.plusSeconds(600));
         verificationOtpRepository.save(record);
+        log.info("Stored verification OTP metadata for {}", maskEmail(normalized));
         emailService.sendVerificationOtp(normalized, otp);
+        log.info("Verification OTP email accepted by SendGrid pipeline for {}", maskEmail(normalized));
     }
 
     public void verifyOtp(String email, String otp) {
@@ -180,6 +186,7 @@ public class AuthService {
                 throw new IllegalArgumentException("Please wait before requesting another reset OTP");
             }
             String otp = tokenService.otp();
+            log.info("Generated password reset OTP for {}", maskEmail(user.getEmail()));
             PasswordResetToken record = new PasswordResetToken();
             record.setUserId(user.getId());
             record.setOtpHash(passwordEncoder.encode(otp));
@@ -187,7 +194,9 @@ public class AuthService {
             record.setLastSentAt(now);
             record.setExpiresAt(now.plusSeconds(600));
             passwordResetTokenRepository.save(record);
+            log.info("Stored password reset OTP metadata for {}", maskEmail(user.getEmail()));
             emailService.sendPasswordResetOtp(user.getEmail(), otp);
+            log.info("Password reset OTP email accepted by SendGrid pipeline for {}", maskEmail(user.getEmail()));
         });
     }
 
@@ -289,5 +298,15 @@ public class AuthService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || !email.contains("@")) {
+            return "unknown";
+        }
+        String[] parts = email.split("@", 2);
+        String name = parts[0];
+        String masked = name.length() <= 2 ? name.charAt(0) + "*" : name.substring(0, 2) + "***";
+        return masked + "@" + parts[1];
     }
 }

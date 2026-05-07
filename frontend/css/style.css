@@ -686,6 +686,14 @@ textarea:focus-visible {
   background: rgba(12, 14, 18, 0.78);
 }
 
+.topbar.compact {
+  justify-content: flex-end;
+}
+
+.topbar.compact .topbar-copy {
+  display: none;
+}
+
 .topbar h1,
 .section-title h1 {
   font-size: clamp(1.55rem, 4vw, 2.6rem);
@@ -854,6 +862,29 @@ textarea:focus-visible {
   border-radius: var(--radius);
   background: rgba(255,255,255,0.03);
   overflow: hidden;
+}
+
+.profile-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.profile-status-row,
+.profile-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.profile-completion {
+  margin-top: 1rem;
+}
+
+.security-stack {
+  display: grid;
+  gap: 0.75rem;
 }
 
 .check-row {
@@ -1312,6 +1343,7 @@ textarea:focus-visible {
 
   .session-actions,
   .card-actions,
+  .profile-actions-row,
   .hero-actions,
   .topbar-actions {
     width: 100%;
@@ -1319,6 +1351,7 @@ textarea:focus-visible {
 
   .session-actions .btn,
   .card-actions .btn,
+  .profile-actions-row .btn,
   .topbar-actions .btn {
     flex: 1 1 auto;
   }

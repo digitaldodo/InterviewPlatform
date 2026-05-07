@@ -1,5 +1,7 @@
 package com.interview.platform.service;
 
+import com.interview.platform.dto.UserDtos;
+import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,7 +40,7 @@ public class UserService {
             throw new IllegalArgumentException("Password must be at least 6 characters");
         }
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException("Email is already registered");
+            throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
         user.setUsername(user.getUsername().trim());
         user.setEmail(email);
@@ -90,6 +92,47 @@ public class UserService {
                 .toList();
     }
 
+    public User updateOwnProfile(String userId, UserDtos.ProfileUpdateRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (!isBlank(request.getName())) {
+            user.setUsername(request.getName().trim());
+        }
+        if (request.getAvatarUrl() != null) {
+            user.setAvatarUrl(trimToNull(request.getAvatarUrl()));
+        }
+        if (request.getBio() != null) {
+            user.setBio(trimToNull(request.getBio()));
+        }
+        if (request.getSkills() != null) {
+            user.setSkills(cleanList(request.getSkills()));
+        }
+        if (request.getPreferredDomains() != null) {
+            user.setPreferredDomains(cleanList(request.getPreferredDomains()));
+        }
+        if (request.getExperienceLevel() != null) {
+            user.setExperienceLevel(trimToNull(request.getExperienceLevel()));
+        }
+        if (request.getAvailability() != null) {
+            user.setAvailability(cleanList(request.getAvailability()));
+        }
+        return userRepository.save(user);
+    }
+
+    public void changeOwnPassword(String userId, UserDtos.ChangePasswordRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (isBlank(request.getCurrentPassword()) || !matchesPassword(user, request.getCurrentPassword())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        if (isBlank(request.getNewPassword()) || request.getNewPassword().length() < 6) {
+            throw new IllegalArgumentException("New password must be at least 6 characters");
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setPassword(null);
+        userRepository.save(user);
+    }
+
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
@@ -105,5 +148,20 @@ public class UserService {
             return true;
         }
         return false;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
+    private List<String> cleanList(List<String> values) {
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
     }
 }
