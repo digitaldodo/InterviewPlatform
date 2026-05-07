@@ -190,9 +190,9 @@ function renderInterviewerGrid(list) {
       </div>
       <h3>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h3>
       <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
-      <div class="rating-row"><strong>${Number(interviewer.averageRating || 0).toFixed(1)}</strong><span>${interviewer.reviewCount || 0} reviews</span><span>${interviewer.completedInterviews || 0} sessions</span></div>
+      <div class="rating-row"><strong>${ratingLabel(interviewer)}</strong><span>${interviewer.reviewCount || 0} reviews</span><span>${interviewer.completedInterviews || 0} sessions</span></div>
       <div class="tag-row">${(interviewer.skills || []).slice(0, 4).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
-      <p class="bio">${esc(interviewer.bio || 'Experienced interviewer available for focused mock interview preparation.')}</p>
+      <p class="bio">${esc(interviewer.bio || 'No bio yet.')}</p>
       <div class="card-actions">
         <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
         <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
@@ -225,7 +225,7 @@ async function openProfile(id) {
         <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
         <div class="tag-row">${(interviewer.skills || []).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
         <p>${esc(interviewer.bio || 'No bio yet.')}</p>
-        <div class="stats-inline"><span>${interviewer.yearsExperience || 0}+ years</span><span>${Number(interviewer.averageRating || 0).toFixed(1)} rating</span><span>${interviewer.completedInterviews || 0} completed</span></div>
+        <div class="stats-inline"><span>${interviewer.yearsExperience || 0}+ years</span><span>${ratingSummary(interviewer)}</span><span>${interviewer.completedInterviews || 0} completed</span></div>
         <button class="btn btn-primary btn-full" onclick="closeModal(); selectInterviewer('${interviewer.id}')">Book this interviewer</button>
       </div>
     `);
@@ -293,12 +293,12 @@ async function renderSlotStep() {
   host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${skeletonCards(4)}</div>`;
   try {
     const slots = await api(`/api/interviewers/${bookingState.interviewer.id}/availability`);
-    const fallback = defaultSlots();
-    const options = slots.length ? slots : fallback;
-    host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot('${slot}')">${fmtDate(slot)}</button>`).join('')}</div>`;
+    const options = Array.isArray(slots) ? slots.filter(Boolean) : [];
+    host.innerHTML = `<h2>Choose a slot</h2>${options.length
+      ? `<div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot(${jsArg(slot)})">${fmtDate(slot)}</button>`).join('')}</div>`
+      : emptyState('No availability slots available yet.')}`;
   } catch {
-    const options = defaultSlots();
-    host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot('${slot}')">${fmtDate(slot)}</button>`).join('')}</div>`;
+    host.innerHTML = `<h2>Choose a slot</h2>${emptyState('No availability slots available yet.')}`;
   }
 }
 
@@ -350,8 +350,13 @@ function renderOverview() {
   const completed = sessions.filter(item => (item.status || '').toUpperCase() === 'COMPLETED');
   document.getElementById('stat-upcoming').textContent = upcoming.length;
   document.getElementById('stat-completed').textContent = completed.length;
-  document.getElementById('stat-rating').textContent = Number(currentUser.averageRating || 0).toFixed(1);
-  document.getElementById('stat-streak').textContent = Math.min(7, completed.length);
+  document.getElementById('stat-rating').textContent = ratingValue(currentUser) || '-';
+  const streakCard = document.getElementById('stat-streak-card');
+  const hasPracticeStreak = Number.isFinite(Number(currentUser.practiceStreak));
+  if (streakCard) {
+    streakCard.hidden = !hasPracticeStreak;
+    if (hasPracticeStreak) document.getElementById('stat-streak').textContent = String(Number(currentUser.practiceStreak));
+  }
   document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState('No upcoming sessions.');
   renderSkillProgress();
 }
@@ -500,7 +505,7 @@ function renderProfile() {
   if (!summary) return;
   const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
   const isVerified = Boolean(currentUser.isVerified);
-  const completion = profileCompletion();
+  const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
   summary.innerHTML = `
     <div class="preview-profile">
       <div class="avatar large">${currentUser.avatarUrl ? `<img src="${esc(currentUser.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">` : initials(currentUser)}</div>
@@ -515,12 +520,10 @@ function renderProfile() {
     </div>
     <div class="stats-inline" style="margin-top:1rem;">
       <span>${sessions.length} sessions</span>
-      <span>${Number(currentUser.averageRating || 0).toFixed(1)} rating</span>
-      <span>${completion}% profile complete</span>
+      <span>${ratingSummary(currentUser)}</span>
+      ${profileCompletion == null ? '' : `<span>${profileCompletion}% profile complete</span>`}
     </div>
-    <div class="profile-completion">
-      <div class="progress-track"><i style="width:${completion}%"></i></div>
-    </div>
+    ${profileCompletion == null ? '' : `<div class="profile-completion"><div class="progress-track"><i style="width:${profileCompletion}%"></i></div></div>`}
     ${isVerified ? '' : `
       <div class="divider"></div>
       <div class="security-stack">
@@ -606,21 +609,6 @@ function renderProfile() {
   const ids = currentUser.favoriteInterviewerIds || [];
   const savedList = interviewers.filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
-}
-
-function profileCompletion() {
-  const checks = [
-    currentUser.name || currentUser.username,
-    currentUser.email,
-    currentUser.avatarUrl,
-    currentUser.bio,
-    currentUser.skills?.length,
-    currentUser.preferredDomains?.length,
-    currentUser.experienceLevel,
-    currentUser.availability?.length,
-    currentUser.isVerified,
-  ];
-  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
 async function resendProfileOtp() {
@@ -737,22 +725,56 @@ function setButtonLoading(btn, loading, label = 'Working') {
 }
 
 function renderSkillProgress() {
-  const skills = ['DSA', 'System Design', 'Communication', 'Backend'];
-  document.getElementById('skill-progress').innerHTML = skills.map((skill, index) => {
-    const value = Math.min(95, 36 + sessions.length * 8 + index * 9);
-    return `<div><span>${skill}</span><div class="progress-track"><i style="width:${value}%"></i></div><strong>${value}%</strong></div>`;
-  }).join('');
+  const host = document.getElementById('skill-progress');
+  const progressData = getProgressData();
+  if (!progressData || progressData.length === 0) {
+    host.innerHTML = emptyState('No progress data available yet');
+    return;
+  }
+  host.innerHTML = progressData.map(item => `
+    <div>
+      <span>${esc(item.label)}</span>
+      <div class="progress-track"><i style="width:${item.percent}%"></i></div>
+      <strong>${item.percent}%</strong>
+    </div>
+  `).join('');
 }
 
-function defaultSlots() {
-  const slots = [];
-  for (let i = 1; i <= 6; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() + i);
-    date.setHours(i % 2 ? 10 : 17, i % 2 ? 30 : 0, 0, 0);
-    slots.push(date.toISOString());
-  }
-  return slots;
+function getProgressData() {
+  const source = currentUser.progressData || currentUser.skillProgress || currentUser.analytics?.progress;
+  const entries = Array.isArray(source)
+    ? source
+    : Object.entries(source || {}).map(([label, value]) => ({ label, value }));
+  return entries
+    .map(item => {
+      const label = item.skill || item.name || item.label;
+      const rawPercent = item.percent ?? item.percentage ?? item.progress ?? item.completion ?? item.value;
+      const percent = normalizedPercent(rawPercent);
+      if (!label || percent == null) return null;
+      return { label: String(label), percent };
+    })
+    .filter(Boolean);
+}
+
+function normalizedPercent(value) {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) return null;
+  return Math.max(0, Math.min(100, Math.round(percent)));
+}
+
+function ratingLabel(user) {
+  return ratingValue(user) || 'No ratings yet';
+}
+
+function ratingValue(user) {
+  const rating = Number(user?.averageRating);
+  const hasRating = Number.isFinite(rating) && rating > 0 && Number(user?.reviewCount || 0) > 0;
+  return hasRating ? rating.toFixed(1) : null;
+}
+
+function ratingSummary(user) {
+  const label = ratingLabel(user);
+  return label === 'No ratings yet' ? label : `${label} rating`;
 }
 
 function modal(html) {
@@ -817,4 +839,8 @@ function esc(value) {
   const div = document.createElement('div');
   div.textContent = value == null ? '' : String(value);
   return div.innerHTML;
+}
+
+function jsArg(value) {
+  return esc(JSON.stringify(String(value)));
 }
