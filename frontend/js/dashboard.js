@@ -71,6 +71,8 @@ window.addEventListener('DOMContentLoaded', async () => {
 });
 
 window.addEventListener('hashchange', () => showSection(routeFromHash(), false));
+window.addEventListener('resize', handleResponsiveShell);
+document.addEventListener('keydown', handleGlobalKeydown);
 
 function readJson(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -191,9 +193,11 @@ function toggleSidebar(forceOpen) {
   const sidebar = document.getElementById('sidebar');
   if (typeof forceOpen === 'boolean') {
     sidebar.classList.toggle('open', forceOpen);
+    syncShellState();
     return;
   }
   sidebar.classList.toggle('open');
+  syncShellState();
 }
 
 function routeFromHash() {
@@ -209,6 +213,15 @@ function showSection(name, updateRoute = true) {
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
   document.getElementById(`section-${targetName}`).hidden = false;
   document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === targetName));
+  document.querySelectorAll('.bottom-nav button').forEach(button => {
+    const isActive = button.dataset.section === targetName;
+    button.classList.toggle('active', isActive);
+    if (isActive) {
+      button.setAttribute('aria-current', 'page');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
   if (targetName === 'booking') renderBookingStep();
   if (targetName === 'meeting' && !activeMeetingSession) renderMeetingPlaceholder();
   if (targetName === 'feedback') populateFeedbackSessions();
@@ -217,9 +230,34 @@ function showSection(name, updateRoute = true) {
   if (targetName === 'profile') renderProfile();
   document.querySelector('.topbar')?.classList.toggle('compact', targetName !== 'overview');
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
+  syncShellState();
   if (updateRoute && window.location.hash !== `#/${targetName}`) {
     history.pushState(null, '', `#/${targetName}`);
   }
+}
+
+function handleResponsiveShell() {
+  if (window.innerWidth >= 761) {
+    document.getElementById('sidebar')?.classList.remove('open');
+  }
+  syncShellState();
+}
+
+function handleGlobalKeydown(event) {
+  if (event.key !== 'Escape') return;
+  if (document.getElementById('modal-root')?.children.length) {
+    closeModal();
+    return;
+  }
+  if (document.getElementById('sidebar')?.classList.contains('open')) {
+    toggleSidebar(false);
+  }
+}
+
+function syncShellState() {
+  const sidebarOpen = Boolean(document.getElementById('sidebar')?.classList.contains('open')) && window.innerWidth < 761;
+  const modalOpen = Boolean(document.getElementById('modal-root')?.children.length);
+  document.body.classList.toggle('shell-locked', sidebarOpen || modalOpen);
 }
 
 async function api(path, options = {}, retry = true) {
@@ -469,7 +507,7 @@ function renderBookingInterviewerStep() {
       <div class="interviewer-grid compact">
         ${available.map(item => `
           <article class="mini-card booking-interviewer-card">
-            <div class="avatar">${initials(item)}</div>
+            ${avatarMarkup(item)}
             <strong>${esc(item.name || item.username || 'Interviewer')}</strong>
             <small>${esc(item.currentRole || 'Interview coach')}</small>
             <span class="booking-card-meta">${esc(item.company || 'Independent')}</span>
@@ -2062,10 +2100,12 @@ function ratingSummary(user) {
 
 function modal(html) {
   document.getElementById('modal-root').innerHTML = `<div class="modal-overlay" onclick="if(event.target === this) closeModal()"><div class="modal-card"><button class="icon-btn modal-close" onclick="closeModal()">×</button>${html}</div></div>`;
+  syncShellState();
 }
 
 function closeModal() {
   document.getElementById('modal-root').innerHTML = '';
+  syncShellState();
 }
 
 function toast(message, type = 'info') {

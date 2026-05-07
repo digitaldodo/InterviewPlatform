@@ -248,11 +248,11 @@
   </main>
 
   <nav class="bottom-nav" aria-label="Mobile navigation">
-    <button onclick="showSection('overview')">Home</button>
-    <button onclick="showSection('sessions')">Sessions</button>
-    <button class="interviewee-workspace" onclick="showSection('discover')">Search</button>
-    <button onclick="showSection('feedback')">Feedback</button>
-    <button onclick="showSection('profile')">Profile</button>
+    <button data-section="overview" onclick="showSection('overview')">Home</button>
+    <button data-section="sessions" onclick="showSection('sessions')">Sessions</button>
+    <button class="interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
+    <button data-section="feedback" onclick="showSection('feedback')">Feedback</button>
+    <button data-section="profile" onclick="showSection('profile')">Profile</button>
   </nav>
 
   <div id="modal-root"></div>
