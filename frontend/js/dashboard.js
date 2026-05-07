@@ -46,6 +46,7 @@ let adminLoading = false;
 let moderationDialogState = null;
 let reportDialogState = null;
 let discoverFiltersOpen = false;
+let lastDiscoveryResultCount = 0;
 let searchSuggestionTimer = null;
 const adminState = {
   users: { page: 0, size: 6 },
@@ -115,6 +116,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   restoreDiscoveryFilters();
   initUi();
   bindFilters();
+  refreshDiscoverFilterUi();
   bindFeedbackForm();
   await Promise.all([
     loadFilterOptions(),
@@ -321,6 +323,12 @@ function showSection(name, updateRoute = true) {
     }
   });
   if (targetName === 'booking') renderBookingStep();
+  if (targetName === 'discover') refreshDiscoverFilterUi();
+  if (targetName !== 'discover') {
+    discoverFiltersOpen = false;
+    hideSearchSuggestions();
+    refreshDiscoverFilterUi();
+  }
   if (targetName === 'meeting' && !activeMeetingSession) renderMeetingPlaceholder();
   if (targetName === 'feedback') populateFeedbackSessions();
   if (targetName === 'sessions') renderSessions('upcoming');
@@ -350,7 +358,9 @@ function defaultWorkspaceRoute() {
 function handleResponsiveShell() {
   if (window.innerWidth >= 761) {
     document.getElementById('sidebar')?.classList.remove('open');
+    discoverFiltersOpen = false;
   }
+  refreshDiscoverFilterUi();
   syncShellState();
 }
 
@@ -430,7 +440,17 @@ function bindFilters() {
     clearTimeout(searchSuggestionTimer);
     searchSuggestionTimer = setTimeout(loadSearchSuggestions, 180);
   });
+  document.addEventListener('pointerdown', event => {
+    const suggestionHost = document.getElementById('search-suggestions');
+    const searchWrap = document.querySelector('.discover-search-group');
+    if (!suggestionHost || suggestionHost.hidden) return;
+    if (searchWrap && !searchWrap.contains(event.target)) hideSearchSuggestions();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') hideSearchSuggestions();
+  });
   renderActiveFilterChips();
+  refreshDiscoverFilterUi();
 }
 
 function initDiscoveryFilterControls() {
@@ -523,6 +543,7 @@ function refreshSessionSurfaces() {
 async function loadInterviewers() {
   const grid = document.getElementById('interviewer-grid');
   if (!grid) return;
+  updateDiscoverFilterSummary();
   persistDiscoveryFilters();
   renderActiveFilterChips();
   if (activeWorkspace === 'INTERVIEWER') {
@@ -534,6 +555,8 @@ async function loadInterviewers() {
     return;
   }
   grid.innerHTML = skeletonCards(6);
+  lastDiscoveryResultCount = 0;
+  updateDiscoverFilterSummary();
   try {
     const params = new URLSearchParams({
       q: val('search-q'),
@@ -560,11 +583,15 @@ async function loadInterviewers() {
     interviewers = filterSelf(page.items || []);
     rememberInterviewers(interviewers);
     interviewerTotalPages = Math.max(1, page.totalPages || 1);
+    lastDiscoveryResultCount = Number(page.totalItems || interviewers.length || 0);
     renderInterviewerGrid(interviewers);
     refreshSessionSurfaces();
     document.getElementById('page-label').textContent = `Page ${interviewerPage + 1} of ${interviewerTotalPages}`;
+    updateDiscoverFilterSummary();
   } catch (err) {
     grid.innerHTML = emptyState('Could not load interviewers.');
+    lastDiscoveryResultCount = 0;
+    updateDiscoverFilterSummary();
     toast(err.message, 'error');
   }
 }
@@ -576,12 +603,20 @@ async function loadRecommended() {
     list.innerHTML = emptyState('Switch to the interviewee workspace to view recommendations.');
     return;
   }
-  list.innerHTML = skeletonCards(3);
+  list.innerHTML = `
+    <div class="recommendation-loading-note">
+      <strong>Loading recommendations</strong>
+      <p>Ranking verified, available interviewers for your next session.</p>
+    </div>
+    ${skeletonCards(3)}
+  `;
   try {
     const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
-    const recommendations = filterSelf(data || []).slice(0, 4);
+    const recommendations = filterSelf(data || [])
+      .sort((a, b) => recommendationScore(b) - recommendationScore(a))
+      .slice(0, 4);
     rememberInterviewers(recommendations);
-    list.innerHTML = recommendations.map(renderCompactInterviewer).join('') || interviewerEmptyState(
+    list.innerHTML = recommendations.map((item, index) => renderCompactInterviewer(item, index)).join('') || interviewerEmptyState(
       'No interviewer recommendations yet',
       'We will show recommended interviewers here as soon as matching profiles are available.'
     );
@@ -598,6 +633,8 @@ function renderInterviewerGrid(list) {
   const grid = document.getElementById('interviewer-grid');
   list = filterSelf(list || []);
   if (!list.length) {
+    lastDiscoveryResultCount = 0;
+    updateDiscoverFilterSummary();
     grid.innerHTML = interviewerEmptyState(
       'No interviewers available right now',
       'Check back shortly or widen your search filters to see more profiles.'
@@ -653,16 +690,40 @@ function renderInterviewerCard(interviewer) {
   `;
 }
 
-function renderCompactInterviewer(interviewer) {
+function renderCompactInterviewer(interviewer, index = 0) {
+  const score = recommendationScore(interviewer);
+  const rankLabel = recommendationRankLabel(score, index);
+  const availability = interviewer?.acceptingBookings === false ? 'Unavailable now' : 'Available';
   return `
-    <button class="mini-interviewer" onclick="selectInterviewer('${interviewer.id}')">
+    <button class="mini-interviewer recommendation-card" onclick="selectInterviewer('${interviewer.id}')">
       ${avatarMarkup(interviewer, 'avatar avatar-compact')}
       <span class="mini-interviewer-copy">
         <strong>${esc(interviewerName(interviewer))}</strong>
-        <small>${esc(interviewerRole(interviewer))} · ${esc(availabilityLabel(interviewer))}</small>
+        <small>${esc(interviewerRole(interviewer))}</small>
+        <small class="recommendation-meta">
+          <span class="recommendation-rank">${esc(rankLabel)}</span>
+          <span class="recommendation-availability ${interviewer?.acceptingBookings === false ? 'is-muted' : ''}">${esc(availability)}</span>
+          ${interviewer?.interviewerVerified ? '<span class="recommendation-verified">Verified</span>' : ''}
+        </small>
       </span>
     </button>
   `;
+}
+
+function recommendationScore(interviewer) {
+  const verifiedBoost = interviewer?.interviewerVerified ? 200 : 0;
+  const availabilityBoost = interviewer?.acceptingBookings === false ? 0 : 120;
+  const ratingBoost = Math.round(Number(interviewer?.averageRating || 0) * 20);
+  const reviewBoost = Math.min(80, Number(interviewer?.reviewCount || 0));
+  const sessionsBoost = Math.min(100, Number(interviewer?.completedInterviews || 0));
+  return verifiedBoost + availabilityBoost + ratingBoost + reviewBoost + sessionsBoost;
+}
+
+function recommendationRankLabel(score, index) {
+  if (index === 0) return 'Top match';
+  if (score >= 360) return 'Strong match';
+  if (score >= 260) return 'Good match';
+  return `Match #${index + 1}`;
 }
 
 function changePage(delta) {
@@ -3650,6 +3711,7 @@ function renderActiveFilterChips() {
   if (!host) return;
   const filters = collectDiscoveryFilters();
   const chips = [
+    filters.q && ['search-q', `Search: ${filters.q}`],
     filters.expertise && ['filter-expertise', filters.expertise],
     filters.company && ['filter-company', filters.company],
     filters.language && ['filter-language', filters.language],
@@ -3665,9 +3727,12 @@ function renderActiveFilterChips() {
     filters.verified && ['filter-verified', 'Verified'],
   ].filter(Boolean);
   host.innerHTML = chips.map(([key, label]) => `<button class="chip active" type="button" onclick="clearDiscoveryFilter('${key}')">${esc(label)} ×</button>`).join('');
+  host.classList.toggle('empty', chips.length === 0);
+  refreshDiscoverFilterUi();
 }
 
 function clearDiscoveryFilter(key) {
+  if (key === 'search-q') hideSearchSuggestions();
   const checkbox = document.getElementById(key);
   if (checkbox?.type === 'checkbox') {
     checkbox.checked = false;
@@ -3682,30 +3747,103 @@ function clearDiscoveryFilter(key) {
   loadInterviewers();
 }
 
-function toggleDiscoverFilters() {
-  discoverFiltersOpen = !discoverFiltersOpen;
-  document.getElementById('discover-filter-panel')?.classList.toggle('open', discoverFiltersOpen);
+function clearAllDiscoveryFilters() {
+  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-timezone', 'filter-topic', 'filter-years', 'filter-level', 'filter-rating', 'filter-duration', 'filter-sort', 'filter-available', 'filter-available-today', 'filter-free', 'filter-verified']
+    .forEach(id => {
+      if (id === 'filter-sort') {
+        setInputValue(id, 'top-rated');
+        return;
+      }
+      clearDiscoveryFilterValue(id);
+    });
+  hideSearchSuggestions();
+  interviewerPage = 0;
+  persistDiscoveryFilters();
+  renderActiveFilterChips();
+  loadInterviewers();
+}
+
+function clearDiscoveryFilterValue(key) {
+  const field = document.getElementById(key);
+  if (field?.type === 'checkbox') {
+    field.checked = false;
+  } else if (field?.__searchSelectControl) {
+    field.__searchSelectControl.setValue('');
+  } else if (field) {
+    field.value = '';
+  }
+}
+
+function toggleDiscoverFilters(forceOpen) {
+  discoverFiltersOpen = typeof forceOpen === 'boolean' ? forceOpen : !discoverFiltersOpen;
+  refreshDiscoverFilterUi();
+}
+
+function refreshDiscoverFilterUi() {
+  const panel = document.getElementById('discover-filter-panel');
+  const toggle = document.getElementById('discover-filter-toggle');
+  const backdrop = document.getElementById('discover-filter-backdrop');
+  const head = document.getElementById('discover-filter-head');
+  if (!panel || !toggle || !backdrop || !head) return;
+  const isMobile = window.innerWidth <= 760;
+  const isOpen = isMobile ? discoverFiltersOpen : true;
+  panel.classList.toggle('open', isOpen);
+  backdrop.classList.toggle('open', isMobile && isOpen);
+  head.classList.toggle('open', isMobile && isOpen);
+  toggle.setAttribute('aria-expanded', String(isOpen));
+  toggle.textContent = isMobile ? (isOpen ? 'Hide filters' : 'Show filters') : 'Filters';
+  if (!isOpen) hideSearchSuggestions();
+  updateDiscoverFilterSummary();
+}
+
+function updateDiscoverFilterSummary() {
+  const host = document.getElementById('discover-filter-summary');
+  if (!host) return;
+  const filters = collectDiscoveryFilters();
+  const count = Object.entries(filters).reduce((total, [key, value]) => {
+    if (key === 'sort') return total;
+    if (typeof value === 'boolean') return total + (value ? 1 : 0);
+    return total + (value ? 1 : 0);
+  }, 0);
+  if (lastDiscoveryResultCount > 0) {
+    host.textContent = `${lastDiscoveryResultCount} matches${count ? ` · ${count} active filters` : ''}`;
+    return;
+  }
+  host.textContent = count ? `${count} active filters` : 'All interviewers';
+}
+
+function hideSearchSuggestions() {
+  const host = document.getElementById('search-suggestions');
+  if (!host) return;
+  host.hidden = true;
+  host.innerHTML = '';
 }
 
 async function loadSearchSuggestions() {
   const query = val('search-q').trim();
   const host = document.getElementById('search-suggestions');
   if (!host) return;
+  if (window.innerWidth <= 760 && !discoverFiltersOpen) {
+    hideSearchSuggestions();
+    return;
+  }
   if (query.length < 2) {
-    host.hidden = true;
-    host.innerHTML = '';
+    hideSearchSuggestions();
     return;
   }
   try {
-    const suggestions = await api(`/api/interviewers/autocomplete?q=${encodeURIComponent(query)}`);
-    host.innerHTML = (suggestions || []).map(item => `
+    const suggestions = (await api(`/api/interviewers/autocomplete?q=${encodeURIComponent(query)}`) || []).slice(0, 8);
+    host.innerHTML = suggestions.map(item => `
       <button type="button" class="search-suggestion-item" onclick="applySearchSuggestion(${jsArg(item.label)}, ${jsArg(item.type)})">
         <strong>${esc(item.label)}</strong><span>${esc(item.type)}</span>
       </button>
     `).join('');
+    if (!host.innerHTML) {
+      host.innerHTML = `<div class="search-suggestion-item"><strong>No quick matches</strong><span>Keep typing to search</span></div>`;
+    }
     host.hidden = !host.innerHTML;
   } catch {
-    host.hidden = true;
+    hideSearchSuggestions();
   }
 }
 
@@ -3720,7 +3858,7 @@ function applySearchSuggestion(label, type) {
   } else {
     setInputValue('search-q', label);
   }
-  document.getElementById('search-suggestions').hidden = true;
+  hideSearchSuggestions();
   interviewerPage = 0;
   persistDiscoveryFilters();
   renderActiveFilterChips();

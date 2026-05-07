@@ -97,12 +97,25 @@
         <div><p class="eyebrow">Discovery</p><h1>Find your next interviewer</h1></div>
       </div>
       <div class="filter-toolbar">
-        <button class="btn btn-outline btn-sm filter-toggle-btn" type="button" onclick="toggleDiscoverFilters()">Filters</button>
-        <div class="filter-chip-row" id="active-filter-chips"></div>
+        <div class="filter-toolbar-main">
+          <button class="btn btn-outline btn-sm filter-toggle-btn" id="discover-filter-toggle" type="button" onclick="toggleDiscoverFilters()" aria-expanded="false" aria-controls="discover-filter-panel">Filters</button>
+          <span class="filter-match-note" id="discover-filter-summary">All interviewers</span>
+        </div>
+        <div class="filter-toolbar-actions">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="clearAllDiscoveryFilters()">Clear all</button>
+        </div>
+      </div>
+      <div class="filter-chip-row" id="active-filter-chips"></div>
+      <div class="filter-panel-backdrop" id="discover-filter-backdrop" onclick="toggleDiscoverFilters(false)" aria-hidden="true"></div>
+      <div class="filter-panel-head" id="discover-filter-head">
+        <strong>Search filters</strong>
+        <button class="btn btn-outline btn-sm" type="button" onclick="toggleDiscoverFilters(false)">Close</button>
       </div>
       <div class="filter-panel" id="discover-filter-panel">
-        <input id="search-q" type="search" placeholder="Search by skill, company, role, or name" />
-        <div class="search-suggestions" id="search-suggestions" hidden></div>
+        <div class="discover-search-group">
+          <input id="search-q" type="search" placeholder="Search by skill, company, role, or name" />
+          <div class="search-suggestions" id="search-suggestions" hidden></div>
+        </div>
         <select id="filter-sort">
           <option value="top-rated">Top rated</option>
           <option value="most-experienced">Most experienced</option>
@@ -147,6 +160,10 @@
         <label class="check-row"><input id="filter-available-today" type="checkbox" /> Available today</label>
         <label class="check-row"><input id="filter-free" type="checkbox" /> Free</label>
         <label class="check-row"><input id="filter-verified" type="checkbox" /> Verified</label>
+        <div class="filter-panel-mobile-actions">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="clearAllDiscoveryFilters()">Clear</button>
+          <button class="btn btn-primary btn-sm" type="button" onclick="toggleDiscoverFilters(false)">Apply filters</button>
+        </div>
       </div>
       <div id="interviewer-grid" class="interviewer-grid skeleton-grid"></div>
       <div class="pagination-row">
