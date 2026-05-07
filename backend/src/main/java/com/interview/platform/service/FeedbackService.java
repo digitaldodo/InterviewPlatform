@@ -18,13 +18,16 @@ public class FeedbackService {
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final InterviewReportService interviewReportService;
 
     public FeedbackService(FeedbackRepository feedbackRepository, SessionRepository sessionRepository,
-                           UserRepository userRepository, NotificationService notificationService) {
+                           UserRepository userRepository, NotificationService notificationService,
+                           InterviewReportService interviewReportService) {
         this.feedbackRepository = feedbackRepository;
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.interviewReportService = interviewReportService;
     }
 
     public Feedback submitFeedback(Feedback feedback) {
@@ -48,9 +51,15 @@ public class FeedbackService {
         feedback.setCreatedAt(Instant.now());
         Feedback saved = feedbackRepository.save(feedback);
         updateInterviewerRating(feedback.getSessionId());
+        try {
+            interviewReportService.upsertFromFeedback(saved);
+        } catch (RuntimeException ignored) {
+            // Feedback must remain durable even if report generation fails.
+        }
         sessionRepository.findById(feedback.getSessionId()).ifPresent(session ->
                 notificationService.create(session.getCandidateId(), "FEEDBACK_SUBMITTED", "Feedback received",
-                        "New feedback is available for " + session.getTitle() + "."));
+                        "New feedback is available for " + session.getTitle() + ".",
+                        java.util.Map.of("sessionId", session.getId())));
         return saved;
     }
 

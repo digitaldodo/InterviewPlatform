@@ -34,6 +34,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final EmailService emailService;
     private final AccountIdentityService accountIdentityService;
+    private final NotificationService notificationService;
     private final long refreshTokenDays;
 
     public AuthService(
@@ -46,6 +47,7 @@ public class AuthService {
             TokenService tokenService,
             EmailService emailService,
             AccountIdentityService accountIdentityService,
+            NotificationService notificationService,
             @Value("${app.jwt.refresh-token-days}") long refreshTokenDays
     ) {
         this.userRepository = userRepository;
@@ -57,6 +59,7 @@ public class AuthService {
         this.tokenService = tokenService;
         this.emailService = emailService;
         this.accountIdentityService = accountIdentityService;
+        this.notificationService = notificationService;
         this.refreshTokenDays = refreshTokenDays;
     }
 
@@ -213,9 +216,19 @@ public class AuthService {
         }
         User user = userRepository.findByEmail(normalized)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        boolean wasVerified = Boolean.TRUE.equals(user.getIsVerified());
         user.setIsVerified(true);
         accountIdentityService.ensureIdentity(user);
         userRepository.save(user);
+        if (!wasVerified) {
+            notificationService.create(
+                    user.getId(),
+                    "PROFILE_VERIFIED",
+                    "Profile verified",
+                    "Your email has been verified. You can now book and host sessions.",
+                    java.util.Map.of("email", user.getEmail())
+            );
+        }
         verificationOtpRepository.deleteByEmail(normalized);
     }
 
@@ -286,6 +299,13 @@ public class AuthService {
         user.setPassword(null);
         user.setIsVerified(true);
         userRepository.save(user);
+        notificationService.create(
+                user.getId(),
+                "PASSWORD_UPDATED",
+                "Password updated",
+                "Your password has been updated successfully.",
+                java.util.Map.of()
+        );
         record.setUsed(true);
         passwordResetTokenRepository.save(record);
     }

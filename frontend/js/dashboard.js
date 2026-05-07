@@ -28,7 +28,14 @@ let profileAvatarFile = null;
 let profileAvatarPreviewUrl = '';
 let profileUsernameTimer = null;
 let profileUsernameState = { value: '', available: true };
-let discoveryFilterOptions = { expertise: [], languages: [], companies: [] };
+let discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [] };
+let notificationsCache = [];
+let notificationStreamController = null;
+let notificationStreamRetryTimer = null;
+let activeInterviewReport = null;
+let sessionViewMode = 'upcoming';
+let sessionSearchQuery = '';
+let sessionTopicFilter = '';
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
@@ -48,6 +55,7 @@ const AVAILABILITY_PREFERENCES = [
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
+let analyticsSummary = null;
 
 function createBookingState() {
   return {
@@ -82,6 +90,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindFilters();
   bindFeedbackForm();
   await Promise.all([loadFilterOptions(), loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications(), loadAvailabilityManagement()]);
+  startNotificationStream();
   showSection(routeFromHash(), false);
 });
 
@@ -94,6 +103,7 @@ function readJson(key) {
 }
 
 function logout() {
+  stopNotificationStream();
   localStorage.removeItem('ip_user');
   localStorage.removeItem('ip_access_token');
   localStorage.removeItem('ip_refresh_token');
@@ -319,11 +329,12 @@ async function readPayload(res) {
 
 function bindFilters() {
   initDiscoveryFilterControls();
-  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-rating', 'filter-available', 'filter-free', 'filter-sort']
+  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-years', 'filter-level', 'filter-rating', 'filter-available', 'filter-free', 'filter-verified', 'filter-sort']
     .forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+      const eventName = el.tagName === 'SELECT' || el.type === 'checkbox' ? 'change' : 'input';
+      el.addEventListener(eventName, () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
           interviewerPage = 0;
@@ -361,10 +372,11 @@ async function loadFilterOptions() {
       expertise: Array.isArray(data?.expertise) ? data.expertise : [],
       languages: Array.isArray(data?.languages) ? data.languages : [],
       companies: Array.isArray(data?.companies) ? data.companies : [],
+      experienceLevels: Array.isArray(data?.experienceLevels) ? data.experienceLevels : [],
     };
     updateDiscoveryFilterOptions();
   } catch (err) {
-    discoveryFilterOptions = { expertise: [], languages: [], companies: [] };
+    discoveryFilterOptions = { expertise: [], languages: [], companies: [], experienceLevels: [] };
   }
 }
 
@@ -372,6 +384,13 @@ function updateDiscoveryFilterOptions() {
   document.getElementById('filter-expertise')?.__searchSelectControl?.setOptions(discoveryFilterOptions.expertise);
   document.getElementById('filter-company')?.__searchSelectControl?.setOptions(discoveryFilterOptions.companies);
   document.getElementById('filter-language')?.__searchSelectControl?.setOptions(discoveryFilterOptions.languages);
+  const levelSelect = document.getElementById('filter-level');
+  if (levelSelect) {
+    const current = levelSelect.value;
+    const levels = Array.isArray(discoveryFilterOptions.experienceLevels) ? discoveryFilterOptions.experienceLevels : [];
+    levelSelect.innerHTML = `<option value="">Any level</option>${levels.map(level => `<option value="${esc(level)}">${esc(level)}</option>`).join('')}`;
+    if (current) levelSelect.value = current;
+  }
 }
 
 function rememberInterviewers(list) {
@@ -406,9 +425,12 @@ async function loadInterviewers() {
       page: interviewerPage,
       size: 9,
     });
+    if (val('filter-years')) params.set('minExperience', val('filter-years'));
+    if (val('filter-level')) params.set('experienceLevel', val('filter-level'));
     if (val('filter-rating')) params.set('minRating', val('filter-rating'));
     if (document.getElementById('filter-available').checked) params.set('available', 'true');
     if (document.getElementById('filter-free').checked) params.set('free', 'true');
+    if (document.getElementById('filter-verified').checked) params.set('verified', 'true');
     const page = await api(`/api/interviewers/search?${params.toString()}`);
     interviewers = filterSelf(page.items || []);
     rememberInterviewers(interviewers);
@@ -1094,6 +1116,7 @@ async function loadSessions() {
   try {
     const endpoint = activeWorkspace === 'INTERVIEWER' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
     sessions = sortSessions(await api(endpoint));
+    await loadAnalyticsSummary();
     if (activeMeetingSession?.id) {
       activeMeetingSession = sessions.find(item => item.id === activeMeetingSession.id) || activeMeetingSession;
       if (!document.getElementById('section-meeting').hidden) renderMeetingMeta(activeMeetingAccess || activeMeetingSession);
@@ -1102,8 +1125,17 @@ async function loadSessions() {
     renderSessions('upcoming');
     renderInterviewerPanel();
     populateFeedbackSessions();
+    populateSessionFilters();
   } catch (err) {
     toast(err.message, 'error');
+  }
+}
+
+async function loadAnalyticsSummary() {
+  try {
+    analyticsSummary = await api(`/api/analytics/summary?workspace=${encodeURIComponent(activeWorkspace)}`);
+  } catch {
+    analyticsSummary = null;
   }
 }
 
@@ -1146,25 +1178,68 @@ function renderAvailabilityPanels() {
 function renderOverview() {
   const upcoming = sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()));
   const completed = sessions.filter(item => (item.status || '').toUpperCase() === 'COMPLETED');
-  document.getElementById('stat-upcoming').textContent = upcoming.length;
-  document.getElementById('stat-completed').textContent = completed.length;
-  document.getElementById('stat-rating').textContent = ratingValue(currentUser) || '-';
+  const upcomingCount = analyticsSummary?.upcoming ?? upcoming.length;
+  const completedCount = analyticsSummary?.completed ?? completed.length;
+  const rating = analyticsSummary?.averageRating;
+  document.getElementById('stat-upcoming').textContent = String(upcomingCount);
+  document.getElementById('stat-completed').textContent = String(completedCount);
+  document.getElementById('stat-rating').textContent = Number.isFinite(Number(rating)) && Number(rating) > 0 ? Number(rating).toFixed(1) : (ratingValue(currentUser) || '-');
   const streakCard = document.getElementById('stat-streak-card');
-  const hasPracticeStreak = Number.isFinite(Number(currentUser.practiceStreak));
+  const streakValue = analyticsSummary?.streakDays;
+  const hasPracticeStreak = Number.isFinite(Number(streakValue)) && Number(streakValue) > 0;
   if (streakCard) {
     streakCard.hidden = !hasPracticeStreak;
-    if (hasPracticeStreak) document.getElementById('stat-streak').textContent = String(Number(currentUser.practiceStreak));
+    if (hasPracticeStreak) document.getElementById('stat-streak').textContent = String(Number(streakValue));
   }
   document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState('No upcoming sessions.');
   renderSkillProgress();
 }
 
 function renderSessions(mode = 'upcoming') {
+  sessionViewMode = mode;
   document.querySelectorAll('.session-tabs .chip').forEach((chip, index) => chip.classList.toggle('active', (mode === 'upcoming') === (index === 0)));
-  const list = sortSessions(mode === 'upcoming'
+  const base = mode === 'upcoming'
     ? sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()))
-    : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase())));
+    : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase()));
+  const filtered = base.filter(item => sessionMatchesFilters(item));
+  const list = sortSessions(filtered);
   document.getElementById('sessions-list').innerHTML = list.map(renderSessionCard).join('') || emptyState('No sessions here yet.');
+}
+
+function setSessionSearch(value) {
+  sessionSearchQuery = String(value || '').trim().toLowerCase();
+  renderSessions(sessionViewMode);
+}
+
+function setSessionTopic(value) {
+  sessionTopicFilter = String(value || '').trim();
+  renderSessions(sessionViewMode);
+}
+
+function populateSessionFilters() {
+  const topicSelect = document.getElementById('session-topic-filter');
+  if (!topicSelect) return;
+  const topics = Array.from(new Set(sessions.flatMap(session => sessionTopics(session)).map(item => String(item))))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b));
+  const current = sessionTopicFilter;
+  topicSelect.innerHTML = `<option value="">All topics</option>${topics.map(topic => `<option value="${esc(topic)}">${esc(topic)}</option>`).join('')}`;
+  if (current) topicSelect.value = current;
+}
+
+function sessionMatchesFilters(session) {
+  if (!session) return false;
+  if (sessionTopicFilter) {
+    const topics = sessionTopics(session);
+    if (!topics.some(topic => topic === sessionTopicFilter)) return false;
+  }
+  if (!sessionSearchQuery) return true;
+  const title = sessionTitle(session).toLowerCase();
+  const topicsText = sessionTopics(session).join(' ').toLowerCase();
+  const status = String(session.status || '').toLowerCase();
+  const participant = sessionParticipant(session);
+  const participantText = accountDisplayName(participant).toLowerCase();
+  return [title, topicsText, status, participantText].some(value => value.includes(sessionSearchQuery));
 }
 
 function renderSessionCard(session) {
@@ -1327,14 +1402,170 @@ function populateFeedbackSessions() {
 
 function renderFeedback(item) {
   const topics = item.topicFeedback || [];
+  const session = item.sessionId ? sessions.find(entry => entry.id === item.sessionId) : null;
+  const looksLikeReport = session && item.reviewerId && session.interviewerId && item.reviewerId === session.interviewerId;
+  const reportBtn = looksLikeReport
+    ? `<button class="btn btn-outline btn-sm" onclick="openInterviewReport(${jsArg(item.sessionId)})">View report</button>`
+    : '';
   return `
     <article class="feedback-item">
       <div class="feedback-item-head"><strong>${esc(String(item.rating || '-'))}/5</strong>${topics.length ? `<div class="topic-chip-row">${topicTags(topics.map(topic => topic.topic))}</div>` : ''}</div>
       <span>${esc(item.comments || '')}</span>
       ${topics.length ? `<div class="feedback-topic-summary">${topics.map(topic => `<span>${esc(topic.topic)}${topic.rating ? `: ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
       ${item.improvementAreas || item.recommendations ? `<small>${esc(item.improvementAreas || item.recommendations)}</small>` : ''}
+      ${reportBtn ? `<div class="feedback-item-actions">${reportBtn}</div>` : ''}
     </article>
   `;
+}
+
+async function openInterviewReport(sessionId) {
+  modal(`
+    <div class="modal-head">
+      <h2>Interview report</h2>
+      <p class="muted">Loading report...</p>
+    </div>
+  `);
+  try {
+    const report = await api(`/api/reports/session/${encodeURIComponent(sessionId)}`);
+    activeInterviewReport = report;
+    modal(renderInterviewReport(report));
+  } catch (err) {
+    activeInterviewReport = null;
+    modal(`
+      <div class="modal-head">
+        <h2>Interview report</h2>
+        <p class="muted">${esc(err.message || 'Report unavailable')}</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Close</button>
+      </div>
+    `);
+  }
+}
+
+function renderInterviewReport(report) {
+  const topics = Array.isArray(report?.topicReports) ? report.topicReports : [];
+  const headerTitle = report?.topics?.length ? report.topics.join(', ') : 'Interview report';
+  const when = report?.sessionStartTime ? fmtDate(report.sessionStartTime) : '';
+  const participants = `${report?.interviewerName || 'Interviewer'} • ${report?.intervieweeName || 'Interviewee'}`;
+  return `
+    <div class="modal-head">
+      <h2>${esc(headerTitle)}</h2>
+      <p class="muted">${esc(when)}${when ? ' • ' : ''}${esc(participants)}</p>
+    </div>
+    <div class="report-actions-row">
+      <button class="btn btn-outline btn-sm" onclick="printActiveInterviewReport()">Print / Save PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="closeModal()">Done</button>
+    </div>
+    <div class="report-body">
+      <div class="report-summary-grid">
+        <div class="report-metric"><span>Overall rating</span><strong>${esc(String(report?.overallRating || '-'))}/5</strong></div>
+        <div class="report-metric"><span>Topics</span><strong>${esc((report?.topics || []).join(', ') || '—')}</strong></div>
+      </div>
+      ${report?.strengths ? `<details class="report-block" open><summary>Strengths</summary><p>${esc(report.strengths)}</p></details>` : ''}
+      ${report?.weaknesses ? `<details class="report-block" open><summary>Areas to improve</summary><p>${esc(report.weaknesses)}</p></details>` : ''}
+      ${report?.improvementRoadmap ? `<details class="report-block" open><summary>Improvement roadmap</summary><p>${esc(report.improvementRoadmap)}</p></details>` : ''}
+      ${report?.interviewerComments ? `<details class="report-block" open><summary>Interviewer comments</summary><p>${esc(report.interviewerComments)}</p></details>` : ''}
+      ${topics.length ? `
+        <div class="divider"></div>
+        <h3 class="report-subhead">Topic-wise feedback</h3>
+        <div class="report-topic-grid">
+          ${topics.map(topic => renderTopicReport(topic)).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function printActiveInterviewReport() {
+  if (!activeInterviewReport) return;
+  printInterviewReport(activeInterviewReport);
+}
+
+function renderTopicReport(topic) {
+  const rating = topic?.rating ? `${Number(topic.rating)}/5` : '—';
+  const skills = topic?.skillRatings && typeof topic.skillRatings === 'object'
+    ? Object.entries(topic.skillRatings).filter(([, value]) => value).slice(0, 6)
+    : [];
+  return `
+    <details class="report-topic-card" open>
+      <summary>
+        <span>${esc(topic?.topic || 'Topic')}</span>
+        <small>${esc(rating)}</small>
+      </summary>
+      ${skills.length ? `<div class="report-skill-row">${skills.map(([name, value]) => `<span>${esc(name)}: ${esc(String(value))}/5</span>`).join('')}</div>` : ''}
+      ${topic?.strengths ? `<p><strong>Strengths:</strong> ${esc(topic.strengths)}</p>` : ''}
+      ${topic?.weaknesses ? `<p><strong>Weaknesses:</strong> ${esc(topic.weaknesses)}</p>` : ''}
+      ${topic?.improvementAreas ? `<p><strong>Next steps:</strong> ${esc(topic.improvementAreas)}</p>` : ''}
+      ${topic?.comments ? `<p><strong>Comments:</strong> ${esc(topic.comments)}</p>` : ''}
+    </details>
+  `;
+}
+
+function printInterviewReport(report) {
+  const payload = typeof report === 'string' ? (() => { try { return JSON.parse(report); } catch { return null; } })() : report;
+  if (!payload) return;
+  const title = payload?.topics?.length ? payload.topics.join(', ') : 'Interview report';
+  const when = payload?.sessionStartTime ? fmtDate(payload.sessionStartTime) : '';
+  const participants = `${payload?.interviewerName || 'Interviewer'} • ${payload?.intervieweeName || 'Interviewee'}`;
+  const html = `
+    <!doctype html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>${esc(title)}</title>
+      <style>
+        body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 32px; color: #0f172a; }
+        h1 { margin: 0 0 6px; font-size: 22px; }
+        .muted { color: #475569; font-size: 13px; margin: 0 0 18px; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px 0 18px; }
+        .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+        .card span { display:block; font-size: 12px; color:#64748b; margin-bottom: 6px; }
+        .card strong { font-size: 16px; }
+        h2 { font-size: 14px; margin: 22px 0 8px; }
+        .block { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+        .topic { page-break-inside: avoid; }
+        .topic-head { display:flex; justify-content:space-between; gap: 12px; }
+        .topic small { color:#64748b; }
+        p { margin: 8px 0 0; font-size: 13px; line-height: 1.4; }
+      </style>
+    </head>
+    <body>
+      <h1>${esc(title)}</h1>
+      <p class="muted">${esc(when)}${when ? ' • ' : ''}${esc(participants)}</p>
+      <div class="grid">
+        <div class="card"><span>Overall rating</span><strong>${esc(String(payload?.overallRating || '-'))}/5</strong></div>
+        <div class="card"><span>Topics</span><strong>${esc((payload?.topics || []).join(', ') || '—')}</strong></div>
+      </div>
+      ${payload?.strengths ? `<div class="block"><h2>Strengths</h2><p>${esc(payload.strengths)}</p></div>` : ''}
+      ${payload?.weaknesses ? `<div class="block"><h2>Areas to improve</h2><p>${esc(payload.weaknesses)}</p></div>` : ''}
+      ${payload?.improvementRoadmap ? `<div class="block"><h2>Improvement roadmap</h2><p>${esc(payload.improvementRoadmap)}</p></div>` : ''}
+      ${payload?.interviewerComments ? `<div class="block"><h2>Interviewer comments</h2><p>${esc(payload.interviewerComments)}</p></div>` : ''}
+      ${(payload?.topicReports || []).length ? `
+        <h2>Topic-wise feedback</h2>
+        ${(payload.topicReports || []).map(topic => `
+          <div class="block topic">
+            <div class="topic-head">
+              <strong>${esc(topic?.topic || 'Topic')}</strong>
+              <small>${esc(topic?.rating ? `${topic.rating}/5` : '—')}</small>
+            </div>
+            ${topic?.strengths ? `<p><strong>Strengths:</strong> ${esc(topic.strengths)}</p>` : ''}
+            ${topic?.weaknesses ? `<p><strong>Weaknesses:</strong> ${esc(topic.weaknesses)}</p>` : ''}
+            ${topic?.improvementAreas ? `<p><strong>Next steps:</strong> ${esc(topic.improvementAreas)}</p>` : ''}
+            ${topic?.comments ? `<p><strong>Comments:</strong> ${esc(topic.comments)}</p>` : ''}
+          </div>
+        `).join('')}
+      ` : ''}
+      <script>window.addEventListener('load', () => setTimeout(() => window.print(), 50));</script>
+    </body>
+    </html>
+  `;
+  const w = window.open('', '_blank', 'noopener,noreferrer');
+  if (!w) return;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 function renderFeedbackTopicSections() {
@@ -1661,34 +1892,209 @@ async function deleteAvailability(id) {
 
 async function loadNotifications() {
   try {
-    const data = await api(`/api/notifications?userId=${currentUser.id}`);
-    document.getElementById('unread-badge').textContent = data.unread ? String(data.unread) : '';
-    renderNotifications(data.items || []);
+    const data = await api('/api/notifications?limit=30');
+    notificationsCache = Array.isArray(data.items) ? data.items : [];
+    setUnreadBadge(Number(data.unread || 0));
+    renderNotifications(notificationsCache);
   } catch {
+    notificationsCache = [];
+    setUnreadBadge(0);
     renderNotifications([]);
   }
 }
 
 function renderNotifications(items) {
   const panel = document.getElementById('notification-panel');
-  const html = items.map(item => `
-    <button class="notification-item ${item.read ? '' : 'unread'}" onclick="markNotificationRead('${item.id}')">
-      <strong>${esc(item.title || 'Notification')}</strong>
-      <span>${esc(item.message || '')}</span>
-    </button>
-  `).join('') || emptyState('No notifications.');
+  const grouped = groupNotifications(items || []);
+  const head = `
+    <div class="notification-head">
+      <strong>Notifications</strong>
+      <div class="notification-actions">
+        <button class="btn btn-ghost btn-sm" onclick="markAllNotificationsRead()">Mark all read</button>
+        <button class="icon-btn icon-btn-sm" onclick="toggleNotifications(false)" aria-label="Close notifications">✕</button>
+      </div>
+    </div>
+  `;
+  const body = grouped.length
+    ? grouped.map(group => `
+        <div class="notification-group">
+          <div class="notification-group-title">${esc(group.label)}</div>
+          ${group.items.map(item => renderNotificationItem(item)).join('')}
+        </div>
+      `).join('')
+    : emptyState('No notifications.');
+  const html = `${head}<div class="notification-scroll">${body}</div>`;
   panel.innerHTML = html;
   const page = document.getElementById('notifications-list');
   if (page) page.innerHTML = html;
 }
 
-function toggleNotifications() {
-  document.getElementById('notification-panel').classList.toggle('open');
+function toggleNotifications(force) {
+  const panel = document.getElementById('notification-panel');
+  if (!panel) return;
+  const next = typeof force === 'boolean' ? force : !panel.classList.contains('open');
+  panel.classList.toggle('open', next);
+  if (next) loadNotifications();
 }
 
 async function markNotificationRead(id) {
   await api(`/api/notifications/${id}/read`, { method: 'PATCH' });
+  const idx = notificationsCache.findIndex(item => item.id === id);
+  if (idx !== -1) {
+    notificationsCache[idx].read = true;
+    notificationsCache[idx].readAt = new Date().toISOString();
+  }
   await loadNotifications();
+}
+
+async function markAllNotificationsRead() {
+  try {
+    const data = await api('/api/notifications/read-all', { method: 'PATCH' });
+    setUnreadBadge(Number(data.unread || 0));
+    await loadNotifications();
+  } catch (err) {
+    toast(err.message || 'Failed to update notifications', 'error');
+  }
+}
+
+function setUnreadBadge(count) {
+  const badge = document.getElementById('unread-badge');
+  if (!badge) return;
+  const safe = Number.isFinite(count) ? count : 0;
+  badge.textContent = safe > 0 ? String(safe) : '';
+  badge.classList.toggle('has-count', safe > 0);
+}
+
+function groupNotifications(items) {
+  const groups = new Map();
+  items.forEach(item => {
+    const label = notificationDayLabel(item.createdAt);
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label).push(item);
+  });
+  return Array.from(groups.entries()).map(([label, list]) => ({ label, items: list }));
+}
+
+function notificationDayLabel(value) {
+  if (!value) return 'Earlier';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Earlier';
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfThatDay = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfThatDay) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function renderNotificationItem(item) {
+  const ts = item?.createdAt ? new Date(item.createdAt) : null;
+  const timeText = ts && !Number.isNaN(ts.getTime())
+    ? ts.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : '';
+  const kind = String(item?.type || '').toUpperCase();
+  const glyph = {
+    SESSION_CONFIRMED: '✅',
+    SESSION_CANCELLED: '⚠️',
+    FEEDBACK_SUBMITTED: '📝',
+    MEETING_LIVE: '🎥',
+    SESSION_REMINDER: '⏰',
+    PROFILE_VERIFIED: '🔒',
+    PASSWORD_UPDATED: '🔑',
+    ROLE_UPDATED: '🧭',
+  }[kind] || '•';
+  const idArg = jsArg(item?.id || '');
+  return `
+    <button class="notification-item ${item?.read ? '' : 'unread'}" onclick="markNotificationRead(${idArg})">
+      <span class="notification-glyph" aria-hidden="true">${glyph}</span>
+      <span class="notification-copy">
+        <strong>${esc(item?.title || 'Notification')}</strong>
+        <span>${esc(item?.message || '')}</span>
+      </span>
+      <span class="notification-time">${esc(timeText)}</span>
+    </button>
+  `;
+}
+
+function startNotificationStream() {
+  stopNotificationStream();
+  if (!localStorage.getItem('ip_access_token')) return;
+  notificationStreamController = new AbortController();
+  streamNotifications(notificationStreamController.signal).catch(() => scheduleNotificationStreamRetry());
+}
+
+function stopNotificationStream() {
+  if (notificationStreamRetryTimer) clearTimeout(notificationStreamRetryTimer);
+  notificationStreamRetryTimer = null;
+  if (notificationStreamController) notificationStreamController.abort();
+  notificationStreamController = null;
+}
+
+function scheduleNotificationStreamRetry() {
+  if (notificationStreamRetryTimer) return;
+  notificationStreamRetryTimer = setTimeout(() => {
+    notificationStreamRetryTimer = null;
+    startNotificationStream();
+  }, 3500);
+}
+
+async function streamNotifications(signal) {
+  const token = localStorage.getItem('ip_access_token');
+  const res = await fetch(`${API_BASE}/api/notifications/stream`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    signal,
+  });
+  if (!res.ok || !res.body) throw new Error('Notification stream unavailable');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = consumeSseBuffer(buffer);
+  }
+  throw new Error('Notification stream closed');
+}
+
+function consumeSseBuffer(buffer) {
+  const parts = buffer.split('\n\n');
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const event = parseSseEvent(parts[i]);
+    if (!event) continue;
+    if (event.event === 'notification' && event.data) {
+      try {
+        const payload = JSON.parse(event.data);
+        onNotification(payload);
+      } catch {}
+    }
+  }
+  return parts[parts.length - 1];
+}
+
+function parseSseEvent(chunk) {
+  if (!chunk) return null;
+  const lines = chunk.split('\n');
+  let event = '';
+  let data = '';
+  lines.forEach(line => {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    if (line.startsWith('data:')) data += `${line.slice(5).trim()}\n`;
+  });
+  return { event, data: data.trim() };
+}
+
+function onNotification(notification) {
+  if (!notification?.id) return;
+  if (notificationsCache.some(item => item.id === notification.id)) return;
+  notificationsCache = [notification, ...(notificationsCache || [])].slice(0, 50);
+  const unread = notificationsCache.filter(item => !item.read).length;
+  setUnreadBadge(unread);
+  const panel = document.getElementById('notification-panel');
+  if (panel?.classList.contains('open')) {
+    renderNotifications(notificationsCache);
+  }
 }
 
 function renderProfile() {
@@ -2586,7 +2992,7 @@ function setButtonLoading(btn, loading, label = 'Working') {
 
 function renderSkillProgress() {
   const host = document.getElementById('skill-progress');
-  const progressData = getProgressData();
+  const progressData = topicTrendProgress() || getProgressData();
   if (!progressData || progressData.length === 0) {
     host.innerHTML = interviewerEmptyState(
       'No practice analytics yet',
@@ -2601,6 +3007,19 @@ function renderSkillProgress() {
       <strong>${item.percent}%</strong>
     </div>
   `).join('');
+}
+
+function topicTrendProgress() {
+  const trends = analyticsSummary?.topicTrends;
+  if (!Array.isArray(trends) || trends.length === 0) return null;
+  return trends
+    .filter(item => item && item.topic && Number.isFinite(Number(item.averageRating)) && Number(item.averageRating) > 0)
+    .slice(0, 8)
+    .map(item => ({
+      label: String(item.topic),
+      percent: normalizedPercent((Number(item.averageRating) / 5) * 100),
+    }))
+    .filter(item => item.percent != null);
 }
 
 function getProgressData() {

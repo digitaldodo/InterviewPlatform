@@ -33,8 +33,8 @@ public class InterviewerService {
     }
 
     public PageResponse<User> search(String q, String expertise, String company, String role, Integer minExperience,
-                                     Double minRating, Boolean available, Boolean free, String language,
-                                     String excludeUserId, String sort, int page, int size) {
+                                     Integer maxExperience, Double minRating, Boolean available, Boolean free, String language,
+                                     String experienceLevel, Boolean verified, String excludeUserId, String sort, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 24));
         Query query = new Query();
@@ -56,9 +56,12 @@ public class InterviewerService {
         if (!isBlank(role)) criteria.add(Criteria.where("currentRole").regex(Pattern.compile(Pattern.quote(role.trim()), Pattern.CASE_INSENSITIVE)));
         if (!isBlank(language)) criteria.add(Criteria.where("language").regex(Pattern.compile(Pattern.quote(language.trim()), Pattern.CASE_INSENSITIVE)));
         if (minExperience != null) criteria.add(Criteria.where("yearsExperience").gte(minExperience));
+        if (maxExperience != null) criteria.add(Criteria.where("yearsExperience").lte(maxExperience));
         if (minRating != null) criteria.add(Criteria.where("averageRating").gte(minRating));
         if (Boolean.TRUE.equals(available)) criteria.add(Criteria.where("acceptingBookings").is(true));
         if (Boolean.TRUE.equals(free)) criteria.add(new Criteria().orOperator(Criteria.where("priceCents").is(0), Criteria.where("priceCents").exists(false)));
+        if (!isBlank(experienceLevel)) criteria.add(Criteria.where("experienceLevel").regex(Pattern.compile(Pattern.quote(experienceLevel.trim()), Pattern.CASE_INSENSITIVE)));
+        if (Boolean.TRUE.equals(verified)) criteria.add(Criteria.where("isVerified").is(true));
         query.addCriteria(new Criteria().andOperator(criteria.toArray(new Criteria[0])));
 
         long total = mongoTemplate.count(query, User.class);
@@ -83,10 +86,49 @@ public class InterviewerService {
     }
 
     public List<User> recommended(String intervieweeId) {
-        return userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
+        List<User> candidates = userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
                 .filter(user -> isBlank(intervieweeId) || !intervieweeId.equals(user.getId()))
+                .limit(60)
+                .toList();
+        if (isBlank(intervieweeId)) {
+            return candidates.stream().limit(8).toList();
+        }
+        User interviewee = userRepository.findById(intervieweeId).orElse(null);
+        if (interviewee == null) {
+            return candidates.stream().limit(8).toList();
+        }
+        return candidates.stream()
+                .sorted(Comparator.comparingDouble(user -> -recommendationScore(interviewee, user)))
                 .limit(8)
                 .toList();
+    }
+
+    private double recommendationScore(User interviewee, User interviewer) {
+        double rating = interviewer.getAverageRating() == null ? 0.0 : interviewer.getAverageRating();
+        int completed = interviewer.getCompletedInterviews() == null ? 0 : interviewer.getCompletedInterviews();
+        int years = interviewer.getYearsExperience() == null ? 0 : interviewer.getYearsExperience();
+        int overlap = preferenceOverlap(interviewee, interviewer);
+        double languageBonus = !isBlank(interviewee.getLanguage()) && !isBlank(interviewer.getLanguage())
+                && interviewer.getLanguage().toLowerCase(Locale.ROOT).contains(interviewee.getLanguage().toLowerCase(Locale.ROOT))
+                ? 2.5
+                : 0.0;
+        return (overlap * 6.0) + languageBonus + (rating * 2.0) + (Math.min(30, completed) * 0.15) + (Math.min(15, years) * 0.2);
+    }
+
+    private int preferenceOverlap(User interviewee, User interviewer) {
+        List<String> preferred = interviewee.getPreferredDomains();
+        List<String> skills = interviewer.getSkills();
+        if (preferred == null || preferred.isEmpty() || skills == null || skills.isEmpty()) {
+            return 0;
+        }
+        int count = 0;
+        for (String pref : preferred) {
+            if (isBlank(pref)) continue;
+            String needle = pref.toLowerCase(Locale.ROOT);
+            boolean matched = skills.stream().anyMatch(skill -> skill != null && skill.toLowerCase(Locale.ROOT).contains(needle));
+            if (matched) count += 1;
+        }
+        return count;
     }
 
     public List<String> availableSlots(String interviewerId, Integer days) {
@@ -105,12 +147,13 @@ public class InterviewerService {
 
     public InterviewerFilterOptions filterOptions() {
         Query query = new Query(interviewerCriteria());
-        query.fields().include("skills").include("language").include("company");
+        query.fields().include("skills").include("language").include("company").include("experienceLevel");
         List<User> interviewers = mongoTemplate.find(query, User.class);
         return new InterviewerFilterOptions(
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getSkills()).stream()).toList()),
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getLanguage()).stream()).toList()),
-                uniqueNormalized(interviewers.stream().map(User::getCompany).toList())
+                uniqueNormalized(interviewers.stream().map(User::getCompany).toList()),
+                uniqueNormalized(interviewers.stream().map(User::getExperienceLevel).toList())
         );
     }
 

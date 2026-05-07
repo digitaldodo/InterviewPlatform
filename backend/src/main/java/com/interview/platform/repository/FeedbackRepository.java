@@ -8,5 +8,6 @@ import java.util.List;
 @Repository
 public interface FeedbackRepository extends MongoRepository<Feedback, String> {
     List<Feedback> findBySessionId(String sessionId);
+    List<Feedback> findBySessionIdIn(List<String> sessionIds);
     void deleteBySessionId(String sessionId);
 }

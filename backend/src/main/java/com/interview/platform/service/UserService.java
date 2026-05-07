@@ -5,6 +5,7 @@ import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
+import com.interview.platform.repository.InterviewReportRepository;
 import com.interview.platform.repository.InterviewerAvailabilityRepository;
 import com.interview.platform.repository.NotificationRepository;
 import com.interview.platform.repository.PasswordResetTokenRepository;
@@ -34,7 +35,9 @@ public class UserService {
     private final InterviewerAvailabilityRepository availabilityRepository;
     private final SessionRepository sessionRepository;
     private final FeedbackRepository feedbackRepository;
+    private final InterviewReportRepository interviewReportRepository;
     private final NotificationRepository notificationRepository;
+    private final NotificationService notificationService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final VerificationOtpRepository verificationOtpRepository;
@@ -46,7 +49,9 @@ public class UserService {
                        InterviewerAvailabilityRepository availabilityRepository,
                        SessionRepository sessionRepository,
                        FeedbackRepository feedbackRepository,
+                       InterviewReportRepository interviewReportRepository,
                        NotificationRepository notificationRepository,
+                       NotificationService notificationService,
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        VerificationOtpRepository verificationOtpRepository,
@@ -57,7 +62,9 @@ public class UserService {
         this.availabilityRepository = availabilityRepository;
         this.sessionRepository = sessionRepository;
         this.feedbackRepository = feedbackRepository;
+        this.interviewReportRepository = interviewReportRepository;
         this.notificationRepository = notificationRepository;
+        this.notificationService = notificationService;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.verificationOtpRepository = verificationOtpRepository;
@@ -186,14 +193,26 @@ public class UserService {
             throw new IllegalArgumentException("Choose a valid role");
         }
         List<String> roles = new ArrayList<>(user.getRoles());
+        boolean added = false;
         if (!roles.contains(role)) {
             roles.add(role);
             user.setRoles(roles);
+            added = true;
         }
         if (isBlank(user.getActiveWorkspace()) || !user.getRoles().contains(user.getActiveWorkspace())) {
             user.setActiveWorkspace(role);
         }
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        if (added) {
+            notificationService.create(
+                    saved.getId(),
+                    "ROLE_UPDATED",
+                    "New workspace added",
+                    "You can now switch into the " + role.toLowerCase(Locale.ROOT) + " workspace.",
+                    java.util.Map.of("role", role)
+            );
+        }
+        return saved;
     }
 
     public void deleteOwnAccount(String userId, UserDtos.DeleteAccountRequest request) {
@@ -213,6 +232,7 @@ public class UserService {
         for (Session session : sessions) {
             if (!isBlank(session.getId())) {
                 feedbackRepository.deleteBySessionId(session.getId());
+                interviewReportRepository.deleteBySessionId(session.getId());
             }
         }
         sessionRepository.deleteAll(sessions);

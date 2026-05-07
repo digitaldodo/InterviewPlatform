@@ -3,6 +3,7 @@ package com.interview.platform.service;
 import com.interview.platform.dto.UserDtos;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
+import com.interview.platform.repository.InterviewReportRepository;
 import com.interview.platform.repository.InterviewerAvailabilityRepository;
 import com.interview.platform.repository.NotificationRepository;
 import com.interview.platform.repository.PasswordResetTokenRepository;
@@ -48,7 +49,13 @@ class UserServiceTest {
     private FeedbackRepository feedbackRepository;
 
     @Mock
+    private InterviewReportRepository interviewReportRepository;
+
+    @Mock
     private NotificationRepository notificationRepository;
+
+    @Mock
+    private NotificationService notificationService;
 
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
@@ -70,7 +77,9 @@ class UserServiceTest {
                 availabilityRepository,
                 sessionRepository,
                 feedbackRepository,
+                interviewReportRepository,
                 notificationRepository,
+                notificationService,
                 refreshTokenRepository,
                 passwordResetTokenRepository,
                 verificationOtpRepository,

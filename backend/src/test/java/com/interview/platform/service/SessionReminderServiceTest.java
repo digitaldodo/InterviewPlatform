@@ -44,6 +44,8 @@ class SessionReminderServiceTest {
     @Mock
     private EmailService emailService;
     @Mock
+    private NotificationService notificationService;
+    @Mock
     private MongoTemplate mongoTemplate;
 
     private SessionReminderService reminderService;
@@ -58,6 +60,7 @@ class SessionReminderServiceTest {
                 sessionRepository,
                 userRepository,
                 emailService,
+                notificationService,
                 schedulingTimeService,
                 mongoTemplate,
                 true,

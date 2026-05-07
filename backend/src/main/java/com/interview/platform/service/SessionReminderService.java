@@ -36,6 +36,7 @@ public class SessionReminderService {
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final NotificationService notificationService;
     private final SchedulingTimeService schedulingTimeService;
     private final MongoTemplate mongoTemplate;
     private final boolean enabled;
@@ -46,6 +47,7 @@ public class SessionReminderService {
     public SessionReminderService(SessionRepository sessionRepository,
                                   UserRepository userRepository,
                                   EmailService emailService,
+                                  NotificationService notificationService,
                                   SchedulingTimeService schedulingTimeService,
                                   MongoTemplate mongoTemplate,
                                   @Value("${app.reminders.pre-interview.enabled:true}") boolean enabled,
@@ -55,6 +57,7 @@ public class SessionReminderService {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.emailService = emailService;
+        this.notificationService = notificationService;
         this.schedulingTimeService = schedulingTimeService;
         this.mongoTemplate = mongoTemplate;
         this.enabled = enabled;
@@ -133,6 +136,13 @@ public class SessionReminderService {
                     session.getJoinUrl(),
                     session.getDurationMinutes()
             );
+            notificationService.create(
+                    session.getCandidateId(),
+                    "SESSION_REMINDER",
+                    "Upcoming interview",
+                    "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
+                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime())
+            );
             markRecipientReminderSent(session.getId(), "intervieweeReminderSentAt", now);
             session.setIntervieweeReminderSentAt(now);
         }
@@ -149,6 +159,13 @@ public class SessionReminderService {
                     timezone,
                     interviewerMeetingLink(session),
                     session.getDurationMinutes()
+            );
+            notificationService.create(
+                    session.getInterviewerId(),
+                    "SESSION_REMINDER",
+                    "Upcoming interview",
+                    "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
+                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime())
             );
             markRecipientReminderSent(session.getId(), "interviewerReminderSentAt", now);
             session.setInterviewerReminderSentAt(now);

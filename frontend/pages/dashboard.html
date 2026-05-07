@@ -49,7 +49,7 @@
         <h1 id="welcome-heading">Welcome back</h1>
       </div>
       <div class="topbar-actions">
-        <button class="icon-btn" onclick="showSection('notifications')" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
+        <button class="icon-btn" onclick="toggleNotifications()" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
         <button class="btn btn-primary" id="primary-action" onclick="primaryWorkspaceAction()">Book session</button>
       </div>
       <div class="notification-panel" id="notification-panel"></div>
@@ -101,6 +101,17 @@
         <input id="filter-expertise" type="hidden" aria-label="Expertise" />
         <input id="filter-company" type="hidden" aria-label="Company" />
         <input id="filter-language" type="hidden" aria-label="Language" />
+        <select id="filter-years">
+          <option value="">Any experience</option>
+          <option value="1">1+ years</option>
+          <option value="3">3+ years</option>
+          <option value="5">5+ years</option>
+          <option value="8">8+ years</option>
+          <option value="10">10+ years</option>
+        </select>
+        <select id="filter-level">
+          <option value="">Any level</option>
+        </select>
         <select id="filter-rating">
           <option value="">Any rating</option>
           <option value="1">1+ stars</option>
@@ -112,6 +123,7 @@
         </select>
         <label class="check-row"><input id="filter-available" type="checkbox" /> Available</label>
         <label class="check-row"><input id="filter-free" type="checkbox" /> Free</label>
+        <label class="check-row"><input id="filter-verified" type="checkbox" /> Verified</label>
       </div>
       <div id="interviewer-grid" class="interviewer-grid skeleton-grid"></div>
       <div class="pagination-row">
@@ -142,6 +154,12 @@
       <div class="section-title">
         <div><p class="eyebrow">Sessions</p><h1>Upcoming and history</h1></div>
         <button class="btn btn-outline" onclick="loadSessions()">Refresh</button>
+      </div>
+      <div class="session-filter-row">
+        <input class="input" id="session-search" placeholder="Search sessions" oninput="setSessionSearch(this.value)" />
+        <select class="input" id="session-topic-filter" onchange="setSessionTopic(this.value)">
+          <option value="">All topics</option>
+        </select>
       </div>
       <div class="session-tabs">
         <button class="chip active" onclick="renderSessions('upcoming')">Upcoming</button>

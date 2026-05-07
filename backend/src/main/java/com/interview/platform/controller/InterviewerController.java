@@ -28,17 +28,20 @@ public class InterviewerController {
             @RequestParam(required = false) String company,
             @RequestParam(required = false) String role,
             @RequestParam(required = false) Integer minExperience,
+            @RequestParam(required = false) Integer maxExperience,
             @RequestParam(required = false) Double minRating,
             @RequestParam(required = false) Boolean available,
             @RequestParam(required = false) Boolean free,
             @RequestParam(required = false) String language,
+            @RequestParam(required = false) String experienceLevel,
+            @RequestParam(required = false) Boolean verified,
             @RequestParam(required = false) String excludeUserId,
             @RequestParam(defaultValue = "top-rated") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "9") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Interviewers fetched",
-                interviewerService.search(q, expertise, company, role, minExperience, minRating, available, free, language, excludeUserId, sort, page, size)));
+                interviewerService.search(q, expertise, company, role, minExperience, maxExperience, minRating, available, free, language, experienceLevel, verified, excludeUserId, sort, page, size)));
     }
 
     @GetMapping("/filter-options")

@@ -1,12 +1,14 @@
 package com.interview.platform.repository;
 
 import com.interview.platform.model.Notification;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import java.util.List;
 
 public interface NotificationRepository extends MongoRepository<Notification, String> {
     List<Notification> findTop20ByUserIdOrderByCreatedAtDesc(String userId);
+    List<Notification> findByUserIdOrderByCreatedAtDesc(String userId, Pageable pageable);
     long countByUserIdAndReadFalse(String userId);
     void deleteByUserId(String userId);
 }
