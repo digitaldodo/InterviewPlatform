@@ -8,6 +8,8 @@ public class UserDtos {
     public static class ProfileUpdateRequest {
         @Size(min = 1, max = 120)
         private String name;
+        @Size(min = 1, max = 120)
+        private String username;
         private String avatarUrl;
         @Size(max = 1000)
         private String bio;
@@ -19,6 +21,8 @@ public class UserDtos {
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
         public String getAvatarUrl() { return avatarUrl; }
         public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
         public String getBio() { return bio; }
@@ -33,6 +37,23 @@ public class UserDtos {
         public void setExperienceLevel(String experienceLevel) { this.experienceLevel = experienceLevel; }
         public List<String> getAvailability() { return availability; }
         public void setAvailability(List<String> availability) { this.availability = availability; }
+    }
+
+    public static class AddRoleRequest {
+        private String role;
+
+        public String getRole() { return role; }
+        public void setRole(String role) { this.role = role; }
+    }
+
+    public static class DeleteAccountRequest {
+        private String password;
+        private String confirmation;
+
+        public String getPassword() { return password; }
+        public void setPassword(String password) { this.password = password; }
+        public String getConfirmation() { return confirmation; }
+        public void setConfirmation(String confirmation) { this.confirmation = confirmation; }
     }
 
     public static class ChangePasswordRequest {

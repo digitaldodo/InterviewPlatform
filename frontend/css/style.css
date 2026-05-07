@@ -1091,6 +1091,27 @@ textarea:focus-visible {
   display: grid;
   gap: 1rem;
   margin-top: 1rem;
+  min-width: 0;
+}
+
+.profile-form > *,
+.profile-management-card > *,
+.role-option > * {
+  min-width: 0;
+}
+
+.profile-form .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.profile-form input,
+.profile-form select,
+.profile-form textarea {
+  min-width: 0;
+}
+
+.profile-form input[type="file"] {
+  overflow: hidden;
 }
 
 .profile-avatar-upload {
@@ -1117,6 +1138,45 @@ textarea:focus-visible {
 
 .profile-avatar-preview-card small {
   color: var(--muted);
+}
+
+.profile-management-card,
+.role-option {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+}
+
+.profile-management-card h2 {
+  font-size: 1.15rem;
+}
+
+.role-management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.role-option {
+  align-content: space-between;
+  background: rgba(255,255,255,0.025);
+}
+
+.role-option.active {
+  border-color: rgba(110, 231, 200, 0.22);
+  background: rgba(110, 231, 200, 0.055);
+}
+
+.role-option p {
+  margin-top: 0.28rem;
+}
+
+.danger-zone {
+  border-color: rgba(255, 107, 122, 0.28);
+  background: rgba(255, 107, 122, 0.055);
 }
 
 .profile-status-row,
@@ -2229,6 +2289,10 @@ textarea:focus-visible {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
+  .role-management-grid {
+    grid-template-columns: 1fr;
+  }
+
   .booking-layout {
     grid-template-columns: 180px minmax(0, 1fr);
   }
@@ -2445,6 +2509,10 @@ textarea:focus-visible {
   .profile-avatar-preview-card {
     grid-template-columns: 1fr;
     justify-items: start;
+  }
+
+  .role-management-grid {
+    grid-template-columns: 1fr;
   }
 
   .session-actions .btn,

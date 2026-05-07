@@ -10,6 +10,7 @@ import java.util.List;
 public interface SessionRepository extends MongoRepository<Session, String> {
     List<Session> findByInterviewerId(String interviewerId);
     List<Session> findByCandidateId(String candidateId);
+    List<Session> findByInterviewerIdOrCandidateId(String interviewerId, String candidateId);
     List<Session> findByCandidateIdAndStatusIn(String candidateId, List<String> statuses);
     List<Session> findByInterviewerIdAndStatusIn(String interviewerId, List<String> statuses);
     boolean existsByInterviewerIdAndStartTimeAndStatusIn(String interviewerId, String startTime, List<String> statuses);

@@ -136,6 +136,10 @@ function hasInterviewerRole() {
   return userRoles().includes('INTERVIEWER');
 }
 
+function hasIntervieweeRole() {
+  return userRoles().includes('INTERVIEWEE');
+}
+
 function renderWorkspaceSwitcher(roles) {
   const wrap = document.getElementById('workspace-switcher-wrap');
   const select = document.getElementById('workspace-switcher');
@@ -1638,7 +1642,8 @@ function renderProfile() {
   const roles = userRoles().map(workspaceLabel).join(', ');
   const isVerified = Boolean(currentUser.isVerified);
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
-  const showLegacyAvailabilityField = !hasInterviewerRole();
+  const showIntervieweePreferences = hasIntervieweeRole();
+  const showInterviewerSetup = hasInterviewerRole();
   const availabilityPreference = intervieweeAvailabilityPreference();
   const availabilityNotes = intervieweeAvailabilityNotes();
   summary.innerHTML = `
@@ -1683,8 +1688,9 @@ function renderProfile() {
     <form class="profile-form" onsubmit="saveProfile(event)">
       <h2>Edit profile</h2>
       <div class="form-group">
-        <label for="profile-name">Full name</label>
+        <label for="profile-name">Username / display name</label>
         <input id="profile-name" value="${esc(currentUser.name || currentUser.username || '')}" required />
+        <small class="field-hint">Usernames are unique across the platform and are checked without case sensitivity.</small>
       </div>
       <div class="profile-avatar-upload">
         <div class="profile-avatar-preview-card" id="profile-avatar-preview">
@@ -1722,7 +1728,7 @@ function renderProfile() {
           </select>
         </div>
       </div>
-      ${showLegacyAvailabilityField ? `
+      ${showIntervieweePreferences ? `
         <div class="availability-preference-card">
           <h3>Interviewee availability preferences</h3>
           <p class="availability-summary-note">These preferences help recommendations and booking context. Interviewers still control the actual schedulable slots.</p>
@@ -1746,7 +1752,8 @@ function renderProfile() {
             <textarea id="profile-availability-notes" class="compact-textarea" placeholder="Available after office hours, prefer IST timezone, flexible on weekends">${esc(availabilityNotes)}</textarea>
           </div>
         </div>
-      ` : `
+      ` : ''}
+      ${showInterviewerSetup ? `
         <div class="availability-summary-card">
           <h3>Weekly availability</h3>
           <p class="availability-summary-note">Manage recurring interviewer schedules from the interviewer workspace. Your generated slots update automatically there.</p>
@@ -1754,9 +1761,11 @@ function renderProfile() {
             <button class="btn btn-outline btn-sm" type="button" onclick="openAvailabilityManager()">Open availability manager</button>
           </div>
         </div>
-      `}
+      ` : ''}
       <button class="btn btn-primary btn-full" id="profile-save-btn">Save profile</button>
     </form>
+    <div class="divider"></div>
+    ${roleManagementSection()}
     <div class="divider"></div>
     <form class="profile-form" onsubmit="changePassword(event)">
       <h2>Security</h2>
@@ -1772,6 +1781,8 @@ function renderProfile() {
       </div>
       <button class="btn btn-outline btn-full" id="profile-password-btn">Change password</button>
     </form>
+    <div class="divider"></div>
+    ${deleteAccountSection()}
   `;
   const saved = document.getElementById('saved-interviewers');
   const ids = currentUser.favoriteInterviewerIds || [];
@@ -1783,6 +1794,62 @@ function renderProfile() {
   initProfileControls();
   FormUx.initPasswordToggles(summary);
   renderProfileAvailabilityPanel();
+}
+
+function roleManagementSection() {
+  const roles = userRoles();
+  const hasInterviewee = roles.includes('INTERVIEWEE');
+  const hasInterviewer = roles.includes('INTERVIEWER');
+  return `
+    <section class="profile-management-card">
+      <div>
+        <h2>Role management</h2>
+        <p class="availability-summary-note">Use one account across interviewee and interviewer workspaces. Adding a role keeps your profile, sessions, and settings together.</p>
+      </div>
+      <div class="role-management-grid">
+        <article class="role-option ${hasInterviewer ? 'active' : ''}">
+          <div>
+            <strong>Interviewer role</strong>
+            <p>${hasInterviewer ? 'Active. Set expertise and weekly availability to accept bookings.' : 'Add this role to publish expertise, manage availability, and receive booking requests.'}</p>
+          </div>
+          ${hasInterviewer
+            ? '<span class="badge badge-green">Active</span>'
+            : '<button class="btn btn-outline btn-sm" id="add-interviewer-role-btn" type="button" onclick="addRoleToAccount(\'INTERVIEWER\')">Add interviewer role</button>'}
+        </article>
+        <article class="role-option ${hasInterviewee ? 'active' : ''}">
+          <div>
+            <strong>Interviewee role</strong>
+            <p>${hasInterviewee ? 'Active. Keep scheduling preferences current for better recommendations.' : 'Add this role to book interviewers and keep scheduling preferences on this account.'}</p>
+          </div>
+          ${hasInterviewee
+            ? '<span class="badge badge-green">Active</span>'
+            : '<button class="btn btn-outline btn-sm" id="add-interviewee-role-btn" type="button" onclick="addRoleToAccount(\'INTERVIEWEE\')">Add interviewee role</button>'}
+        </article>
+      </div>
+    </section>
+  `;
+}
+
+function deleteAccountSection() {
+  return `
+    <section class="profile-management-card danger-zone">
+      <div>
+        <h2>Delete account</h2>
+        <p class="availability-summary-note">This action cannot be undone. Your profile, avatar reference, availability, saved preferences, role associations, sessions, and related feedback will be permanently removed.</p>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="delete-password">Current password</label>
+          <input id="delete-password" type="password" autocomplete="current-password" placeholder="Confirm your password" />
+        </div>
+        <div class="form-group">
+          <label for="delete-confirmation">Type DELETE</label>
+          <input id="delete-confirmation" autocomplete="off" placeholder="DELETE" />
+        </div>
+      </div>
+      <button class="btn btn-danger btn-full" id="delete-account-btn" type="button" onclick="deleteAccount()">Delete account permanently</button>
+    </section>
+  `;
 }
 
 function initProfileControls() {
@@ -2237,6 +2304,7 @@ async function saveProfile(event) {
   try {
     const payload = {
       name: val('profile-name'),
+      username: val('profile-name'),
       bio: val('profile-bio'),
       skills: FormUx.getTagValues('profile-skills'),
       language: FormUx.getLanguageString('profile-language'),
@@ -2287,6 +2355,58 @@ async function changePassword(event) {
     toast('Password updated.', 'success');
   } catch (err) {
     toast(err.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function addRoleToAccount(role) {
+  const normalized = String(role || '').toUpperCase();
+  const btn = document.getElementById(normalized === 'INTERVIEWER' ? 'add-interviewer-role-btn' : 'add-interviewee-role-btn');
+  setButtonLoading(btn, true, 'Adding');
+  try {
+    const updated = await api('/api/users/me/roles', {
+      method: 'POST',
+      body: JSON.stringify({ role: normalized }),
+    });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+    initUi();
+    renderProfile();
+    if (normalized === 'INTERVIEWER') await loadAvailabilityManagement(true);
+    toast(`${workspaceLabel(normalized)} added to this account.`, 'success');
+  } catch (err) {
+    toast(err.message || 'Could not add role.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function deleteAccount() {
+  const confirmation = val('delete-confirmation');
+  if (confirmation.toUpperCase() !== 'DELETE') {
+    toast('Type DELETE to confirm account deletion.', 'error');
+    return;
+  }
+  if (!window.confirm('This action cannot be undone. Permanently delete your account and related profile data?')) {
+    return;
+  }
+  const btn = document.getElementById('delete-account-btn');
+  setButtonLoading(btn, true, 'Deleting');
+  try {
+    await api('/api/users/me', {
+      method: 'DELETE',
+      body: JSON.stringify({
+        password: document.getElementById('delete-password')?.value || '',
+        confirmation,
+      }),
+    });
+    localStorage.removeItem('ip_user');
+    localStorage.removeItem('ip_access_token');
+    localStorage.removeItem('ip_refresh_token');
+    window.location.href = '../index.html';
+  } catch (err) {
+    toast(err.message || 'Could not delete account.', 'error');
   } finally {
     setButtonLoading(btn, false);
   }

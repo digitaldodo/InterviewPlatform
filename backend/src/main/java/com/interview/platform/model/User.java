@@ -18,6 +18,9 @@ public class User {
     private String id;
     @Indexed
     private String username;
+    @Indexed(unique = true, sparse = true)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    private String usernameKey;
     @Indexed(unique = true)
     private String email;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
@@ -61,10 +64,16 @@ public class User {
     public void setId(String id) { this.id = id; }
 
     public String getUsername() { return username; }
-    public void setUsername(String username) { this.username = username; }
+    public void setUsername(String username) {
+        this.username = username == null ? null : username.trim().replaceAll("\\s+", " ");
+        this.usernameKey = normalizeUsernameKey(this.username);
+    }
+
+    public String getUsernameKey() { return usernameKey; }
+    public void setUsernameKey(String usernameKey) { this.usernameKey = normalizeUsernameKey(usernameKey); }
 
     public String getName() { return username; }
-    public void setName(String name) { this.username = name; }
+    public void setName(String name) { setUsername(name); }
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
@@ -204,5 +213,10 @@ public class User {
     private String normalizeRole(String value) {
         if (value == null || value.isBlank()) return null;
         return value.trim().toUpperCase();
+    }
+
+    private String normalizeUsernameKey(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim().replaceAll("\\s+", " ").toLowerCase();
     }
 }

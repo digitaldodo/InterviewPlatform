@@ -81,7 +81,9 @@ public class AuthService {
         if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
-        user.setUsername(trim(user.getUsername()));
+        String username = cleanUsername(user.getUsername());
+        ensureUsernameAvailable(username);
+        user.setUsername(username);
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(user.getPassword()));
         user.setPassword(null);
@@ -130,7 +132,9 @@ public class AuthService {
         if (looksLikeEmail(identifier)) {
             return userRepository.findByEmail(normalizeEmail(identifier));
         }
-        return userRepository.findFirstByUsernamePattern("^" + Pattern.quote(identifier.trim()) + "$");
+        String username = cleanUsername(identifier);
+        return userRepository.findByUsernameKey(usernameKey(username))
+                .or(() -> userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$"));
     }
 
     public AuthDtos.AuthResponse refresh(String refreshToken) {
@@ -303,6 +307,17 @@ public class AuthService {
         user.setRoles(normalizeRoles(user.getRoles(), user.getRole()));
     }
 
+    private void ensureUsernameAvailable(String username) {
+        String key = usernameKey(username);
+        if (userRepository.existsByUsernameKey(key)) {
+            throw new IllegalArgumentException("Username already taken");
+        }
+        userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$")
+                .ifPresent(match -> {
+                    throw new IllegalArgumentException("Username already taken");
+                });
+    }
+
     private List<String> normalizeRoles(List<String> roles, String fallbackRole) {
         List<String> source = roles == null || roles.isEmpty() ? List.of(isBlank(fallbackRole) ? "INTERVIEWEE" : fallbackRole) : roles;
         List<String> normalized = source.stream()
@@ -330,6 +345,18 @@ public class AuthService {
 
     private String trim(String value) {
         return value == null ? null : value.trim();
+    }
+
+    private String cleanUsername(String value) {
+        String username = trim(value);
+        if (isBlank(username)) {
+            throw new IllegalArgumentException("Username is required");
+        }
+        return username.replaceAll("\\s+", " ");
+    }
+
+    private String usernameKey(String value) {
+        return cleanUsername(value).toLowerCase(Locale.ROOT);
     }
 
     private boolean isBlank(String value) {

@@ -81,6 +81,20 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success("Password updated successfully", null));
     }
 
+    @PostMapping("/me/roles")
+    public ResponseEntity<ApiResponse<User>> addOwnRole(Authentication authentication,
+                                                        @Valid @RequestBody UserDtos.AddRoleRequest request) {
+        User updated = userService.addOwnRole(currentUser(authentication).getId(), request);
+        return ResponseEntity.ok(ApiResponse.success("Role added successfully", updated));
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<ApiResponse<Void>> deleteOwnAccount(Authentication authentication,
+                                                             @Valid @RequestBody(required = false) UserDtos.DeleteAccountRequest request) {
+        userService.deleteOwnAccount(currentUser(authentication).getId(), request);
+        return ResponseEntity.ok(ApiResponse.success("Account deleted successfully", null));
+    }
+
     @PostMapping("/me/resend-otp")
     public ResponseEntity<ApiResponse<Void>> resendOwnOtp(Authentication authentication) {
         authService.sendOtp(currentUser(authentication).getEmail());

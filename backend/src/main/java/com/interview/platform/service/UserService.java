@@ -2,14 +2,24 @@ package com.interview.platform.service;
 
 import com.interview.platform.dto.UserDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
+import com.interview.platform.repository.FeedbackRepository;
+import com.interview.platform.repository.InterviewerAvailabilityRepository;
+import com.interview.platform.repository.NotificationRepository;
+import com.interview.platform.repository.PasswordResetTokenRepository;
+import com.interview.platform.repository.RefreshTokenRepository;
+import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
+import com.interview.platform.repository.VerificationOtpRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -21,13 +31,34 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final CloudinaryImageService cloudinaryImageService;
+    private final InterviewerAvailabilityRepository availabilityRepository;
+    private final SessionRepository sessionRepository;
+    private final FeedbackRepository feedbackRepository;
+    private final NotificationRepository notificationRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final VerificationOtpRepository verificationOtpRepository;
 
     public UserService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
-                       CloudinaryImageService cloudinaryImageService) {
+                       CloudinaryImageService cloudinaryImageService,
+                       InterviewerAvailabilityRepository availabilityRepository,
+                       SessionRepository sessionRepository,
+                       FeedbackRepository feedbackRepository,
+                       NotificationRepository notificationRepository,
+                       RefreshTokenRepository refreshTokenRepository,
+                       PasswordResetTokenRepository passwordResetTokenRepository,
+                       VerificationOtpRepository verificationOtpRepository) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.cloudinaryImageService = cloudinaryImageService;
+        this.availabilityRepository = availabilityRepository;
+        this.sessionRepository = sessionRepository;
+        this.feedbackRepository = feedbackRepository;
+        this.notificationRepository = notificationRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
+        this.passwordResetTokenRepository = passwordResetTokenRepository;
+        this.verificationOtpRepository = verificationOtpRepository;
     }
 
     public User register(User user) {
@@ -47,7 +78,9 @@ public class UserService {
         if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
-        user.setUsername(user.getUsername().trim());
+        String username = cleanUsername(user.getUsername());
+        ensureUsernameAvailable(username, null);
+        user.setUsername(username);
         user.setEmail(email);
         if (user.getRoles().isEmpty()) {
             user.setRole(isBlank(user.getRole()) ? "INTERVIEWEE" : user.getRole());
@@ -97,8 +130,11 @@ public class UserService {
     public User updateOwnProfile(String userId, UserDtos.ProfileUpdateRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        if (!isBlank(request.getName())) {
-            user.setUsername(request.getName().trim());
+        String requestedUsername = !isBlank(request.getUsername()) ? request.getUsername() : request.getName();
+        if (!isBlank(requestedUsername)) {
+            String username = cleanUsername(requestedUsername);
+            ensureUsernameAvailable(username, user.getId());
+            user.setUsername(username);
         }
         if (request.getAvatarUrl() != null) {
             user.setAvatarUrl(trimToNull(request.getAvatarUrl()));
@@ -124,6 +160,55 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    public User addOwnRole(String userId, UserDtos.AddRoleRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        String role = normalizeRole(request == null ? null : request.getRole());
+        if (role == null) {
+            throw new IllegalArgumentException("Choose a valid role");
+        }
+        List<String> roles = new ArrayList<>(user.getRoles());
+        if (!roles.contains(role)) {
+            roles.add(role);
+            user.setRoles(roles);
+        }
+        if (isBlank(user.getActiveWorkspace()) || !user.getRoles().contains(user.getActiveWorkspace())) {
+            user.setActiveWorkspace(role);
+        }
+        return userRepository.save(user);
+    }
+
+    public void deleteOwnAccount(String userId, UserDtos.DeleteAccountRequest request) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        String confirmation = request == null ? null : request.getConfirmation();
+        if (confirmation == null || !"DELETE".equalsIgnoreCase(confirmation.trim())) {
+            throw new IllegalArgumentException("Type DELETE to confirm account deletion");
+        }
+        String password = request.getPassword();
+        boolean hasPassword = !isBlank(user.getPasswordHash()) || !isBlank(user.getPassword());
+        if (hasPassword && (isBlank(password) || !matchesPassword(user, password))) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+
+        List<Session> sessions = sessionRepository.findByInterviewerIdOrCandidateId(userId, userId);
+        for (Session session : sessions) {
+            if (!isBlank(session.getId())) {
+                feedbackRepository.deleteBySessionId(session.getId());
+            }
+        }
+        sessionRepository.deleteAll(sessions);
+        availabilityRepository.deleteByInterviewerId(userId);
+        notificationRepository.deleteByUserId(userId);
+        refreshTokenRepository.deleteByUserId(userId);
+        passwordResetTokenRepository.deleteByUserId(userId);
+        if (!isBlank(user.getEmail())) {
+            verificationOtpRepository.deleteByEmail(user.getEmail());
+        }
+        removeFavoriteReferences(userId);
+        userRepository.delete(user);
+    }
+
     public User uploadOwnAvatar(String userId, MultipartFile file) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -147,6 +232,55 @@ public class UserService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private void ensureUsernameAvailable(String username, String currentUserId) {
+        String key = usernameKey(username);
+        if (key == null) {
+            throw new IllegalArgumentException("Username is required");
+        }
+        Optional<User> keyedMatch = userRepository.findByUsernameKey(key);
+        if (keyedMatch.isPresent() && !keyedMatch.get().getId().equals(currentUserId)) {
+            throw new IllegalArgumentException("Username already taken");
+        }
+        Optional<User> legacyMatch = userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$");
+        if (legacyMatch.isPresent() && !legacyMatch.get().getId().equals(currentUserId)) {
+            throw new IllegalArgumentException("Username already taken");
+        }
+    }
+
+    private String cleanUsername(String value) {
+        String username = trimToNull(value);
+        if (username == null) {
+            throw new IllegalArgumentException("Username is required");
+        }
+        return username.replaceAll("\\s+", " ");
+    }
+
+    private String usernameKey(String value) {
+        String username = trimToNull(value);
+        return username == null ? null : username.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeRole(String role) {
+        if (role == null || role.isBlank()) {
+            return null;
+        }
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
+        return normalized.equals("INTERVIEWER") || normalized.equals("INTERVIEWEE") ? normalized : null;
+    }
+
+    private void removeFavoriteReferences(String deletedUserId) {
+        userRepository.findAll().forEach(user -> {
+            List<String> favorites = user.getFavoriteInterviewerIds();
+            if (favorites == null || !favorites.contains(deletedUserId)) {
+                return;
+            }
+            user.setFavoriteInterviewerIds(favorites.stream()
+                    .filter(id -> !deletedUserId.equals(id))
+                    .toList());
+            userRepository.save(user);
+        });
     }
 
     private boolean matchesPassword(User user, String rawPassword) {
