@@ -1087,6 +1087,12 @@ textarea:focus-visible {
   overflow: visible;
 }
 
+.filter-panel > input,
+.filter-panel > select,
+.filter-panel > .chip-combobox {
+  min-width: 0;
+}
+
 .profile-form {
   display: grid;
   gap: 1rem;
@@ -1254,6 +1260,23 @@ textarea:focus-visible {
 .chip-text-input:focus {
   border-color: transparent;
   box-shadow: none;
+}
+
+.single-select .chip-input-shell {
+  flex-wrap: nowrap;
+  padding-right: 0.42rem;
+}
+
+.single-select .chip-text-input {
+  min-width: 0;
+}
+
+.single-select .input-chip {
+  max-width: calc(100% - 8px);
+}
+
+.discovery-filter-control .chip-input-shell {
+  background: #0f1319;
 }
 
 .input-chip {

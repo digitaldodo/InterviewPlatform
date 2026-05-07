@@ -41,6 +41,24 @@ const FormUx = (() => {
     });
   }
 
+  function uniqueDisplayValues(values) {
+    const seen = new Set();
+    return splitValues(values).map(value => String(value || '').replace(/\s+/g, ' ').trim()).filter(value => {
+      const key = value.toLowerCase();
+      if (!value || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function selectOptions(values, options = {}) {
+    return options.preserveCase === false ? uniqueValues(values) : uniqueDisplayValues(values);
+  }
+
+  function normalizeSelectValue(value, options = {}) {
+    return options.preserveCase === false ? normalizeValue(value) : String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
   function initTagInput(inputOrId, options = {}) {
     const input = resolveInput(inputOrId);
     if (!input || input.dataset.enhancedControl === 'tag') return input?.__chipControl;
@@ -111,6 +129,10 @@ const FormUx = (() => {
     });
 
     control.textInput.addEventListener('input', () => {
+      if (state.value) {
+        state.value = '';
+        sync(input, []);
+      }
       state.query = control.textInput.value;
       state.activeIndex = -1;
       state.open = true;
@@ -260,6 +282,123 @@ const FormUx = (() => {
     return input.__languageControl;
   }
 
+  function initSearchSelect(inputOrId, options = {}) {
+    const input = resolveInput(inputOrId);
+    if (!input || input.dataset.enhancedControl === 'search-select') return input?.__searchSelectControl;
+
+    const control = createControl(input, {
+      className: `search-select-control ${options.className || ''}`.trim(),
+      placeholder: options.placeholder || input.placeholder || 'Search',
+      label: options.label || input.getAttribute('aria-label') || 'Search options',
+    });
+    const state = {
+      value: normalizeSelectValue(input.value, options),
+      query: '',
+      options: selectOptions(options.options || [], options),
+      activeIndex: -1,
+      open: false,
+    };
+
+    input.type = 'hidden';
+    input.dataset.enhancedControl = 'search-select';
+    input.classList.add('enhanced-source');
+    control.shell.classList.add('single-select');
+
+    function filteredOptions() {
+      const query = state.query.toLowerCase();
+      return state.options
+        .filter(item => !query || item.toLowerCase().includes(query))
+        .slice(0, options.limit || 12);
+    }
+
+    function select(raw) {
+      const value = normalizeSelectValue(raw, options);
+      if (!value) return;
+      state.value = value;
+      state.query = '';
+      state.activeIndex = -1;
+      state.open = false;
+      sync(input, state.value ? [state.value] : []);
+      render();
+    }
+
+    function clear() {
+      state.value = '';
+      state.query = '';
+      state.activeIndex = -1;
+      state.open = false;
+      sync(input, []);
+      render();
+      control.textInput.focus();
+    }
+
+    function render() {
+      renderSingleValue(control.chipWrap, control.textInput, state.value, state.query, clear);
+      control.textInput.placeholder = state.value ? '' : (options.placeholder || input.placeholder || 'Search');
+      renderOptions(control, filteredOptions(), state, select);
+    }
+
+    control.textInput.addEventListener('focus', () => {
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('input', () => {
+      state.query = control.textInput.value;
+      state.activeIndex = -1;
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('keydown', event => {
+      const items = filteredOptions();
+      if (event.key === 'Enter' && items.length) {
+        event.preventDefault();
+        select(items[Math.max(0, state.activeIndex)]);
+      } else if (event.key === 'Backspace' && !control.textInput.value && state.value) {
+        clear();
+      } else if (event.key === 'ArrowDown' && items.length) {
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = (state.activeIndex + 1) % items.length;
+        render();
+      } else if (event.key === 'ArrowUp' && items.length) {
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = state.activeIndex <= 0 ? items.length - 1 : state.activeIndex - 1;
+        render();
+      } else if (event.key === 'Escape') {
+        state.open = false;
+        state.activeIndex = -1;
+        render();
+      }
+    });
+
+    control.chipWrap.addEventListener('click', () => control.textInput.focus());
+    addOutsideClose(control.shell, state, render);
+
+    input.__searchSelectControl = {
+      value: () => state.value,
+      setValue(value) {
+        state.value = normalizeSelectValue(value, options);
+        state.query = '';
+        sync(input, state.value ? [state.value] : []);
+        render();
+      },
+      setOptions(values) {
+        state.options = selectOptions(values || [], options);
+        if (state.value && !hasValue(state.options, state.value)) {
+          state.value = '';
+          sync(input, []);
+        }
+        render();
+      },
+    };
+    sync(input, state.value ? [state.value] : []);
+    render();
+    return input.__searchSelectControl;
+  }
+
   function createControl(input, config) {
     const shell = document.createElement('div');
     const chipWrap = document.createElement('div');
@@ -287,6 +426,14 @@ const FormUx = (() => {
   function renderChips(chipWrap, textInput, values, removeAt) {
     chipWrap.querySelectorAll('.input-chip').forEach(item => item.remove());
     values.forEach((value, index) => chipWrap.insertBefore(chip(value, () => removeAt(index)), textInput));
+  }
+
+  function renderSingleValue(chipWrap, textInput, value, query, onClear) {
+    chipWrap.querySelectorAll('.input-chip').forEach(item => item.remove());
+    if (value) {
+      chipWrap.insertBefore(chip(value, onClear), textInput);
+    }
+    textInput.value = value ? '' : query;
   }
 
   function renderOptions(control, options, state, onSelect) {
@@ -382,6 +529,7 @@ const FormUx = (() => {
   return {
     initTagInput,
     initLanguageSelect,
+    initSearchSelect,
     initPasswordToggles,
     normalizeValues: uniqueValues,
     getTagValues(id) {

@@ -25,6 +25,7 @@ let availabilityLoading = false;
 let availabilityError = '';
 let profileAvatarFile = null;
 let profileAvatarPreviewUrl = '';
+let discoveryFilterOptions = { expertise: [], languages: [], companies: [] };
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
@@ -77,7 +78,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initUi();
   bindFilters();
   bindFeedbackForm();
-  await Promise.all([loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications(), loadAvailabilityManagement()]);
+  await Promise.all([loadFilterOptions(), loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications(), loadAvailabilityManagement()]);
   showSection(routeFromHash(), false);
 });
 
@@ -314,9 +315,11 @@ async function readPayload(res) {
 }
 
 function bindFilters() {
+  initDiscoveryFilterControls();
   ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-rating', 'filter-available', 'filter-free', 'filter-sort']
     .forEach(id => {
       const el = document.getElementById(id);
+      if (!el) return;
       el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
@@ -325,6 +328,47 @@ function bindFilters() {
         }, 280);
       });
     });
+}
+
+function initDiscoveryFilterControls() {
+  FormUx.initSearchSelect('filter-expertise', {
+    placeholder: 'Expertise',
+    label: 'Filter by interviewer expertise',
+    className: 'discovery-filter-control',
+    options: discoveryFilterOptions.expertise,
+  });
+  FormUx.initSearchSelect('filter-company', {
+    placeholder: 'Company',
+    label: 'Filter by interviewer company',
+    className: 'discovery-filter-control',
+    options: discoveryFilterOptions.companies,
+  });
+  FormUx.initSearchSelect('filter-language', {
+    placeholder: 'Language',
+    label: 'Filter by interviewer language',
+    className: 'discovery-filter-control',
+    options: discoveryFilterOptions.languages,
+  });
+}
+
+async function loadFilterOptions() {
+  try {
+    const data = await api('/api/interviewers/filter-options');
+    discoveryFilterOptions = {
+      expertise: Array.isArray(data?.expertise) ? data.expertise : [],
+      languages: Array.isArray(data?.languages) ? data.languages : [],
+      companies: Array.isArray(data?.companies) ? data.companies : [],
+    };
+    updateDiscoveryFilterOptions();
+  } catch (err) {
+    discoveryFilterOptions = { expertise: [], languages: [], companies: [] };
+  }
+}
+
+function updateDiscoveryFilterOptions() {
+  document.getElementById('filter-expertise')?.__searchSelectControl?.setOptions(discoveryFilterOptions.expertise);
+  document.getElementById('filter-company')?.__searchSelectControl?.setOptions(discoveryFilterOptions.companies);
+  document.getElementById('filter-language')?.__searchSelectControl?.setOptions(discoveryFilterOptions.languages);
 }
 
 function rememberInterviewers(list) {

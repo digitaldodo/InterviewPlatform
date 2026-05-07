@@ -2,6 +2,7 @@ package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
 import com.interview.platform.dto.AvailabilityDtos;
+import com.interview.platform.dto.InterviewerFilterOptions;
 import com.interview.platform.dto.PageResponse;
 import com.interview.platform.model.User;
 import com.interview.platform.service.InterviewerService;
@@ -38,6 +39,11 @@ public class InterviewerController {
     ) {
         return ResponseEntity.ok(ApiResponse.success("Interviewers fetched",
                 interviewerService.search(q, expertise, company, role, minExperience, minRating, available, free, language, excludeUserId, sort, page, size)));
+    }
+
+    @GetMapping("/filter-options")
+    public ResponseEntity<ApiResponse<InterviewerFilterOptions>> filterOptions() {
+        return ResponseEntity.ok(ApiResponse.success("Interviewer filter options fetched", interviewerService.filterOptions()));
     }
 
     @GetMapping("/{id}")

@@ -2,6 +2,7 @@ package com.interview.platform.service;
 
 import com.interview.platform.dto.PageResponse;
 import com.interview.platform.dto.AvailabilityDtos;
+import com.interview.platform.dto.InterviewerFilterOptions;
 import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.UserRepository;
@@ -12,8 +13,11 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 @Service
@@ -99,6 +103,17 @@ public class InterviewerService {
         return availabilitySlotService.generatedSlotResponses(interviewerId, days, includeUnavailable);
     }
 
+    public InterviewerFilterOptions filterOptions() {
+        Query query = new Query(interviewerCriteria());
+        query.fields().include("skills").include("language").include("company");
+        List<User> interviewers = mongoTemplate.find(query, User.class);
+        return new InterviewerFilterOptions(
+                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getSkills()).stream()).toList()),
+                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getLanguage()).stream()).toList()),
+                uniqueNormalized(interviewers.stream().map(User::getCompany).toList())
+        );
+    }
+
     public User toggleFavorite(String userId, String interviewerId) {
         User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         getById(interviewerId);
@@ -120,6 +135,47 @@ public class InterviewerService {
             case "newest" -> Sort.by(Sort.Direction.DESC, "createdAt");
             default -> Sort.by(Sort.Direction.DESC, "averageRating");
         };
+    }
+
+    private Criteria interviewerCriteria() {
+        return new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER"));
+    }
+
+    private List<String> splitOptions(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .flatMap(value -> splitOptions(value).stream())
+                .toList();
+    }
+
+    private List<String> splitOptions(String value) {
+        if (isBlank(value)) {
+            return List.of();
+        }
+        return Pattern.compile(",").splitAsStream(value)
+                .map(String::trim)
+                .filter(item -> !item.isBlank())
+                .toList();
+    }
+
+    private List<String> uniqueNormalized(List<String> values) {
+        Map<String, String> options = new LinkedHashMap<>();
+        values.stream()
+                .map(this::normalizeOption)
+                .filter(value -> !value.isBlank())
+                .forEach(value -> options.putIfAbsent(value.toLowerCase(Locale.ROOT), value));
+        return options.values().stream()
+                .sorted(Comparator.comparing(value -> value.toLowerCase(Locale.ROOT)))
+                .toList();
+    }
+
+    private String normalizeOption(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().replaceAll("\\s+", " ");
     }
 
     private boolean isBlank(String value) {
