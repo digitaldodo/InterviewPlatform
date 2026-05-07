@@ -1,5 +1,6 @@
 package com.interview.platform.service;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -19,11 +20,12 @@ public class SchedulingTimeService {
     private final ZoneId zoneId;
     private final Clock clock;
 
+    @Autowired
     public SchedulingTimeService(@Value("${app.scheduling.zone:UTC}") String zoneIdValue) {
         this(ZoneId.of(zoneIdValue), Clock.system(ZoneId.of(zoneIdValue)));
     }
 
-    public SchedulingTimeService(ZoneId zoneId, Clock clock) {
+    SchedulingTimeService(ZoneId zoneId, Clock clock) {
         this.zoneId = zoneId;
         this.clock = clock;
     }
