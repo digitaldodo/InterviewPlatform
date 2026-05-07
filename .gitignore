@@ -2,6 +2,11 @@
 backend/target/
 backend/*.class
 
+# Build artifacts
+dist/
+build/
+out/
+
 # IDE
 .idea/
 *.iml
@@ -18,3 +23,11 @@ Thumbs.db
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Node tooling used only for local static serving
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

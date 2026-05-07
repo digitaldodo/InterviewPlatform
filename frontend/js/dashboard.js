@@ -3,7 +3,7 @@
    API base comes from window.INTERVIEW_API_BASE when deployed separately.
    ============================================================ */
 
-const API = window.INTERVIEW_API_BASE || '';
+const API = (window.INTERVIEW_API_BASE || '').replace(/\/$/, '');
 
 let currentUser  = null;
 let displayedUsers = [];  // cache for client-side filter
