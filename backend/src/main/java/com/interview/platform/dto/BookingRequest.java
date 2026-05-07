@@ -1,6 +1,9 @@
 package com.interview.platform.dto;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public class BookingRequest {
     @NotBlank
@@ -11,7 +14,10 @@ public class BookingRequest {
     private String interviewType;
     @NotBlank
     private String startTime;
+    @Min(15)
+    @Max(480)
     private Integer durationMinutes;
+    @Size(max = 2000)
     private String notes;
     private String meetingProvider;
 

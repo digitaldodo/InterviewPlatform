@@ -1,10 +1,9 @@
 package com.interview.platform.service;
 
 import com.interview.platform.dto.PageResponse;
+import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
-import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
-import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -21,12 +20,12 @@ import java.util.regex.Pattern;
 public class InterviewerService {
     private final MongoTemplate mongoTemplate;
     private final UserRepository userRepository;
-    private final SessionRepository sessionRepository;
+    private final AvailabilitySlotService availabilitySlotService;
 
-    public InterviewerService(MongoTemplate mongoTemplate, UserRepository userRepository, SessionRepository sessionRepository) {
+    public InterviewerService(MongoTemplate mongoTemplate, UserRepository userRepository, AvailabilitySlotService availabilitySlotService) {
         this.mongoTemplate = mongoTemplate;
         this.userRepository = userRepository;
-        this.sessionRepository = sessionRepository;
+        this.availabilitySlotService = availabilitySlotService;
     }
 
     public PageResponse<User> search(String q, String expertise, String company, String role, Integer minExperience,
@@ -86,15 +85,14 @@ public class InterviewerService {
                 .toList();
     }
 
-    public List<String> availableSlots(String interviewerId) {
-        User interviewer = getById(interviewerId);
-        List<String> booked = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, List.of("PENDING", "CONFIRMED"))
-                .stream()
-                .map(Session::getStartTime)
-                .toList();
-        return interviewer.getAvailability().stream()
-                .filter(slot -> !booked.contains(slot))
-                .toList();
+    public List<String> availableSlots(String interviewerId, Integer days) {
+        getById(interviewerId);
+        return availabilitySlotService.availableSlotStartTimes(interviewerId, days);
+    }
+
+    public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlots(String interviewerId, Integer days) {
+        getById(interviewerId);
+        return availabilitySlotService.generatedSlotResponses(interviewerId, days);
     }
 
     public User toggleFavorite(String userId, String interviewerId) {

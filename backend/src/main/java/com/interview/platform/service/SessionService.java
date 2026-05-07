@@ -32,15 +32,18 @@ public class SessionService {
     private final NotificationService notificationService;
     private final EmailService emailService;
     private final MeetingProviderService meetingProviderService;
+    private final AvailabilitySlotService availabilitySlotService;
 
     public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
                           NotificationService notificationService, EmailService emailService,
-                          MeetingProviderService meetingProviderService) {
+                          MeetingProviderService meetingProviderService,
+                          AvailabilitySlotService availabilitySlotService) {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.emailService = emailService;
         this.meetingProviderService = meetingProviderService;
+        this.availabilitySlotService = availabilitySlotService;
     }
 
     public Session createSession(Session session) {
@@ -84,6 +87,9 @@ public class SessionService {
         } else if (!userRepository.existsById(session.getInterviewerId())) {
             throw new IllegalArgumentException("Interviewer does not exist");
         }
+        if (session.getInterviewerId() == null || session.getInterviewerId().isBlank()) {
+            throw new IllegalArgumentException("Interviewer is required");
+        }
         if (session.getInterviewerId() != null && session.getInterviewerId().equals(session.getCandidateId())) {
             throw new IllegalArgumentException("You cannot book yourself as interviewer");
         }
@@ -99,7 +105,14 @@ public class SessionService {
         if (session.getStartTime() == null || session.getStartTime().isBlank()) {
             throw new IllegalArgumentException("Start time is required");
         }
-        preventDoubleBooking(session.getInterviewerId(), session.getStartTime());
+        AvailabilitySlotService.BookingResolution bookingResolution = availabilitySlotService.resolveRequestedBooking(
+                session.getInterviewerId(),
+                session.getStartTime(),
+                session.getDurationMinutes()
+        );
+        session.setStartTime(bookingResolution.startTime());
+        session.setDurationMinutes(bookingResolution.durationMinutes());
+        preventConflictingBooking(session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes());
         meetingProviderService.provision(session, interviewer, interviewee);
         session.setCreatedAt(Instant.now());
         session.setUpdatedAt(Instant.now());
@@ -213,10 +226,25 @@ public class SessionService {
         return normalized;
     }
 
-    private void preventDoubleBooking(String interviewerId, String startTime) {
-        if (sessionRepository.existsByInterviewerIdAndStartTimeAndStatusIn(
-                interviewerId, startTime, List.of("PENDING", "CONFIRMED"))) {
-            throw new IllegalArgumentException("That slot is no longer available");
+    private void preventConflictingBooking(String interviewerId, String startTime, Integer durationMinutes) {
+        List<Session> activeSessions = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, List.of("PENDING", "CONFIRMED"));
+        Optional<Instant> requestedStart = parseSessionTime(startTime);
+        Instant requestedEnd = requestedStart
+                .map(value -> value.plusSeconds((long) effectiveDurationMinutes(durationMinutes) * 60))
+                .orElse(null);
+        for (Session existing : activeSessions) {
+            if (startTime.equals(existing.getStartTime())) {
+                throw new IllegalArgumentException("That slot is no longer available");
+            }
+            Optional<Instant> existingStart = parseSessionTime(existing.getStartTime());
+            if (requestedStart.isEmpty() || existingStart.isEmpty()) {
+                continue;
+            }
+            Instant existingEnd = existingStart.get().plusSeconds((long) effectiveDurationMinutes(existing.getDurationMinutes()) * 60);
+            boolean overlaps = requestedStart.get().isBefore(existingEnd) && requestedEnd.isAfter(existingStart.get());
+            if (overlaps) {
+                throw new IllegalArgumentException("That slot is no longer available");
+            }
         }
     }
 
@@ -309,6 +337,25 @@ public class SessionService {
             return "";
         }
         return status.trim().toUpperCase();
+    }
+
+    private Optional<Instant> parseSessionTime(String startTime) {
+        if (startTime == null || startTime.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(OffsetDateTime.parse(startTime).toInstant());
+        } catch (DateTimeParseException ignored) {
+            try {
+                return Optional.of(Instant.parse(startTime));
+            } catch (DateTimeParseException secondIgnored) {
+                return Optional.empty();
+            }
+        }
+    }
+
+    private int effectiveDurationMinutes(Integer durationMinutes) {
+        return durationMinutes == null || durationMinutes <= 0 ? 45 : durationMinutes;
     }
 }
 

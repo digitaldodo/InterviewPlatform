@@ -33,7 +33,9 @@ public class BookingController {
         session.setInterviewType(request.getInterviewType());
         session.setTitle(request.getInterviewType());
         session.setStartTime(request.getStartTime());
-        session.setDurationMinutes(request.getDurationMinutes());
+        if (request.getDurationMinutes() != null) {
+            session.setDurationMinutes(request.getDurationMinutes());
+        }
         session.setNotes(request.getNotes());
         session.setMeetingProvider(request.getMeetingProvider());
         session.setStatus("PENDING");

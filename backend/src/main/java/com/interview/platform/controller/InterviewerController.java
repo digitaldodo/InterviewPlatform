@@ -1,6 +1,7 @@
 package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
+import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.dto.PageResponse;
 import com.interview.platform.model.User;
 import com.interview.platform.service.InterviewerService;
@@ -45,8 +46,15 @@ public class InterviewerController {
     }
 
     @GetMapping("/{id}/availability")
-    public ResponseEntity<ApiResponse<List<String>>> availability(@PathVariable String id) {
-        return ResponseEntity.ok(ApiResponse.success("Availability fetched", interviewerService.availableSlots(id)));
+    public ResponseEntity<ApiResponse<List<String>>> availability(@PathVariable String id,
+                                                                  @RequestParam(required = false) Integer days) {
+        return ResponseEntity.ok(ApiResponse.success("Availability fetched", interviewerService.availableSlots(id, days)));
+    }
+
+    @GetMapping("/{id}/slots")
+    public ResponseEntity<ApiResponse<List<AvailabilityDtos.GeneratedSlotResponse>>> slots(@PathVariable String id,
+                                                                                            @RequestParam(required = false) Integer days) {
+        return ResponseEntity.ok(ApiResponse.success("Generated slots fetched", interviewerService.generatedSlots(id, days)));
     }
 
     @GetMapping("/top-rated")
