@@ -458,6 +458,12 @@ textarea:focus-visible {
   color: var(--accent);
 }
 
+.type-card.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(110, 231, 200, 0.08);
+}
+
 .preview-summary {
   display: flex;
   justify-content: space-between;
@@ -1161,6 +1167,133 @@ textarea:focus-visible {
   margin-top: 1rem;
 }
 
+.booking-stage,
+.booking-stage-head,
+.booking-search-row,
+.booking-selection-banner,
+.booking-date-grid,
+.booking-slot-day-card,
+.booking-slot-day-head,
+.booking-flow-actions,
+.booking-success-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.booking-stage-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.booking-search-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.booking-selection-banner,
+.booking-date-card,
+.booking-slot-day-card,
+.booking-slot-card,
+.booking-success-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+}
+
+.booking-selection-banner {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding: 0.9rem 1rem;
+  margin-top: 1rem;
+}
+
+.booking-selection-banner p,
+.booking-slot-day-head p,
+.booking-success-card small,
+.booking-card-meta {
+  color: var(--muted);
+}
+
+.booking-date-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 1rem;
+}
+
+.booking-date-card,
+.booking-slot-card {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem;
+  text-align: left;
+}
+
+.booking-date-card.active,
+.booking-date-card:hover,
+.booking-slot-card:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.booking-date-card small,
+.booking-slot-card small {
+  color: var(--muted);
+}
+
+.booking-slot-day-card {
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.booking-slot-day-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.booking-slot-grid {
+  margin-top: 0;
+}
+
+.booking-slot-card.is-booked,
+.booking-slot-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.booking-slot-card.is-booked:hover,
+.booking-slot-card:disabled:hover {
+  border-color: var(--line);
+}
+
+.booking-flow-actions {
+  grid-template-columns: repeat(2, minmax(0, auto));
+  align-items: center;
+  justify-content: start;
+  margin-top: 1rem;
+}
+
+.booking-success-card {
+  padding: 1rem;
+  margin-top: 1rem;
+  background:
+    radial-gradient(circle at top right, rgba(110, 231, 200, 0.16), transparent 40%),
+    rgba(255,255,255,0.03);
+}
+
+.booking-interviewer-card {
+  text-align: left;
+}
+
+.booking-interviewer-card .btn {
+  width: fit-content;
+}
+
+.booking-type-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .confirm-box {
   display: grid;
   gap: 0.55rem;
@@ -1629,7 +1762,8 @@ textarea:focus-visible {
   }
 
   .type-grid,
-  .slot-grid {
+  .slot-grid,
+  .booking-date-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1665,6 +1799,7 @@ textarea:focus-visible {
   .meeting-layout,
   .type-grid,
   .slot-grid,
+  .booking-date-grid,
   .stats-grid,
   .booking-layout,
   .filter-panel,
@@ -1682,9 +1817,17 @@ textarea:focus-visible {
   .topbar,
   .section-title,
   .panel-head,
-  .meeting-stage-head {
+  .meeting-stage-head,
+  .booking-stage-head,
+  .booking-slot-day-head,
+  .booking-search-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .booking-selection-banner,
+  .booking-flow-actions {
+    grid-template-columns: 1fr;
   }
 
   .app-shell {

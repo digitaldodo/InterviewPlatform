@@ -53,8 +53,9 @@ public class InterviewerController {
 
     @GetMapping("/{id}/slots")
     public ResponseEntity<ApiResponse<List<AvailabilityDtos.GeneratedSlotResponse>>> slots(@PathVariable String id,
+                                                                                            @RequestParam(required = false, defaultValue = "false") boolean includeUnavailable,
                                                                                             @RequestParam(required = false) Integer days) {
-        return ResponseEntity.ok(ApiResponse.success("Generated slots fetched", interviewerService.generatedSlots(id, days)));
+        return ResponseEntity.ok(ApiResponse.success("Generated slots fetched", interviewerService.generatedSlots(id, days, includeUnavailable)));
     }
 
     @GetMapping("/top-rated")

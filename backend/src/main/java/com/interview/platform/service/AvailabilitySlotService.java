@@ -27,11 +27,13 @@ import java.util.Set;
 @Service
 public class AvailabilitySlotService {
 
-    public record GeneratedSlot(String availabilityId, String startTime, String endTime, int durationMinutes) {}
+    public record GeneratedSlot(String availabilityId, String startTime, String endTime, int durationMinutes, String status) {}
     public record BookingResolution(String startTime, int durationMinutes) {}
 
     private static final List<String> ACTIVE_SESSION_STATUSES = List.of("PENDING", "CONFIRMED");
     private static final int LEGACY_DURATION_MINUTES = 45;
+    private static final String SLOT_AVAILABLE = "AVAILABLE";
+    private static final String SLOT_BOOKED = "BOOKED";
 
     private final InterviewerAvailabilityRepository availabilityRepository;
     private final SessionRepository sessionRepository;
@@ -52,18 +54,23 @@ public class AvailabilitySlotService {
     }
 
     public List<String> availableSlotStartTimes(String interviewerId, Integer days) {
-        return generatedSlots(interviewerId, days).stream()
+        return generatedSlots(interviewerId, days, false).stream()
                 .map(GeneratedSlot::startTime)
                 .toList();
     }
 
     public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlotResponses(String interviewerId, Integer days) {
-        return generatedSlots(interviewerId, days).stream()
+        return generatedSlotResponses(interviewerId, days, false);
+    }
+
+    public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlotResponses(String interviewerId, Integer days, boolean includeUnavailable) {
+        return generatedSlots(interviewerId, days, includeUnavailable).stream()
                 .map(slot -> new AvailabilityDtos.GeneratedSlotResponse(
                         slot.availabilityId(),
                         slot.startTime(),
                         slot.endTime(),
-                        slot.durationMinutes()))
+                        slot.durationMinutes(),
+                        slot.status()))
                 .toList();
     }
 
@@ -95,10 +102,10 @@ public class AvailabilitySlotService {
         return !availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(interviewerId).isEmpty();
     }
 
-    private List<GeneratedSlot> generatedSlots(String interviewerId, Integer days) {
+    private List<GeneratedSlot> generatedSlots(String interviewerId, Integer days, boolean includeUnavailable) {
         List<InterviewerAvailability> schedules = availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(interviewerId);
         if (schedules.isEmpty()) {
-            return legacySlots(interviewerId);
+            return legacySlots(interviewerId, includeUnavailable);
         }
 
         int horizonDays = days == null ? defaultHorizonDays : Math.max(1, days);
@@ -112,7 +119,7 @@ public class AvailabilitySlotService {
                 appendSlotsForWindow(slots, availability, date);
             }
         }
-        return removeBookedSlots(interviewerId, new ArrayList<>(slots.values())).stream()
+        return applySlotStatuses(interviewerId, new ArrayList<>(slots.values()), includeUnavailable).stream()
                 .sorted(Comparator.comparing(this::slotSortValue))
                 .toList();
     }
@@ -129,7 +136,7 @@ public class AvailabilitySlotService {
             appendSlotsForWindow(slots, availability, requestedDate);
         }
         Instant requestedInstant = requested.toInstant();
-        return removeBookedSlots(interviewerId, new ArrayList<>(slots.values())).stream()
+        return applySlotStatuses(interviewerId, new ArrayList<>(slots.values()), false).stream()
                 .filter(slot -> schedulingTimeService.parseStartTime(slot.startTime()).toInstant().equals(requestedInstant))
                 .findFirst();
     }
@@ -146,7 +153,8 @@ public class AvailabilitySlotService {
                         availability.getId(),
                         schedulingTimeService.format(slotStart),
                         schedulingTimeService.format(slotEnd),
-                        availability.getDurationMinutes()
+                        availability.getDurationMinutes(),
+                        SLOT_AVAILABLE
                 );
                 slots.putIfAbsent(slot.startTime(), slot);
             }
@@ -154,11 +162,18 @@ public class AvailabilitySlotService {
         }
     }
 
-    private List<GeneratedSlot> removeBookedSlots(String interviewerId, List<GeneratedSlot> slots) {
+    private List<GeneratedSlot> applySlotStatuses(String interviewerId, List<GeneratedSlot> slots, boolean includeUnavailable) {
         List<Session> activeSessions = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, ACTIVE_SESSION_STATUSES);
         return slots.stream()
-                .filter(slot -> activeSessions.stream().noneMatch(session -> conflicts(session, slot)))
+                .map(slot -> activeSessions.stream().anyMatch(session -> conflicts(session, slot))
+                        ? withStatus(slot, SLOT_BOOKED)
+                        : slot)
+                .filter(slot -> includeUnavailable || SLOT_AVAILABLE.equals(slot.status()))
                 .toList();
+    }
+
+    private GeneratedSlot withStatus(GeneratedSlot slot, String status) {
+        return new GeneratedSlot(slot.availabilityId(), slot.startTime(), slot.endTime(), slot.durationMinutes(), status);
     }
 
     private boolean conflicts(Session session, GeneratedSlot slot) {
@@ -179,18 +194,15 @@ public class AvailabilitySlotService {
         }
     }
 
-    private List<GeneratedSlot> legacySlots(String interviewerId) {
+    private List<GeneratedSlot> legacySlots(String interviewerId, boolean includeUnavailable) {
         Optional<User> interviewer = userRepository.findById(interviewerId);
         if (interviewer.isEmpty() || interviewer.get().getAvailability() == null) {
             return List.of();
         }
-        Set<String> bookedStarts = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, ACTIVE_SESSION_STATUSES).stream()
-                .map(Session::getStartTime)
-                .filter(value -> value != null && !value.isBlank())
-                .collect(java.util.stream.Collectors.toSet());
+        List<Session> activeSessions = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, ACTIVE_SESSION_STATUSES);
         List<GeneratedSlot> slots = new ArrayList<>();
         for (String rawSlot : interviewer.get().getAvailability()) {
-            if (rawSlot == null || rawSlot.isBlank() || bookedStarts.contains(rawSlot)) {
+            if (rawSlot == null || rawSlot.isBlank()) {
                 continue;
             }
             Optional<OffsetDateTime> parsed = schedulingTimeService.tryParseStartTime(rawSlot);
@@ -198,15 +210,24 @@ public class AvailabilitySlotService {
                 if (!parsed.get().toInstant().isAfter(schedulingTimeService.nowInstant())) {
                     continue;
                 }
-                slots.add(new GeneratedSlot(
+                GeneratedSlot slot = new GeneratedSlot(
                         null,
                         parsed.get().toString(),
                         parsed.get().plusMinutes(LEGACY_DURATION_MINUTES).toString(),
-                        LEGACY_DURATION_MINUTES
-                ));
+                        LEGACY_DURATION_MINUTES,
+                        SLOT_AVAILABLE
+                );
+                boolean booked = activeSessions.stream().anyMatch(session -> conflicts(session, slot));
+                if (!booked || includeUnavailable) {
+                    slots.add(booked ? withStatus(slot, SLOT_BOOKED) : slot);
+                }
                 continue;
             }
-            slots.add(new GeneratedSlot(null, rawSlot.trim(), rawSlot.trim(), LEGACY_DURATION_MINUTES));
+            GeneratedSlot slot = new GeneratedSlot(null, rawSlot.trim(), rawSlot.trim(), LEGACY_DURATION_MINUTES, SLOT_AVAILABLE);
+            boolean booked = activeSessions.stream().anyMatch(session -> rawSlot.trim().equals(session.getStartTime()));
+            if (!booked || includeUnavailable) {
+                slots.add(booked ? withStatus(slot, SLOT_BOOKED) : slot);
+            }
         }
         return slots;
     }

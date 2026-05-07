@@ -101,6 +101,9 @@ public class SessionService {
                 .orElseThrow(() -> new IllegalArgumentException("Interviewer does not exist"));
         User interviewee = userRepository.findById(session.getCandidateId())
                 .orElseThrow(() -> new IllegalArgumentException("Interviewee does not exist"));
+        if (!Boolean.TRUE.equals(interviewer.getAcceptingBookings())) {
+            throw new IllegalArgumentException("This interviewer is not accepting bookings right now");
+        }
 
         if (session.getStartTime() == null || session.getStartTime().isBlank()) {
             throw new IllegalArgumentException("Start time is required");
@@ -113,6 +116,7 @@ public class SessionService {
         session.setStartTime(bookingResolution.startTime());
         session.setDurationMinutes(bookingResolution.durationMinutes());
         preventConflictingBooking(session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes());
+        preventDuplicateCandidateBooking(session.getCandidateId(), session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes());
         meetingProviderService.provision(session, interviewer, interviewee);
         session.setCreatedAt(Instant.now());
         session.setUpdatedAt(Instant.now());
@@ -244,6 +248,28 @@ public class SessionService {
             boolean overlaps = requestedStart.get().isBefore(existingEnd) && requestedEnd.isAfter(existingStart.get());
             if (overlaps) {
                 throw new IllegalArgumentException("That slot is no longer available");
+            }
+        }
+    }
+
+    private void preventDuplicateCandidateBooking(String candidateId, String interviewerId, String startTime, Integer durationMinutes) {
+        List<Session> activeSessions = sessionRepository.findByCandidateIdAndStatusIn(candidateId, List.of("PENDING", "CONFIRMED"));
+        Optional<Instant> requestedStart = parseSessionTime(startTime);
+        Instant requestedEnd = requestedStart
+                .map(value -> value.plusSeconds((long) effectiveDurationMinutes(durationMinutes) * 60))
+                .orElse(null);
+        for (Session existing : activeSessions) {
+            if (interviewerId.equals(existing.getInterviewerId()) && startTime.equals(existing.getStartTime())) {
+                throw new IllegalArgumentException("You have already booked this slot");
+            }
+            Optional<Instant> existingStart = parseSessionTime(existing.getStartTime());
+            if (requestedStart.isEmpty() || existingStart.isEmpty()) {
+                continue;
+            }
+            Instant existingEnd = existingStart.get().plusSeconds((long) effectiveDurationMinutes(existing.getDurationMinutes()) * 60);
+            boolean overlaps = requestedStart.get().isBefore(existingEnd) && requestedEnd.isAfter(existingStart.get());
+            if (overlaps) {
+                throw new IllegalArgumentException("You already have another booking at that time");
             }
         }
     }

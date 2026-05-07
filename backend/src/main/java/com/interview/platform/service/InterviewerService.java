@@ -91,8 +91,12 @@ public class InterviewerService {
     }
 
     public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlots(String interviewerId, Integer days) {
+        return generatedSlots(interviewerId, days, false);
+    }
+
+    public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlots(String interviewerId, Integer days, boolean includeUnavailable) {
         getById(interviewerId);
-        return availabilitySlotService.generatedSlotResponses(interviewerId, days);
+        return availabilitySlotService.generatedSlotResponses(interviewerId, days, includeUnavailable);
     }
 
     public User toggleFavorite(String userId, String interviewerId) {

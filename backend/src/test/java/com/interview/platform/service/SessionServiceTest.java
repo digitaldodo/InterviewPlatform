@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -81,6 +82,64 @@ class SessionServiceTest {
 
         assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
         verify(meetingProviderService, never()).provision(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void createSessionRejectsDuplicateCandidateBooking() {
+        Session request = new Session();
+        request.setCandidateId("cand-1");
+        request.setInterviewerId("int-1");
+        request.setTitle("Backend");
+        request.setInterviewType("Backend");
+        request.setStartTime("2026-05-11T10:00:00Z");
+        request.setDurationMinutes(60);
+
+        Session existing = new Session();
+        existing.setCandidateId("cand-1");
+        existing.setInterviewerId("int-1");
+        existing.setStartTime("2026-05-11T10:00:00Z");
+        existing.setDurationMinutes(60);
+        existing.setStatus("PENDING");
+
+        User interviewer = interviewer("int-1");
+        User candidate = candidate("cand-1");
+
+        when(userRepository.existsById("int-1")).thenReturn(true);
+        when(userRepository.existsById("cand-1")).thenReturn(true);
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(availabilitySlotService.resolveRequestedBooking("int-1", "2026-05-11T10:00:00Z", 60))
+                .thenReturn(new AvailabilitySlotService.BookingResolution("2026-05-11T10:00:00Z", 60));
+        when(sessionRepository.findByInterviewerIdAndStatusIn("int-1", List.of("PENDING", "CONFIRMED")))
+                .thenReturn(List.of());
+        when(sessionRepository.findByCandidateIdAndStatusIn("cand-1", List.of("PENDING", "CONFIRMED")))
+                .thenReturn(List.of(existing));
+
+        assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+        verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
+    void createSessionRejectsWhenInterviewerIsNotAcceptingBookings() {
+        Session request = new Session();
+        request.setCandidateId("cand-1");
+        request.setInterviewerId("int-1");
+        request.setTitle("Backend");
+        request.setInterviewType("Backend");
+        request.setStartTime("2026-05-11T10:00:00Z");
+
+        User interviewer = interviewer("int-1");
+        interviewer.setAcceptingBookings(false);
+        User candidate = candidate("cand-1");
+
+        when(userRepository.existsById("int-1")).thenReturn(true);
+        when(userRepository.existsById("cand-1")).thenReturn(true);
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+
+        assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+        verify(availabilitySlotService, never()).resolveRequestedBooking(any(), any(), any());
+        verify(meetingProviderService, never()).provision(any(), any(), any());
     }
 
     private User interviewer(String id) {

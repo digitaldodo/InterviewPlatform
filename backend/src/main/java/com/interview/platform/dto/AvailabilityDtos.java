@@ -81,14 +81,20 @@ public class AvailabilityDtos {
         private String startTime;
         private String endTime;
         private Integer durationMinutes;
+        private String status;
 
         public GeneratedSlotResponse() {}
 
         public GeneratedSlotResponse(String availabilityId, String startTime, String endTime, Integer durationMinutes) {
+            this(availabilityId, startTime, endTime, durationMinutes, "AVAILABLE");
+        }
+
+        public GeneratedSlotResponse(String availabilityId, String startTime, String endTime, Integer durationMinutes, String status) {
             this.availabilityId = availabilityId;
             this.startTime = startTime;
             this.endTime = endTime;
             this.durationMinutes = durationMinutes;
+            this.status = status;
         }
 
         public String getAvailabilityId() { return availabilityId; }
@@ -99,5 +105,7 @@ public class AvailabilityDtos {
         public void setEndTime(String endTime) { this.endTime = endTime; }
         public Integer getDurationMinutes() { return durationMinutes; }
         public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
     }
 }

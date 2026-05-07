@@ -4,12 +4,12 @@ let currentUser = null;
 let sessions = [];
 let feedbackItems = [];
 let interviewers = [];
+let interviewerDirectory = new Map();
 let meetingProviders = [];
 let interviewerPage = 0;
 let interviewerTotalPages = 1;
 let selectedInterviewer = null;
 let bookingStep = 1;
-let bookingState = { interviewer: null, interviewType: '', startTime: '', meetingProvider: 'JITSI' };
 let searchTimer = null;
 let activeWorkspace = 'INTERVIEWEE';
 let activeMeetingSession = null;
@@ -28,7 +28,30 @@ const DEFAULT_MEETING_PROVIDERS = [
 ];
 const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
+const BOOKING_TYPES = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
+let bookingState = createBookingState();
+
+function createBookingState() {
+  return {
+    interviewer: null,
+    interviewerQuery: '',
+    selectedDate: '',
+    selectedSlotStart: '',
+    slotOptions: [],
+    hiddenSlotStarts: [],
+    interviewType: '',
+    notes: '',
+    meetingProvider: preferredMeetingProvider(),
+    confirmedSession: null,
+    slotLoading: false,
+    slotError: '',
+  };
+}
+
+function preferredMeetingProvider() {
+  return meetingProviders.find(item => item.isDefault)?.key || meetingProviders[0]?.key || DEFAULT_MEETING_PROVIDERS[0].key;
+}
 
 window.addEventListener('DOMContentLoaded', async () => {
   currentUser = readJson('ip_user');
@@ -112,7 +135,7 @@ function switchWorkspace(workspace) {
 }
 
 function primaryWorkspaceAction() {
-  showSection(activeWorkspace === 'INTERVIEWER' ? 'interviewer' : 'discover');
+  showSection(activeWorkspace === 'INTERVIEWER' ? 'interviewer' : 'booking');
 }
 
 function openAvailabilityManager() {
@@ -235,6 +258,12 @@ function bindFilters() {
     });
 }
 
+function rememberInterviewers(list) {
+  (Array.isArray(list) ? list : []).forEach(item => {
+    if (item?.id) interviewerDirectory.set(item.id, item);
+  });
+}
+
 async function loadInterviewers() {
   const grid = document.getElementById('interviewer-grid');
   if (!grid) return;
@@ -259,6 +288,7 @@ async function loadInterviewers() {
     if (document.getElementById('filter-free').checked) params.set('free', 'true');
     const page = await api(`/api/interviewers/search?${params.toString()}`);
     interviewers = filterSelf(page.items || []);
+    rememberInterviewers(interviewers);
     interviewerTotalPages = Math.max(1, page.totalPages || 1);
     renderInterviewerGrid(interviewers);
     document.getElementById('page-label').textContent = `Page ${interviewerPage + 1} of ${interviewerTotalPages}`;
@@ -279,6 +309,7 @@ async function loadRecommended() {
   try {
     const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
     const recommendations = filterSelf(data || []).slice(0, 4);
+    rememberInterviewers(recommendations);
     list.innerHTML = recommendations.map(renderCompactInterviewer).join('') || emptyState('No other interviewers available yet.');
   } catch {
     list.innerHTML = emptyState('Recommendations will appear here.');
@@ -329,6 +360,8 @@ function changePage(delta) {
 async function openProfile(id) {
   try {
     const interviewer = await api(`/api/interviewers/${id}`);
+    selectedInterviewer = interviewer;
+    rememberInterviewers([interviewer]);
     modal(`
       <div class="profile-modal">
         <div class="avatar large">${initials(interviewer)}</div>
@@ -360,58 +393,102 @@ async function favoriteInterviewer(id) {
 }
 
 function selectInterviewer(id) {
-  selectedInterviewer = interviewers.find(item => item.id === id) || null;
-  bookingState.interviewer = selectedInterviewer || { id };
+  selectedInterviewer = filterSelf(interviewers).find(item => item.id === id) || interviewerDirectory.get(id) || selectedInterviewer;
+  bookingState = {
+    ...createBookingState(),
+    interviewer: selectedInterviewer || { id },
+    interviewType: bookingState.interviewType,
+    meetingProvider: bookingState.meetingProvider || preferredMeetingProvider(),
+  };
   bookingStep = 2;
   showSection('booking');
 }
 
 function renderBookingStep() {
-  document.querySelectorAll('.step').forEach(step => step.classList.toggle('active', Number(step.dataset.step) === bookingStep));
   const host = document.getElementById('booking-step-content');
+  if (!host) return;
+  if (!bookingState.interviewer && bookingStep > 1) bookingStep = 1;
+  if (!bookingState.selectedDate && bookingStep > 2) bookingStep = 2;
+  if (!bookingState.selectedSlotStart && bookingStep > 3 && !bookingState.confirmedSession) bookingStep = 3;
+  document.querySelectorAll('.step').forEach(step => step.classList.toggle('active', Number(step.dataset.step) === bookingStep));
   if (bookingStep === 1) {
-    const available = filterSelf(interviewers).slice(0, 6);
-    host.innerHTML = `<h2>Choose interviewer</h2><div class="interviewer-grid compact">${available.map(item => `
-      <article class="mini-card"><div class="avatar">${initials(item)}</div><strong>${esc(item.name || item.username || 'Interviewer')}</strong><small>${esc(item.currentRole || '')}</small><button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Choose</button></article>
-    `).join('') || emptyState('No other interviewers available yet.')}</div>`;
+    host.innerHTML = renderBookingInterviewerStep();
   }
   if (bookingStep === 2) {
-    const types = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
-    host.innerHTML = `<h2>Choose interview type</h2><div class="type-grid">${types.map(type => `<button class="type-card" onclick="chooseType('${type}')">${type}</button>`).join('')}</div>`;
+    renderBookingDateStep();
   }
-  if (bookingStep === 3) renderSlotStep();
+  if (bookingStep === 3) renderBookingSlotStep();
   if (bookingStep === 4) {
-    host.innerHTML = `
-      <h2>Confirm booking</h2>
-      <div class="confirm-box">
-        <p><strong>Interviewer</strong><span>${esc(bookingState.interviewer?.name || bookingState.interviewer?.username || 'Selected interviewer')}</span></p>
-        <p><strong>Type</strong><span>${esc(bookingState.interviewType)}</span></p>
-        <p><strong>Slot</strong><span>${fmtDate(bookingState.startTime)}</span></p>
-      </div>
-      ${renderMeetingProviderField()}
-      <textarea id="booking-notes" placeholder="Optional goals or context"></textarea>
-      <button class="btn btn-primary btn-full sticky-action" onclick="confirmBooking()">Confirm booking</button>
-    `;
+    host.innerHTML = bookingState.confirmedSession ? renderBookingConfirmationStep() : renderBookingConfirmStep();
   }
 }
 
-function chooseType(type) {
-  bookingState.interviewType = type;
-  bookingStep = 3;
+function renderBookingInterviewerStep() {
+  const available = filterBookingInterviewers();
+  return `
+    <div class="booking-stage">
+      <div class="booking-stage-head">
+        <div>
+          <h2>Search interviewer</h2>
+          <p class="availability-muted">Pick from live interviewer profiles without leaving the dashboard.</p>
+        </div>
+      </div>
+      <div class="booking-search-row">
+        <input id="booking-interviewer-search" type="search" placeholder="Search by name, skill, role, or company" value="${esc(bookingState.interviewerQuery)}" oninput="setBookingInterviewerSearch(this.value)" />
+        <button class="btn btn-outline btn-sm" type="button" onclick="showSection('discover')">Open full search</button>
+      </div>
+      <div class="interviewer-grid compact">
+        ${available.map(item => `
+          <article class="mini-card booking-interviewer-card">
+            <div class="avatar">${initials(item)}</div>
+            <strong>${esc(item.name || item.username || 'Interviewer')}</strong>
+            <small>${esc(item.currentRole || 'Interview coach')}</small>
+            <span class="booking-card-meta">${esc(item.company || 'Independent')}</span>
+            <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Select</button>
+          </article>
+        `).join('') || emptyState('No interviewers match that search yet.')}
+      </div>
+    </div>
+  `;
+}
+
+function setBookingInterviewerSearch(value) {
+  bookingState.interviewerQuery = String(value || '').trim();
   renderBookingStep();
 }
 
-async function renderSlotStep() {
+async function renderBookingDateStep() {
   const host = document.getElementById('booking-step-content');
-  host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${skeletonCards(4)}</div>`;
-  try {
-    const slots = await api(`/api/interviewers/${bookingState.interviewer.id}/availability`);
-    const options = Array.isArray(slots) ? slots.filter(Boolean) : [];
-    host.innerHTML = `<h2>Choose a slot</h2>${options.length
-      ? `<div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot(${jsArg(slot)})">${fmtDate(slot)}</button>`).join('')}</div>`
-      : emptyState('No availability slots available yet.')}`;
-  } catch {
-    host.innerHTML = `<h2>Choose a slot</h2>${emptyState('No availability slots available yet.')}`;
+  if (!host) return;
+  const interviewer = bookingState.interviewer || {};
+  const dayGroups = groupedBookingSlots();
+  host.innerHTML = `
+    <div class="booking-stage">
+      <div class="booking-stage-head">
+        <div>
+          <h2>Select date</h2>
+          <p class="availability-muted">${esc(interviewer.name || interviewer.username || 'Selected interviewer')} has real generated slots for the next two weeks.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(1)">Change interviewer</button>
+      </div>
+      ${renderBookingSelectionBanner()}
+      ${bookingState.slotLoading
+        ? `<div class="booking-date-grid">${skeletonCards(4)}</div>`
+        : bookingState.slotError
+          ? `${emptyState(bookingState.slotError)}<div class="booking-flow-actions"><button class="btn btn-outline btn-sm" type="button" onclick="refreshBookingAvailability(true)">Retry</button></div>`
+          : dayGroups.length
+            ? `<div class="booking-date-grid">${dayGroups.map(group => `
+                <button class="booking-date-card ${group.key === bookingState.selectedDate ? 'active' : ''}" type="button" onclick="selectBookingDate('${group.key}')">
+                  <strong>${esc(group.dayLabel)}</strong>
+                  <span>${esc(group.dateLabel)}</span>
+                  <small>${group.availableCount} open${group.bookedCount ? ` • ${group.bookedCount} booked` : ''}</small>
+                </button>
+              `).join('')}</div>`
+            : emptyState(emptyBookingMessage())}
+    </div>
+  `;
+  if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
+    ensureBookingSlotsLoaded();
   }
 }
 
@@ -423,15 +500,61 @@ async function loadMeetingProviders() {
   } catch {
     meetingProviders = DEFAULT_MEETING_PROVIDERS.slice();
   }
-  const defaultProvider = meetingProviders.find(item => item.isDefault) || meetingProviders[0] || DEFAULT_MEETING_PROVIDERS[0];
-  bookingState.meetingProvider = bookingState.meetingProvider || defaultProvider.key;
+  bookingState.meetingProvider = bookingState.meetingProvider || preferredMeetingProvider();
   if (document.getElementById('booking-step-content')) renderBookingStep();
 }
 
-function chooseSlot(slot) {
-  bookingState.startTime = slot;
-  bookingStep = 4;
-  renderBookingStep();
+async function renderBookingSlotStep() {
+  const host = document.getElementById('booking-step-content');
+  if (!host) return;
+  const interviewer = bookingState.interviewer || {};
+  const selectedDay = groupedBookingSlots().find(group => group.key === bookingState.selectedDate);
+  host.innerHTML = `
+    <div class="booking-stage">
+      <div class="booking-stage-head">
+        <div>
+          <h2>Select generated slot</h2>
+          <p class="availability-muted">${esc(interviewer.name || interviewer.username || 'Selected interviewer')} • ${esc(selectedDay?.dateLabel || 'Pick a date')}</p>
+        </div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(2)">Change date</button>
+      </div>
+      ${renderBookingSelectionBanner()}
+      ${bookingState.slotLoading
+        ? `<div class="slot-grid">${skeletonCards(4)}</div>`
+        : bookingState.slotError
+          ? `${emptyState(bookingState.slotError)}<div class="booking-flow-actions"><button class="btn btn-outline btn-sm" type="button" onclick="refreshBookingAvailability(true)">Retry</button></div>`
+          : selectedDay
+            ? `
+              <div class="booking-slot-day-card">
+                <div class="booking-slot-day-head">
+                  <div>
+                    <strong>${esc(selectedDay.dayLabel)}</strong>
+                    <p>${esc(selectedDay.dateLabel)}</p>
+                  </div>
+                  <span class="badge badge-green">${selectedDay.availableCount} open</span>
+                </div>
+                <div class="slot-grid booking-slot-grid">
+                  ${selectedDay.slots.map(slot => `
+                    <button
+                      class="booking-slot-card ${slot.status === 'BOOKED' ? 'is-booked' : ''}"
+                      type="button"
+                      ${slot.status === 'BOOKED' ? 'disabled' : ''}
+                      onclick="chooseSlotByStart('${slot.startTime}')"
+                    >
+                      <strong>${esc(formatSlotTime(slot.startTime))}</strong>
+                      <span>${esc(formatSlotRange(slot.startTime, slot.endTime))}</span>
+                      <small>${slot.status === 'BOOKED' ? 'Booked' : `${slot.durationMinutes || 45} min`}</small>
+                    </button>
+                  `).join('')}
+                </div>
+              </div>
+            `
+            : emptyState('Choose a date to see generated slots.')}
+    </div>
+  `;
+  if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
+    ensureBookingSlotsLoaded();
+  }
 }
 
 function setBookingProvider(provider) {
@@ -452,7 +575,260 @@ function renderMeetingProviderField() {
   `;
 }
 
+function renderBookingConfirmStep() {
+  const slot = selectedBookingSlot();
+  return `
+    <div class="booking-stage">
+      <div class="booking-stage-head">
+        <div>
+          <h2>Confirm booking</h2>
+          <p class="availability-muted">Review the slot, add your interview focus, and submit the request.</p>
+        </div>
+        <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(3)">Change slot</button>
+      </div>
+      ${renderBookingSelectionBanner()}
+      <div class="confirm-box">
+        <p><strong>Date</strong><span>${esc(formatLongDate(bookingState.selectedDate))}</span></p>
+        <p><strong>Slot</strong><span>${esc(slot ? formatDateTimeRange(slot.startTime, slot.endTime) : 'Select a slot')}</span></p>
+        <p><strong>Duration</strong><span>${esc(String(slot?.durationMinutes || 45))} min</span></p>
+      </div>
+      <div class="form-group">
+        <label>Interview focus</label>
+        <div class="type-grid booking-type-grid">
+          ${BOOKING_TYPES.map(type => `<button class="type-card ${bookingState.interviewType === type ? 'active' : ''}" type="button" onclick="setBookingType('${type}')">${type}</button>`).join('')}
+        </div>
+      </div>
+      ${renderMeetingProviderField()}
+      <div class="form-group">
+        <label for="booking-notes">Goals or context</label>
+        <textarea id="booking-notes" placeholder="Optional goals or context" oninput="setBookingNotes(this.value)">${esc(bookingState.notes)}</textarea>
+      </div>
+      <button class="btn btn-primary btn-full sticky-action" onclick="confirmBooking()">Confirm booking</button>
+    </div>
+  `;
+}
+
+function renderBookingConfirmationStep() {
+  const session = bookingState.confirmedSession;
+  return `
+    <div class="booking-stage">
+      <div class="booking-stage-head">
+        <div>
+          <h2>Confirmation</h2>
+          <p class="availability-muted">Your booking is saved and the session is now in your dashboard.</p>
+        </div>
+      </div>
+      <div class="booking-success-card">
+        <span class="badge badge-${statusClass((session?.status || 'PENDING').toUpperCase())}">${esc((session?.status || 'PENDING').toUpperCase())}</span>
+        <h3>${esc(session?.interviewType || 'Interview request sent')}</h3>
+        <p>${esc(fmtDate(session?.startTime))}</p>
+        <small>${esc(providerLabel(session?.meetingProvider))} meeting prepared${session?.joinUrl ? ' and linked to your session.' : '.'}</small>
+      </div>
+      <div class="booking-flow-actions">
+        <button class="btn btn-primary" type="button" onclick="showSection('sessions')">View sessions</button>
+        <button class="btn btn-outline" type="button" onclick="startAnotherBooking()">Book another</button>
+      </div>
+    </div>
+  `;
+}
+
+function setBookingType(type) {
+  bookingState.interviewType = type;
+  renderBookingStep();
+}
+
+function setBookingNotes(value) {
+  bookingState.notes = String(value || '');
+}
+
+function goToBookingStep(step) {
+  bookingStep = Math.max(1, Math.min(4, Number(step) || 1));
+  renderBookingStep();
+}
+
+function selectBookingDate(dateKey) {
+  bookingState.selectedDate = dateKey;
+  bookingState.selectedSlotStart = '';
+  bookingState.confirmedSession = null;
+  bookingStep = 3;
+  renderBookingStep();
+}
+
+function chooseSlotByStart(startTime) {
+  const slot = bookingState.slotOptions.find(item => item.startTime === startTime);
+  if (!slot || slot.status !== 'AVAILABLE') {
+    toast('That slot is no longer available.', 'error');
+    return;
+  }
+  bookingState.selectedSlotStart = slot.startTime;
+  bookingState.confirmedSession = null;
+  bookingStep = 4;
+  renderBookingStep();
+}
+
+function selectedBookingSlot() {
+  return bookingState.slotOptions.find(item => item.startTime === bookingState.selectedSlotStart) || null;
+}
+
+async function ensureBookingSlotsLoaded(force = false) {
+  if (!bookingState.interviewer?.id || (bookingState.slotLoading && !force)) return;
+  if (!force && bookingState.slotOptions.length) return;
+  bookingState.slotLoading = true;
+  bookingState.slotError = '';
+  renderBookingStep();
+  try {
+    const slots = await api(`/api/interviewers/${bookingState.interviewer.id}/slots?days=14&includeUnavailable=true`);
+    bookingState.slotOptions = normalizeBookingSlots(slots);
+    const groups = groupedBookingSlots();
+    if (!bookingState.selectedDate || !groups.some(group => group.key === bookingState.selectedDate)) {
+      bookingState.selectedDate = groups[0]?.key || '';
+    }
+    const selectedStillAvailable = bookingState.slotOptions.some(slot => slot.startTime === bookingState.selectedSlotStart && slot.status === 'AVAILABLE');
+    if (!selectedStillAvailable) bookingState.selectedSlotStart = '';
+  } catch (err) {
+    bookingState.slotOptions = [];
+    bookingState.selectedDate = '';
+    bookingState.selectedSlotStart = '';
+    bookingState.slotError = err.message || 'Could not load generated slots right now.';
+  } finally {
+    bookingState.slotLoading = false;
+    renderBookingStep();
+  }
+}
+
+async function refreshBookingAvailability(force = false) {
+  bookingState.slotOptions = force ? [] : bookingState.slotOptions;
+  await ensureBookingSlotsLoaded(true);
+}
+
+function normalizeBookingSlots(slots) {
+  const hiddenStarts = new Set(bookingState.hiddenSlotStarts || []);
+  return (Array.isArray(slots) ? slots : [])
+    .filter(slot => slot?.startTime && !hiddenStarts.has(slot.startTime))
+    .map(slot => ({
+      ...slot,
+      status: String(slot.status || 'AVAILABLE').toUpperCase(),
+      durationMinutes: Number(slot.durationMinutes) || 45,
+    }))
+    .sort((left, right) => new Date(left.startTime).getTime() - new Date(right.startTime).getTime());
+}
+
+function groupedBookingSlots() {
+  const groups = new Map();
+  bookingState.slotOptions.forEach(slot => {
+    const key = bookingDateKey(slot.startTime);
+    if (!key) return;
+    if (!groups.has(key)) {
+      const date = new Date(slot.startTime);
+      groups.set(key, {
+        key,
+        dayLabel: date.toLocaleDateString(undefined, { weekday: 'long' }),
+        dateLabel: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+        slots: [],
+        availableCount: 0,
+        bookedCount: 0,
+      });
+    }
+    const group = groups.get(key);
+    group.slots.push(slot);
+    if (slot.status === 'BOOKED') group.bookedCount += 1;
+    else group.availableCount += 1;
+  });
+  return [...groups.values()];
+}
+
+function bookingDateKey(value) {
+  try {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    return date.toISOString().slice(0, 10);
+  } catch {
+    return '';
+  }
+}
+
+function filterBookingInterviewers() {
+  const term = bookingState.interviewerQuery.toLowerCase();
+  return filterSelf(interviewers).filter(item => {
+    if (!term) return true;
+    const haystack = [
+      item.name,
+      item.username,
+      item.currentRole,
+      item.company,
+      ...(Array.isArray(item.skills) ? item.skills : []),
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(term);
+  }).slice(0, 8);
+}
+
+function renderBookingSelectionBanner() {
+  const interviewer = bookingState.interviewer;
+  if (!interviewer) return '';
+  const label = interviewer.name || interviewer.username || 'Selected interviewer';
+  return `
+    <div class="booking-selection-banner">
+      <div class="avatar">${initials(interviewer)}</div>
+      <div>
+        <strong>${esc(label)}</strong>
+        <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
+      </div>
+    </div>
+  `;
+}
+
+function emptyBookingMessage() {
+  if (bookingState.interviewer && bookingState.interviewer.acceptingBookings === false) {
+    return 'This interviewer is not accepting bookings right now.';
+  }
+  return 'No generated slots are available yet for this interviewer.';
+}
+
+function formatSlotTime(value) {
+  try {
+    return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return String(value || '');
+  }
+}
+
+function formatSlotRange(startTime, endTime) {
+  if (!startTime) return 'Unavailable';
+  try {
+    const end = endTime ? new Date(endTime) : null;
+    return end ? `${formatSlotTime(startTime)} - ${formatSlotTime(end)}` : formatSlotTime(startTime);
+  } catch {
+    return formatSlotTime(startTime);
+  }
+}
+
+function formatLongDate(value) {
+  if (!value) return 'Select a date';
+  try {
+    return new Date(value).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  } catch {
+    return String(value);
+  }
+}
+
 async function confirmBooking() {
+  const slot = selectedBookingSlot();
+  if (!bookingState.interviewer?.id || bookingState.interviewer.id === currentUser.id) {
+    toast('You cannot book yourself as interviewer.', 'error');
+    bookingStep = 1;
+    renderBookingStep();
+    return;
+  }
+  if (!slot || slot.status !== 'AVAILABLE') {
+    toast('That slot is no longer available.', 'error');
+    bookingStep = 3;
+    renderBookingStep();
+    return;
+  }
+  if (!bookingState.interviewType) {
+    toast('Choose an interview focus before confirming.', 'error');
+    return;
+  }
   try {
     const session = await api('/api/bookings', {
       method: 'POST',
@@ -460,25 +836,36 @@ async function confirmBooking() {
         interviewerId: bookingState.interviewer.id,
         intervieweeId: currentUser.id,
         interviewType: bookingState.interviewType,
-        startTime: bookingState.startTime,
-        notes: document.getElementById('booking-notes').value.trim(),
+        startTime: slot.startTime,
+        durationMinutes: slot.durationMinutes,
+        notes: bookingState.notes.trim(),
         meetingProvider: document.getElementById('booking-meeting-provider')?.value || bookingState.meetingProvider || 'JITSI',
       }),
     });
-    toast('Booking requested. Meeting link is ready.', 'success');
+    toast('Booking saved. Your session appears in the dashboard now.', 'success');
     sessions.unshift(session);
-    bookingStep = 1;
-    bookingState = {
-      interviewer: null,
-      interviewType: '',
-      startTime: '',
-      meetingProvider: meetingProviders.find(item => item.isDefault)?.key || meetingProviders[0]?.key || 'JITSI',
-    };
+    bookingState.hiddenSlotStarts = [...new Set([...(bookingState.hiddenSlotStarts || []), slot.startTime])];
+    bookingState.slotOptions = bookingState.slotOptions.filter(item => item.startTime !== slot.startTime);
+    const groups = groupedBookingSlots();
+    if (!groups.some(group => group.key === bookingState.selectedDate)) {
+      bookingState.selectedDate = groups[0]?.key || '';
+    }
+    bookingState.selectedSlotStart = '';
+    bookingState.confirmedSession = session;
+    bookingStep = 4;
     await loadSessions();
-    showSection('sessions');
+    renderBookingStep();
   } catch (err) {
     toast(err.message, 'error');
   }
+}
+
+function startAnotherBooking() {
+  bookingState.confirmedSession = null;
+  bookingState.selectedSlotStart = '';
+  bookingState.notes = '';
+  bookingStep = bookingState.selectedDate ? 3 : 2;
+  renderBookingStep();
 }
 
 async function loadSessions() {

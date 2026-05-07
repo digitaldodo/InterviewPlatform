@@ -73,6 +73,47 @@ class AvailabilitySlotServiceTest {
     }
 
     @Test
+    void generatedSlotsCanIncludeBookedWindowsWithStatus() {
+        SchedulingTimeService timeService = new SchedulingTimeService(
+                ZoneId.of("UTC"),
+                Clock.fixed(Instant.parse("2026-05-11T08:00:00Z"), ZoneOffset.UTC)
+        );
+        AvailabilitySlotService slotService = new AvailabilitySlotService(
+                availabilityRepository,
+                sessionRepository,
+                userRepository,
+                timeService,
+                2
+        );
+
+        InterviewerAvailability availability = new InterviewerAvailability();
+        availability.setId("av-1");
+        availability.setInterviewerId("int-1");
+        availability.setDayOfWeek(DayOfWeek.MONDAY);
+        availability.setStartTime("10:00");
+        availability.setEndTime("13:00");
+        availability.setDurationMinutes(60);
+
+        Session booked = new Session();
+        booked.setInterviewerId("int-1");
+        booked.setStartTime("2026-05-11T11:00:00Z");
+        booked.setDurationMinutes(60);
+        booked.setStatus("CONFIRMED");
+
+        when(availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc("int-1"))
+                .thenReturn(List.of(availability));
+        when(sessionRepository.findByInterviewerIdAndStatusIn("int-1", List.of("PENDING", "CONFIRMED")))
+                .thenReturn(List.of(booked));
+
+        List<AvailabilityDtos.GeneratedSlotResponse> slots = slotService.generatedSlotResponses("int-1", 2, true);
+
+        assertEquals(3, slots.size());
+        assertEquals("AVAILABLE", slots.get(0).getStatus());
+        assertEquals("BOOKED", slots.get(1).getStatus());
+        assertEquals("AVAILABLE", slots.get(2).getStatus());
+    }
+
+    @Test
     void resolveRequestedBookingRejectsPastTimeWithoutStructuredAvailability() {
         SchedulingTimeService timeService = new SchedulingTimeService(
                 ZoneId.of("UTC"),
