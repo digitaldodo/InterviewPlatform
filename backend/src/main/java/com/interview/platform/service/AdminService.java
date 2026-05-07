@@ -196,20 +196,41 @@ public class AdminService {
     }
 
     private AdminDtos.ReviewQueueItem toReviewQueueItem(Feedback review) {
+        User interviewer = userRepository.findById(review.getInterviewerId()).orElse(null);
         return new AdminDtos.ReviewQueueItem(
                 review.getId(),
                 userRepository.findById(review.getReviewerId()).map(User::getDisplayName).orElse("InterviewPrep member"),
-                userRepository.findById(review.getInterviewerId()).map(User::getDisplayName).orElse("Interviewer"),
+                interviewer == null ? "Interviewer" : interviewer.getDisplayName(),
                 sessionRepository.findById(review.getSessionId()).map(session -> session.getTitle() == null ? "Interview session" : session.getTitle()).orElse("Interview session"),
                 review.getRating(),
                 review.getComments(),
                 review.getCreatedAt() == null ? null : review.getCreatedAt().toString(),
                 review.getPublicReview(),
                 review.getModerationNotes(),
+                interviewer != null && Boolean.TRUE.equals(interviewer.getInterviewerVerified()),
+                interviewer == null ? null : reliabilityScore(interviewer),
+                interviewer == null ? null : interviewer.getCancelledSessions(),
                 review.getTopicFeedback().stream()
-                        .map(topic -> new AdminDtos.ReviewTopicSummary(topic.getTopic(), topic.getRating()))
+                        .map(topic -> new AdminDtos.ReviewTopicSummary(
+                                topic.getTopic(),
+                                topic.getRating(),
+                                topic.getSkillRatings(),
+                                topic.getStrengths(),
+                                topic.getImprovementAreas(),
+                                topic.getComments()
+                        ))
                         .toList()
         );
+    }
+
+    private double reliabilityScore(User user) {
+        int completed = user.getCompletedSessions() == null ? 0 : user.getCompletedSessions();
+        int cancelled = user.getCancelledSessions() == null ? 0 : user.getCancelledSessions();
+        int total = completed + cancelled;
+        if (total <= 0) {
+            return 100.0;
+        }
+        return Math.round((completed * 1000.0) / total) / 10.0;
     }
 
     private String normalize(String value) {

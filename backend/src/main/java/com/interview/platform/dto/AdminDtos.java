@@ -43,7 +43,14 @@ public class AdminDtos {
 
     public record TopicCount(String topic, long count) {}
 
-    public record ReviewTopicSummary(String topic, Integer rating) {}
+    public record ReviewTopicSummary(
+            String topic,
+            Integer rating,
+            Map<String, Integer> skillRatings,
+            String strengths,
+            String improvementAreas,
+            String comments
+    ) {}
 
     public record ReviewQueueItem(
             String id,
@@ -55,6 +62,9 @@ public class AdminDtos {
             String createdAt,
             Boolean publicReview,
             String moderationNotes,
+            Boolean interviewerVerified,
+            Double interviewerReliability,
+            Integer interviewerCancelledSessions,
             List<ReviewTopicSummary> topicSummaries
     ) {}
 

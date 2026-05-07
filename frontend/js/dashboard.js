@@ -43,14 +43,24 @@ let adminSessions = [];
 let adminReports = [];
 let adminReviews = [];
 let adminLoading = false;
+let moderationDialogState = null;
+let reportDialogState = null;
 let discoverFiltersOpen = false;
 let searchSuggestionTimer = null;
 const adminState = {
   users: { page: 0, size: 6 },
   sessions: { page: 0, size: 8 },
-  reports: { page: 0, size: 5 },
-  reviews: { page: 0, size: 5, visibility: '' },
+  reports: { page: 0, size: 5, status: 'OPEN', query: '', category: '' },
+  reviews: { page: 0, size: 5, visibility: '', query: '', minRating: '' },
 };
+const REPORT_CATEGORY_OPTIONS = [
+  { value: 'SAFETY', label: 'Safety concern', hint: 'Harassment, hate speech, threats, discrimination, or abuse.' },
+  { value: 'NO_SHOW', label: 'No-show or lateness', hint: 'Repeated no-shows, very late joins, or frequent reschedules.' },
+  { value: 'QUALITY', label: 'Low-quality interview behavior', hint: 'Unprofessional conduct, poor preparation, or misleading guidance.' },
+  { value: 'SPAM', label: 'Spam, scam, or solicitation', hint: 'Promotional abuse, off-platform payment pressure, or scams.' },
+  { value: 'PROFILE', label: 'Profile misrepresentation', hint: 'False identity, fake credentials, or inaccurate profile claims.' },
+  { value: 'OTHER', label: 'Other trust concern', hint: 'Use when no category above fits the issue.' },
+];
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
@@ -3284,6 +3294,8 @@ function modal(html) {
 
 function closeModal() {
   document.getElementById('modal-root').innerHTML = '';
+  moderationDialogState = null;
+  reportDialogState = null;
   syncShellState();
 }
 
@@ -3855,24 +3867,41 @@ function renderAdminPanels() {
   const metricsHost = document.getElementById('admin-metrics-grid');
   const analyticsHost = document.getElementById('admin-analytics-panel');
   const liveHost = document.getElementById('admin-live-sessions-panel');
+  const moderationSummary = adminReports.reduce((acc, item) => {
+    const status = String(item?.status || 'OPEN').toUpperCase();
+    if (status === 'ACTIONED') acc.actioned += 1;
+    else if (status === 'REVIEWED') acc.reviewed += 1;
+    else acc.open += 1;
+    return acc;
+  }, { open: 0, reviewed: 0, actioned: 0 });
+  const enabledUsers = Number(adminOverview?.enabledUsers || 0);
+  const disabledUsers = Math.max(0, Number(adminOverview?.totalUsers || 0) - enabledUsers);
+  const verificationRate = Number(adminOverview?.totalInterviewers || 0) > 0
+    ? Math.round((Number(adminOverview?.verifiedInterviewers || 0) * 1000) / Number(adminOverview?.totalInterviewers || 1)) / 10
+    : 0;
   if (adminLoading && metricsHost && !adminOverview) {
     metricsHost.innerHTML = skeletonCards(4);
   }
   if (metricsHost && adminOverview) {
     metricsHost.innerHTML = [
-      ['Users', adminOverview.totalUsers],
-      ['Interviewers', adminOverview.totalInterviewers],
-      ['Verified', adminOverview.verifiedInterviewers],
-      ['Open Reports', adminOverview.openReports],
-      ['Public Reviews', adminOverview.visiblePublicReviews],
-      ['Hidden Reviews', adminOverview.hiddenPublicReviews],
-      ['Sessions', adminOverview.totalSessions],
-      ['Completion Rate', `${adminOverview.completionRate}%`],
-      ['Cancellation Rate', `${adminOverview.cancellationRate}%`],
-    ].map(([label, value]) => `
+      ['Users', adminOverview.totalUsers, 'Accounts on platform'],
+      ['Enabled', enabledUsers, 'Can access platform'],
+      ['Disabled', disabledUsers, 'Restricted accounts'],
+      ['Interviewers', adminOverview.totalInterviewers, 'Total coach profiles'],
+      ['Verified', adminOverview.verifiedInterviewers, `${verificationRate}% verified rate`],
+      ['Admins', adminOverview.totalAdmins, 'Operational owners'],
+      ['Open Reports', moderationSummary.open, 'Needs moderation'],
+      ['Actioned Reports', moderationSummary.actioned, 'Confirmed enforcement'],
+      ['Public Reviews', adminOverview.visiblePublicReviews, 'Visible on public pages'],
+      ['Hidden Reviews', adminOverview.hiddenPublicReviews, 'Suppressed via moderation'],
+      ['Sessions', adminOverview.totalSessions, 'Tracked interviews'],
+      ['Completion Rate', `${adminOverview.completionRate}%`, 'Completion health'],
+      ['Cancellation Rate', `${adminOverview.cancellationRate}%`, 'Reliability risk'],
+    ].map(([label, value, meta]) => `
       <div class="stat-card admin-stat-card">
         <span>${esc(String(value))}</span>
         <p>${esc(label)}</p>
+        <small>${esc(meta || '')}</small>
       </div>
     `).join('');
   }
@@ -3881,11 +3910,39 @@ function renderAdminPanels() {
       ? skeletonCards(2)
       : adminOverview ? `
         <div class="panel-head"><h2>Platform analytics</h2><span class="badge badge-gray">${esc(String(adminOverview.totalSessions || 0))} sessions tracked</span></div>
-        <div class="admin-analytics-copy">
-          <div class="admin-analytics-metric"><span>Average public rating</span><strong>${esc(String(adminOverview.platformAverageRating || 0))}</strong></div>
-          <div class="admin-analytics-metric"><span>Completion rate</span><strong>${esc(String(adminOverview.completionRate || 0))}%</strong></div>
-          <div class="admin-analytics-metric"><span>Cancellation rate</span><strong>${esc(String(adminOverview.cancellationRate || 0))}%</strong></div>
+        <div class="admin-analytics-stack">
+          <section class="admin-analytics-section">
+            <h3>Platform metrics</h3>
+            <div class="admin-analytics-copy">
+              <div class="admin-analytics-metric"><span>Average public rating</span><strong>${esc(String(adminOverview.platformAverageRating || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Completion rate</span><strong>${esc(String(adminOverview.completionRate || 0))}%</strong></div>
+              <div class="admin-analytics-metric"><span>Cancellation rate</span><strong>${esc(String(adminOverview.cancellationRate || 0))}%</strong></div>
+            </div>
+          </section>
+          <section class="admin-analytics-section">
+            <h3>Moderation metrics</h3>
+            <div class="admin-analytics-copy">
+              <div class="admin-analytics-metric"><span>Open reports</span><strong>${esc(String(moderationSummary.open))}</strong></div>
+              <div class="admin-analytics-metric"><span>Reviewed reports</span><strong>${esc(String(moderationSummary.reviewed))}</strong></div>
+              <div class="admin-analytics-metric"><span>Actioned reports</span><strong>${esc(String(moderationSummary.actioned))}</strong></div>
+              <div class="admin-analytics-metric"><span>Visible reviews</span><strong>${esc(String(adminOverview.visiblePublicReviews || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Hidden reviews</span><strong>${esc(String(adminOverview.hiddenPublicReviews || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Queue pressure</span><strong>${esc(moderationSummary.open > 8 ? 'High' : moderationSummary.open > 3 ? 'Medium' : 'Low')}</strong></div>
+            </div>
+          </section>
+          <section class="admin-analytics-section">
+            <h3>User and session summary</h3>
+            <div class="admin-analytics-copy">
+              <div class="admin-analytics-metric"><span>Enabled users</span><strong>${esc(String(enabledUsers))}</strong></div>
+              <div class="admin-analytics-metric"><span>Disabled users</span><strong>${esc(String(disabledUsers))}</strong></div>
+              <div class="admin-analytics-metric"><span>Verification rate</span><strong>${esc(String(verificationRate))}%</strong></div>
+              <div class="admin-analytics-metric"><span>Completed sessions</span><strong>${esc(String(adminOverview.completedSessions || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Pending sessions</span><strong>${esc(String(adminOverview.pendingSessions || 0))}</strong></div>
+              <div class="admin-analytics-metric"><span>Cancelled sessions</span><strong>${esc(String(adminOverview.cancelledSessions || 0))}</strong></div>
+            </div>
+          </section>
         </div>
+        <h3 class="admin-topic-title">Top interview topics</h3>
         <div class="admin-topic-bars">
           ${(adminOverview.topTopics || []).map(item => `
             <div class="admin-topic-bar">
@@ -4012,25 +4069,37 @@ function renderAdminReports() {
   }
   const reportQuery = String(adminState.reports.query || '').trim().toLowerCase();
   const reportStatus = String(adminState.reports.status || '').trim().toUpperCase();
+  const reportCategory = String(adminState.reports.category || '').trim().toUpperCase();
   const filteredReports = adminReports.filter(report => {
     const statusMatch = !reportStatus || String(report.status || '').toUpperCase() === reportStatus;
-    const searchText = [report.reason, report.details, report.reporterId, report.reportedUserId].filter(Boolean).join(' ').toLowerCase();
-    return statusMatch && (!reportQuery || searchText.includes(reportQuery));
+    const categoryValue = normalizeReportCategory(report.reason);
+    const categoryMatch = !reportCategory || categoryValue === reportCategory;
+    const searchText = [report.reason, report.details, report.reporterId, report.reportedUserId, report.reviewedByAdminId].filter(Boolean).join(' ').toLowerCase();
+    return statusMatch && categoryMatch && (!reportQuery || searchText.includes(reportQuery));
   });
   const reportPage = paginateCollection(filteredReports, adminState.reports);
   const reviewQuery = String(adminState.reviews.query || '').trim().toLowerCase();
   const visibility = String(adminState.reviews.visibility || '').trim().toLowerCase();
+  const minRating = Number(adminState.reviews.minRating || 0);
   const filteredReviews = adminReviews.filter(review => {
     const visibilityMatch = !visibility || (visibility === 'visible' ? review.publicReview === true : review.publicReview !== true);
+    const ratingMatch = !minRating || Number(review.rating || 0) >= minRating;
     const topicText = Array.isArray(review.topicSummaries) ? review.topicSummaries.map(item => item.topic).join(' ') : '';
-    const searchText = [review.reviewerName, review.interviewerName, review.comments, review.sessionTitle, topicText].filter(Boolean).join(' ').toLowerCase();
-    return visibilityMatch && (!reviewQuery || searchText.includes(reviewQuery));
+    const searchText = [review.reviewerName, review.interviewerName, review.comments, review.sessionTitle, topicText, review.moderationNotes].filter(Boolean).join(' ').toLowerCase();
+    return visibilityMatch && ratingMatch && (!reviewQuery || searchText.includes(reviewQuery));
   });
   const reviewPage = paginateCollection(filteredReviews, adminState.reviews);
+  const reportEmpty = reportQuery || reportStatus || reportCategory
+    ? 'No trust reports match the current filters.'
+    : 'No moderation reports queued.';
+  const reviewEmpty = reviewQuery || visibility || minRating
+    ? 'No review items match the current filters.'
+    : 'No public reviews need moderation right now.';
   host.innerHTML = `
     <div class="admin-moderation-grid">
       <article class="admin-moderation-card">
         <div class="panel-head"><h2>Trust reports</h2><span class="badge badge-gray">${esc(String(filteredReports.length))}</span></div>
+        ${adminLoading ? '<p class="admin-loading-note">Syncing moderation queue...</p>' : ''}
         <div class="admin-inline-filters">
           <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
           <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
@@ -4039,27 +4108,38 @@ function renderAdminReports() {
             <option value="REVIEWED" ${reportStatus === 'REVIEWED' ? 'selected' : ''}>Reviewed</option>
             <option value="ACTIONED" ${reportStatus === 'ACTIONED' ? 'selected' : ''}>Actioned</option>
           </select>
+          <select class="input" onchange="setAdminFilter('reports', 'category', this.value)">
+            <option value="">All categories</option>
+            ${REPORT_CATEGORY_OPTIONS.map(option => `<option value="${esc(option.value)}" ${reportCategory === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+          </select>
         </div>
         <div class="admin-table">
           ${reportPage.items.map(report => `
             <article class="admin-table-row">
-              <div>
-                <strong>${esc(report.reason || 'Trust report')}</strong>
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>Trust report</strong>
+                  <span class="badge badge-gray">${esc(reportCategoryLabel(report.reason))}</span>
+                </div>
                 <p>${esc(report.details || 'No details provided.')}</p>
-                <small>${esc(fmtDate(report.createdAt))}</small>
+                <small>Reporter ${esc(report.reporterId || 'unknown')} • Target ${esc(report.reportedUserId || 'unknown')}</small>
+                <small>${esc(fmtDate(report.createdAt))}${report.reviewedByAdminId ? ` • Moderated by ${esc(report.reviewedByAdminId)}` : ''}</small>
+                ${normalizeReportCategory(report.reason) === 'OTHER' && report.reason ? `<small>Original reason: ${esc(report.reason)}</small>` : ''}
+                ${report.resolutionNotes ? `<p class="admin-note-chip">Last note: ${esc(report.resolutionNotes)}</p>` : ''}
               </div>
               <div class="card-actions">
                 <span class="badge badge-${report.status === 'OPEN' ? 'yellow' : report.status === 'ACTIONED' ? 'red' : 'gray'}">${esc(report.status || 'OPEN')}</span>
-                <button class="btn btn-outline btn-sm" type="button" onclick="resolveAdminReport('${report.id}', 'REVIEWED')">Review</button>
-                <button class="btn btn-danger btn-sm" type="button" onclick="resolveAdminReport('${report.id}', 'ACTIONED')">Action</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'REVIEWED')">Review</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'ACTIONED')">Action</button>
               </div>
             </article>
-          `).join('') || emptyState('No moderation reports queued.')}
+          `).join('') || emptyState(reportEmpty)}
         </div>
         ${renderAdminPagination('reports', reportPage)}
       </article>
       <article class="admin-moderation-card">
         <div class="panel-head"><h2>Public review moderation</h2><span class="badge badge-gray">${esc(String(filteredReviews.length))}</span></div>
+        ${adminLoading ? '<p class="admin-loading-note">Refreshing review moderation queue...</p>' : ''}
         <div class="admin-inline-filters">
           <input class="input" value="${esc(adminState.reviews.query || '')}" placeholder="Search reviews" oninput="setAdminFilter('reviews', 'query', this.value)" />
           <select class="input" onchange="setAdminFilter('reviews', 'visibility', this.value)">
@@ -4067,23 +4147,47 @@ function renderAdminReports() {
             <option value="visible" ${visibility === 'visible' ? 'selected' : ''}>Visible</option>
             <option value="hidden" ${visibility === 'hidden' ? 'selected' : ''}>Hidden</option>
           </select>
+          <select class="input" onchange="setAdminFilter('reviews', 'minRating', this.value)">
+            <option value="">Any rating</option>
+            <option value="4" ${String(adminState.reviews.minRating || '') === '4' ? 'selected' : ''}>4+ rating</option>
+            <option value="3" ${String(adminState.reviews.minRating || '') === '3' ? 'selected' : ''}>3+ rating</option>
+            <option value="2" ${String(adminState.reviews.minRating || '') === '2' ? 'selected' : ''}>2+ rating</option>
+          </select>
         </div>
         <div class="admin-table">
           ${reviewPage.items.map(review => `
             <article class="admin-table-row admin-review-row">
-              <div>
-                <strong>${esc(review.reviewerName || 'InterviewPrep member')} → ${esc(review.interviewerName || 'Interviewer')}</strong>
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(review.reviewerName || 'InterviewPrep member')} → ${esc(review.interviewerName || 'Interviewer')}</strong>
+                  ${review.interviewerVerified ? '<span class="badge badge-green">Verified</span>' : '<span class="badge badge-gray">Unverified</span>'}
+                </div>
                 <p>${esc(review.comments || 'No written review provided.')}</p>
-                ${Array.isArray(review.topicSummaries) && review.topicSummaries.length ? `<div class="tag-row subtle">${review.topicSummaries.map(topic => `<span>${esc(topic.topic)}${topic.rating ? ` · ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
+                ${Array.isArray(review.topicSummaries) && review.topicSummaries.length ? `
+                  <div class="admin-topic-feedback-grid">
+                    ${review.topicSummaries.map(topic => `
+                      <details class="admin-topic-feedback-card">
+                        <summary>${esc(topic.topic || 'Topic')} ${topic.rating ? `<strong>${esc(String(topic.rating))}/5</strong>` : ''}</summary>
+                        ${(topic.skillRatings && Object.keys(topic.skillRatings).length)
+                          ? `<div class="tag-row subtle">${Object.entries(topic.skillRatings).map(([name, value]) => `<span>${esc(name)} ${esc(String(value || 0))}/5</span>`).join('')}</div>`
+                          : ''}
+                        ${topic.strengths ? `<p><strong>Strength:</strong> ${esc(topic.strengths)}</p>` : ''}
+                        ${topic.improvementAreas ? `<p><strong>Improve:</strong> ${esc(topic.improvementAreas)}</p>` : ''}
+                      </details>
+                    `).join('')}
+                  </div>
+                ` : ''}
                 <small>${esc(review.sessionTitle || 'Interview session')} • ${esc(fmtDate(review.createdAt))}</small>
+                ${review.interviewerReliability != null ? `<small>Reliability ${esc(String(review.interviewerReliability))}%${review.interviewerCancelledSessions != null ? ` • Cancelled ${esc(String(review.interviewerCancelledSessions))}` : ''}</small>` : ''}
+                ${review.moderationNotes ? `<p class="admin-note-chip">Last note: ${esc(review.moderationNotes)}</p>` : ''}
               </div>
               <div class="card-actions">
                 <span class="badge badge-${review.publicReview ? 'green' : 'gray'}">${review.publicReview ? 'Visible' : 'Hidden'}</span>
                 <span class="badge badge-gray">${esc(String(review.rating || 0))}/5</span>
-                <button class="btn btn-outline btn-sm" type="button" onclick="toggleAdminReviewVisibility('${review.id}', ${review.publicReview ? 'false' : 'true'})">${review.publicReview ? 'Hide' : 'Republish'}</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReviewModerationModal('${review.id}', ${review.publicReview ? 'false' : 'true'})">${review.publicReview ? 'Hide' : 'Republish'}</button>
               </div>
             </article>
-          `).join('') || emptyState('No public reviews need moderation right now.')}
+          `).join('') || emptyState(reviewEmpty)}
         </div>
         ${renderAdminPagination('reviews', reviewPage)}
       </article>
@@ -4130,31 +4234,260 @@ async function toggleInterviewerVerification(userId, verified) {
   }
 }
 
-async function resolveAdminReport(reportId, status) {
-  const resolutionNotes = window.prompt(`Add a note for this ${status.toLowerCase()} decision`, '');
-  try {
-    await api(`/api/admin/reports/${reportId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, resolutionNotes }),
-    });
-    toast('Report updated.', 'success');
-    await loadAdminData(true);
-  } catch (err) {
-    toast(err.message || 'Could not update report.', 'error');
-  }
+function normalizeReportCategory(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  if (REPORT_CATEGORY_OPTIONS.some(item => item.value === normalized)) return normalized;
+  if (normalized.includes('SPAM') || normalized.includes('SCAM')) return 'SPAM';
+  if (normalized.includes('NO-SHOW') || normalized.includes('NO SHOW') || normalized.includes('LATE')) return 'NO_SHOW';
+  if (normalized.includes('SAFETY') || normalized.includes('HARASS') || normalized.includes('ABUSE')) return 'SAFETY';
+  if (normalized.includes('PROFILE') || normalized.includes('FAKE') || normalized.includes('IMPERSON')) return 'PROFILE';
+  if (normalized.includes('QUALITY') || normalized.includes('UNPROFESSIONAL')) return 'QUALITY';
+  return 'OTHER';
 }
 
-async function toggleAdminReviewVisibility(reviewId, visible) {
-  const moderationNotes = window.prompt(visible ? 'Add a note for republishing this review' : 'Why are you hiding this review?', '');
+function reportCategoryLabel(value) {
+  const category = normalizeReportCategory(value);
+  return REPORT_CATEGORY_OPTIONS.find(item => item.value === category)?.label || 'Other trust concern';
+}
+
+function reportCategoryHint(value) {
+  const category = normalizeReportCategory(value);
+  return REPORT_CATEGORY_OPTIONS.find(item => item.value === category)?.hint || '';
+}
+
+function openReportModerationModal(reportId, suggestedStatus = 'REVIEWED') {
+  const report = adminReports.find(item => item.id === reportId);
+  if (!report) {
+    toast('Report not found in current queue.', 'error');
+    return;
+  }
+  moderationDialogState = {
+    kind: 'report',
+    step: 'form',
+    loading: false,
+    reportId,
+    status: String(suggestedStatus || report.status || 'REVIEWED').toUpperCase(),
+    notes: report.resolutionNotes || '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function openReviewModerationModal(reviewId, visible) {
+  const review = adminReviews.find(item => item.id === reviewId);
+  if (!review) {
+    toast('Review not found in current queue.', 'error');
+    return;
+  }
+  moderationDialogState = {
+    kind: 'review',
+    step: 'form',
+    loading: false,
+    reviewId,
+    visible: visible !== false,
+    notes: review.moderationNotes || '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
+function resolveAdminReport(reportId, status) {
+  openReportModerationModal(reportId, status);
+}
+
+function toggleAdminReviewVisibility(reviewId, visible) {
+  openReviewModerationModal(reviewId, visible);
+}
+
+function updateModerationDialogField(field, value) {
+  if (!moderationDialogState) return;
+  moderationDialogState[field] = value;
+  renderModerationDialog();
+}
+
+function continueModerationDialog() {
+  if (!moderationDialogState) return;
+  if (moderationDialogState.kind === 'report') {
+    if (!moderationDialogState.status) {
+      toast('Select a moderation decision.', 'error');
+      return;
+    }
+    if (moderationDialogState.status === 'ACTIONED' && String(moderationDialogState.notes || '').trim().length < 8) {
+      toast('Add clear action notes (at least 8 characters).', 'error');
+      return;
+    }
+  } else if (!moderationDialogState.visible && String(moderationDialogState.notes || '').trim().length < 8) {
+    toast('Add moderation notes before hiding a review.', 'error');
+    return;
+  }
+  if (!moderationDialogState.confirmChecked) {
+    toast('Confirm the moderation action before continuing.', 'error');
+    return;
+  }
+  moderationDialogState.step = 'confirm';
+  renderModerationDialog();
+}
+
+function backModerationDialog() {
+  if (!moderationDialogState) return;
+  moderationDialogState.step = 'form';
+  renderModerationDialog();
+}
+
+function closeModerationDialog() {
+  moderationDialogState = null;
+  closeModal();
+}
+
+function renderModerationDialog() {
+  if (!moderationDialogState) return;
+  if (moderationDialogState.kind === 'report') {
+    const report = adminReports.find(item => item.id === moderationDialogState.reportId);
+    if (!report) {
+      closeModerationDialog();
+      return;
+    }
+    if (moderationDialogState.step === 'confirm') {
+      modal(`
+        <div class="modal-head">
+          <h2>Confirm report moderation</h2>
+          <p class="muted">This decision will be saved to the trust queue immediately.</p>
+        </div>
+        <div class="moderation-summary-list">
+          <div><span>Category</span><strong>${esc(reportCategoryLabel(report.reason))}</strong></div>
+          <div><span>Decision</span><strong>${esc(moderationDialogState.status)}</strong></div>
+          <div><span>Reporter → Target</span><strong>${esc(report.reporterId || 'unknown')} → ${esc(report.reportedUserId || 'unknown')}</strong></div>
+          <div><span>Notes</span><strong>${esc(moderationDialogState.notes || 'No notes added')}</strong></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+          <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm moderation'}</button>
+        </div>
+      `);
+      return;
+    }
+    modal(`
+      <div class="modal-head">
+        <h2>Moderate trust report</h2>
+        <p class="muted">${esc(reportCategoryHint(report.reason) || 'Review details, then choose a moderation outcome.')}</p>
+      </div>
+      <div class="moderation-form-grid">
+        <label class="form-group">
+          <span>Report category</span>
+          <input class="input" value="${esc(reportCategoryLabel(report.reason))}" readonly />
+        </label>
+        <label class="form-group">
+          <span>Decision</span>
+          <select class="input" onchange="updateModerationDialogField('status', this.value)">
+            <option value="OPEN" ${moderationDialogState.status === 'OPEN' ? 'selected' : ''}>Keep open</option>
+            <option value="REVIEWED" ${moderationDialogState.status === 'REVIEWED' ? 'selected' : ''}>Reviewed</option>
+            <option value="ACTIONED" ${moderationDialogState.status === 'ACTIONED' ? 'selected' : ''}>Actioned</option>
+          </select>
+        </label>
+        <label class="form-group">
+          <span>Moderation notes</span>
+          <textarea id="moderation-report-notes" placeholder="Document evidence, policy alignment, and next steps." oninput="updateModerationDialogField('notes', this.value)">${esc(moderationDialogState.notes || '')}</textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+          I confirm this report decision is accurate.
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+      </div>
+    `);
+    return;
+  }
+  const review = adminReviews.find(item => item.id === moderationDialogState.reviewId);
+  if (!review) {
+    closeModerationDialog();
+    return;
+  }
+  if (moderationDialogState.step === 'confirm') {
+    modal(`
+      <div class="modal-head">
+        <h2>Confirm review moderation</h2>
+        <p class="muted">Visibility changes apply to public profile pages instantly.</p>
+      </div>
+      <div class="moderation-summary-list">
+        <div><span>Reviewer</span><strong>${esc(review.reviewerName || 'InterviewPrep member')}</strong></div>
+        <div><span>Interviewer</span><strong>${esc(review.interviewerName || 'Interviewer')}</strong></div>
+        <div><span>Visibility</span><strong>${moderationDialogState.visible ? 'Visible' : 'Hidden'}</strong></div>
+        <div><span>Notes</span><strong>${esc(moderationDialogState.notes || 'No notes added')}</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+        <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm moderation'}</button>
+      </div>
+    `);
+    return;
+  }
+  modal(`
+    <div class="modal-head">
+      <h2>Moderate public review</h2>
+      <p class="muted">Capture context for auditability before changing visibility.</p>
+    </div>
+    <div class="moderation-form-grid">
+      <label class="form-group">
+        <span>Current review</span>
+        <input class="input" value="${esc(review.sessionTitle || 'Interview session')}" readonly />
+      </label>
+      <label class="form-group">
+        <span>Visibility decision</span>
+        <select class="input" onchange="updateModerationDialogField('visible', this.value === 'true')">
+          <option value="true" ${moderationDialogState.visible ? 'selected' : ''}>Visible</option>
+          <option value="false" ${!moderationDialogState.visible ? 'selected' : ''}>Hidden</option>
+        </select>
+      </label>
+      <label class="form-group">
+        <span>Moderation notes</span>
+        <textarea id="moderation-review-notes" placeholder="Why is this review visible or hidden?" oninput="updateModerationDialogField('notes', this.value)">${esc(moderationDialogState.notes || '')}</textarea>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+        I confirm this visibility update follows trust policy.
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+    </div>
+  `);
+}
+
+async function submitModerationDialog() {
+  if (!moderationDialogState || moderationDialogState.loading) return;
+  moderationDialogState.loading = true;
+  renderModerationDialog();
   try {
-    await api(`/api/admin/reviews/${reviewId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ visible, moderationNotes }),
-    });
-    toast('Review visibility updated.', 'success');
+    if (moderationDialogState.kind === 'report') {
+      await api(`/api/admin/reports/${moderationDialogState.reportId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: moderationDialogState.status,
+          resolutionNotes: moderationDialogState.notes,
+        }),
+      });
+      toast('Report moderation updated.', 'success');
+    } else {
+      await api(`/api/admin/reviews/${moderationDialogState.reviewId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          visible: moderationDialogState.visible,
+          moderationNotes: moderationDialogState.notes,
+        }),
+      });
+      toast('Review moderation updated.', 'success');
+    }
+    moderationDialogState = null;
+    closeModal();
     await loadAdminData(true);
   } catch (err) {
-    toast(err.message || 'Could not update review visibility.', 'error');
+    moderationDialogState.loading = false;
+    renderModerationDialog();
+    toast(err.message || 'Could not save moderation action.', 'error');
   }
 }
 
@@ -4213,16 +4546,108 @@ async function copyText(text, successMessage = 'Copied.') {
 }
 
 async function reportUser(reportedUserId, sessionId = '') {
-  const reason = window.prompt('Report reason', 'Spam or inappropriate conduct');
-  if (!reason) return;
-  const details = window.prompt('Additional details', '');
+  openReportUserDialog(reportedUserId, sessionId);
+}
+
+function openReportUserDialog(reportedUserId, sessionId = '') {
+  reportDialogState = {
+    reportedUserId,
+    sessionId,
+    category: REPORT_CATEGORY_OPTIONS[0].value,
+    details: '',
+    loading: false,
+    submitted: null,
+  };
+  renderReportUserDialog();
+}
+
+function updateReportDialogField(field, value) {
+  if (!reportDialogState) return;
+  reportDialogState[field] = value;
+  renderReportUserDialog();
+}
+
+function closeReportUserDialog() {
+  reportDialogState = null;
+  closeModal();
+}
+
+function renderReportUserDialog() {
+  if (!reportDialogState) return;
+  if (reportDialogState.submitted) {
+    modal(`
+      <div class="modal-head">
+        <h2>Report submitted</h2>
+        <p class="muted">Your report is now visible in the moderation queue with status <strong>OPEN</strong>.</p>
+      </div>
+      <div class="moderation-summary-list">
+        <div><span>Category</span><strong>${esc(reportCategoryLabel(reportDialogState.submitted.reason))}</strong></div>
+        <div><span>Report id</span><strong>${esc(reportDialogState.submitted.id || 'Generated')}</strong></div>
+        <div><span>Created</span><strong>${esc(fmtDate(reportDialogState.submitted.createdAt))}</strong></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" type="button" onclick="closeReportUserDialog()">Done</button>
+      </div>
+    `);
+    return;
+  }
+  const selected = REPORT_CATEGORY_OPTIONS.find(item => item.value === reportDialogState.category) || REPORT_CATEGORY_OPTIONS[0];
+  modal(`
+    <div class="modal-head">
+      <h2>Report user</h2>
+      <p class="muted">Choose a trust category and include concise details for moderation review.</p>
+    </div>
+    <div class="moderation-form-grid">
+      <label class="form-group">
+        <span>Report category</span>
+        <select class="input" onchange="updateReportDialogField('category', this.value)">
+          ${REPORT_CATEGORY_OPTIONS.map(option => `<option value="${esc(option.value)}" ${reportDialogState.category === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+        </select>
+      </label>
+      <p class="moderation-hint">${esc(selected.hint)}</p>
+      <label class="form-group">
+        <span>Details for moderation</span>
+        <textarea placeholder="Include what happened, when, and any impact. Avoid sensitive personal data." oninput="updateReportDialogField('details', this.value)">${esc(reportDialogState.details || '')}</textarea>
+      </label>
+      <p class="moderation-hint">${reportDialogState.sessionId ? 'This report is linked to the selected session.' : 'This report is profile-level and not tied to a specific session.'}</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" type="button" onclick="closeReportUserDialog()">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="submitReportUserDialog()" ${reportDialogState.loading ? 'disabled' : ''}>${reportDialogState.loading ? 'Submitting...' : 'Submit report'}</button>
+    </div>
+  `);
+}
+
+async function submitReportUserDialog() {
+  if (!reportDialogState || reportDialogState.loading) return;
+  if (!reportDialogState.category) {
+    toast('Select a report category.', 'error');
+    return;
+  }
+  if (String(reportDialogState.details || '').trim().length < 12) {
+    toast('Please share a little more detail (at least 12 characters).', 'error');
+    return;
+  }
+  reportDialogState.loading = true;
+  renderReportUserDialog();
+  const selected = REPORT_CATEGORY_OPTIONS.find(item => item.value === reportDialogState.category) || REPORT_CATEGORY_OPTIONS[0];
   try {
-    await api('/api/trust/reports', {
+    const created = await api('/api/trust/reports', {
       method: 'POST',
-      body: JSON.stringify({ reportedUserId, sessionId, reason, details }),
+      body: JSON.stringify({
+        reportedUserId: reportDialogState.reportedUserId,
+        sessionId: reportDialogState.sessionId,
+        reason: selected.value,
+        details: reportDialogState.details,
+      }),
     });
+    reportDialogState.loading = false;
+    reportDialogState.submitted = created;
+    renderReportUserDialog();
     toast('Report submitted for moderation.', 'success');
   } catch (err) {
+    reportDialogState.loading = false;
+    renderReportUserDialog();
     toast(err.message || 'Could not submit report.', 'error');
   }
 }

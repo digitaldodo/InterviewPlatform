@@ -119,7 +119,7 @@ function renderProfile(profile) {
           </div>
           <div class="public-profile-detail-card">
             <strong>Reliability</strong>
-            <p>${esc(String(reliability.toFixed(1)))}% session reliability based on completed versus cancelled sessions.</p>
+            <p>${esc(String(reliability.toFixed(1)))}% session reliability based on completed versus cancelled sessions (${esc(String(profile.cancelledSessions || 0))} cancelled).</p>
           </div>
           <div class="public-profile-detail-card">
             <strong>Booking status</strong>
@@ -131,14 +131,15 @@ function renderProfile(profile) {
     <section class="panel public-review-section">
       <div class="panel-head"><h2>Interviewer reviews</h2><span class="badge badge-gray">${esc(String(profile.reviewCount || reviews.length || 0))} reviews</span></div>
       <div class="public-review-grid">
-        ${reviews.map(renderReviewCard).join('') || '<div class="empty-state"><p>No public reviews yet.</p></div>'}
+        ${reviews.map(review => renderReviewCard(review, profile)).join('') || '<div class="empty-state"><p>No public reviews yet.</p></div>'}
       </div>
     </section>
   `;
 }
 
-function renderReviewCard(review) {
+function renderReviewCard(review, profile) {
   const topics = Array.isArray(review.topicSummaries) ? review.topicSummaries : [];
+  const reliability = Number(profile?.reliabilityScore || 0);
   return `
     <article class="public-review-card">
       <div class="public-review-head">
@@ -149,10 +150,31 @@ function renderReviewCard(review) {
             <small>${esc(review.sessionTitle || 'Interview session')} • ${esc(formatDate(review.createdAt))}</small>
           </div>
         </div>
-        <span class="badge badge-green">${ratingStars(review.rating)} ${esc(String(review.rating || 0))}/5</span>
+        <div class="card-actions">
+          <span class="badge badge-green">${ratingStars(review.rating)} ${esc(String(review.rating || 0))}/5</span>
+          ${profile?.interviewerVerified ? '<span class="badge badge-purple">Verified interviewer</span>' : ''}
+        </div>
       </div>
       <p>${esc(review.comments || 'No written review provided.')}</p>
-      ${topics.length ? `<div class="tag-row subtle">${topics.map(topic => `<span>${esc(topic.topic)}${topic.rating ? ` · ${esc(String(topic.rating))}/5` : ''}</span>`).join('')}</div>` : ''}
+      <div class="tag-row subtle">
+        <span>Reliability ${esc(String(reliability.toFixed(1)))}%</span>
+        <span>Cancelled ${esc(String(profile?.cancelledSessions || 0))}</span>
+      </div>
+      ${topics.length ? `
+        <div class="public-topic-feedback-grid">
+          ${topics.map(topic => `
+            <details class="public-topic-feedback-card">
+              <summary>${esc(topic.topic || 'Topic')} ${topic.rating ? `<strong>${esc(String(topic.rating))}/5</strong>` : ''}</summary>
+              ${(topic.skillRatings && Object.keys(topic.skillRatings).length)
+                ? `<div class="tag-row subtle">${Object.entries(topic.skillRatings).map(([name, value]) => `<span>${esc(name)} ${esc(String(value || 0))}/5</span>`).join('')}</div>`
+                : ''}
+              ${topic.strengths ? `<p><strong>Strength:</strong> ${esc(topic.strengths)}</p>` : ''}
+              ${topic.improvementAreas ? `<p><strong>Improve:</strong> ${esc(topic.improvementAreas)}</p>` : ''}
+              ${topic.comments ? `<p><strong>Comment:</strong> ${esc(topic.comments)}</p>` : ''}
+            </details>
+          `).join('')}
+        </div>
+      ` : ''}
     </article>
   `;
 }
