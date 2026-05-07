@@ -4,14 +4,24 @@ let currentUser = null;
 let sessions = [];
 let feedbackItems = [];
 let interviewers = [];
+let meetingProviders = [];
 let interviewerPage = 0;
 let interviewerTotalPages = 1;
 let selectedInterviewer = null;
 let bookingStep = 1;
-let bookingState = { interviewer: null, interviewType: '', startTime: '' };
+let bookingState = { interviewer: null, interviewType: '', startTime: '', meetingProvider: 'JITSI' };
 let searchTimer = null;
 let activeWorkspace = 'INTERVIEWEE';
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'feedback', 'notifications', 'profile', 'interviewer']);
+let activeMeetingSession = null;
+let activeMeetingAccess = null;
+let activeMeetingTimer = null;
+let jitsiApi = null;
+let jitsiScriptPromise = null;
+let meetingUiState = { audioMuted: false, videoMuted: false, screenSharing: false, participants: 1, joined: false };
+const DEFAULT_MEETING_PROVIDERS = [
+  { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
+];
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
 
 window.addEventListener('DOMContentLoaded', async () => {
   currentUser = readJson('ip_user');
@@ -23,7 +33,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initUi();
   bindFilters();
   bindFeedbackForm();
-  await Promise.all([loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications()]);
+  await Promise.all([loadMeetingProviders(), loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications()]);
   showSection(routeFromHash(), false);
 });
 
@@ -138,10 +148,13 @@ function routeFromHash() {
 function showSection(name, updateRoute = true) {
   let targetName = ROUTES.has(name) ? name : 'overview';
   if (!routeAllowed(targetName)) targetName = 'overview';
+  const meetingWasVisible = !document.getElementById('section-meeting').hidden;
+  if (meetingWasVisible && targetName !== 'meeting') destroyMeetingFrame();
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
   document.getElementById(`section-${targetName}`).hidden = false;
   document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === targetName));
   if (targetName === 'booking') renderBookingStep();
+  if (targetName === 'meeting' && !activeMeetingSession) renderMeetingPlaceholder();
   if (targetName === 'feedback') populateFeedbackSessions();
   if (targetName === 'sessions') renderSessions('upcoming');
   if (targetName === 'notifications') loadNotifications();
@@ -354,6 +367,7 @@ function renderBookingStep() {
         <p><strong>Type</strong><span>${esc(bookingState.interviewType)}</span></p>
         <p><strong>Slot</strong><span>${fmtDate(bookingState.startTime)}</span></p>
       </div>
+      ${renderMeetingProviderField()}
       <textarea id="booking-notes" placeholder="Optional goals or context"></textarea>
       <button class="btn btn-primary btn-full sticky-action" onclick="confirmBooking()">Confirm booking</button>
     `;
@@ -380,10 +394,41 @@ async function renderSlotStep() {
   }
 }
 
+async function loadMeetingProviders() {
+  try {
+    const providers = await api('/api/sessions/meeting-providers');
+    meetingProviders = (providers || []).filter(item => item.enabled);
+    if (!meetingProviders.length) throw new Error('No meeting providers available');
+  } catch {
+    meetingProviders = DEFAULT_MEETING_PROVIDERS.slice();
+  }
+  const defaultProvider = meetingProviders.find(item => item.isDefault) || meetingProviders[0] || DEFAULT_MEETING_PROVIDERS[0];
+  bookingState.meetingProvider = bookingState.meetingProvider || defaultProvider.key;
+  if (document.getElementById('booking-step-content')) renderBookingStep();
+}
+
 function chooseSlot(slot) {
   bookingState.startTime = slot;
   bookingStep = 4;
   renderBookingStep();
+}
+
+function setBookingProvider(provider) {
+  bookingState.meetingProvider = provider || bookingState.meetingProvider || 'JITSI';
+}
+
+function renderMeetingProviderField() {
+  const providers = meetingProviders.length ? meetingProviders : DEFAULT_MEETING_PROVIDERS;
+  const current = bookingState.meetingProvider || providers.find(item => item.isDefault)?.key || providers[0]?.key || 'JITSI';
+  bookingState.meetingProvider = current;
+  return `
+    <div class="form-group">
+      <label for="booking-meeting-provider">Meeting format</label>
+      <select id="booking-meeting-provider" onchange="setBookingProvider(this.value)">
+        ${providers.map(provider => `<option value="${esc(provider.key)}" ${provider.key === current ? 'selected' : ''}>${esc(provider.label)}</option>`).join('')}
+      </select>
+    </div>
+  `;
 }
 
 async function confirmBooking() {
@@ -396,12 +441,18 @@ async function confirmBooking() {
         interviewType: bookingState.interviewType,
         startTime: bookingState.startTime,
         notes: document.getElementById('booking-notes').value.trim(),
+        meetingProvider: document.getElementById('booking-meeting-provider')?.value || bookingState.meetingProvider || 'JITSI',
       }),
     });
     toast('Booking requested. Meeting link is ready.', 'success');
     sessions.unshift(session);
     bookingStep = 1;
-    bookingState = { interviewer: null, interviewType: '', startTime: '' };
+    bookingState = {
+      interviewer: null,
+      interviewType: '',
+      startTime: '',
+      meetingProvider: meetingProviders.find(item => item.isDefault)?.key || meetingProviders[0]?.key || 'JITSI',
+    };
     await loadSessions();
     showSection('sessions');
   } catch (err) {
@@ -412,7 +463,11 @@ async function confirmBooking() {
 async function loadSessions() {
   try {
     const endpoint = activeWorkspace === 'INTERVIEWER' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
-    sessions = await api(endpoint);
+    sessions = sortSessions(await api(endpoint));
+    if (activeMeetingSession?.id) {
+      activeMeetingSession = sessions.find(item => item.id === activeMeetingSession.id) || activeMeetingSession;
+      if (!document.getElementById('section-meeting').hidden) renderMeetingMeta(activeMeetingAccess || activeMeetingSession);
+    }
     renderOverview();
     renderSessions('upcoming');
     renderInterviewerPanel();
@@ -440,25 +495,31 @@ function renderOverview() {
 
 function renderSessions(mode = 'upcoming') {
   document.querySelectorAll('.session-tabs .chip').forEach((chip, index) => chip.classList.toggle('active', (mode === 'upcoming') === (index === 0)));
-  const list = mode === 'upcoming'
+  const list = sortSessions(mode === 'upcoming'
     ? sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()))
-    : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase()));
+    : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase())));
   document.getElementById('sessions-list').innerHTML = list.map(renderSessionCard).join('') || emptyState('No sessions here yet.');
 }
 
 function renderSessionCard(session) {
   const status = (session.status || 'PENDING').toUpperCase();
+  const meetingStatus = normalizeMeetingStatus(session);
   const isInterviewer = activeWorkspace === 'INTERVIEWER';
   const canConfirm = isInterviewer && status === 'PENDING';
   const canComplete = status === 'CONFIRMED';
+  const joinLabel = currentUser.id === session.interviewerId && meetingStatus !== 'LIVE' ? 'Start Meeting' : 'Join Meeting';
+  const hasMeeting = Boolean(session.meetingId || session.joinUrl || session.meetingLink || session.meetingProvider);
   return `
     <article class="session-card">
       <div class="session-card-head"><span class="badge badge-${statusClass(status)}">${status}</span><span>${countdown(session.startTime || session.scheduledAt)}</span></div>
       <h3>${esc(session.interviewType || session.title || session.topic || 'Interview')}</h3>
       <p>${fmtDate(session.startTime || session.scheduledAt)}</p>
-      <p class="muted">Meeting status: ${esc(session.meetingStatus || 'ready')}</p>
+      <div class="session-meta-row">
+        <span class="badge badge-${meetingStatusClass(meetingStatus)}">${meetingStatusText(meetingStatus)}</span>
+        <span>${esc(providerLabel(session.meetingProvider))}</span>
+      </div>
       <div class="session-actions">
-        ${session.meetingLink ? `<a class="btn btn-primary btn-sm" href="${esc(session.meetingLink)}" target="_blank" rel="noreferrer">Join Meeting</a>` : ''}
+        ${hasMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}')">${joinLabel}</button>` : ''}
         ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
         ${canComplete ? `<button class="btn btn-outline btn-sm" onclick="updateSession('${session.id}','complete')">Complete</button>` : ''}
         ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-danger btn-sm" onclick="updateSession('${session.id}','cancel')">Cancel</button>` : ''}
@@ -715,6 +776,358 @@ async function resendProfileOtp() {
   }
 }
 
+async function openMeeting(sessionId) {
+  const session = sessions.find(item => item.id === sessionId);
+  if (!session) {
+    toast('Session not found.', 'error');
+    return;
+  }
+  activeMeetingSession = session;
+  activeMeetingAccess = null;
+  meetingUiState = { audioMuted: false, videoMuted: false, screenSharing: false, participants: 1, joined: false };
+  showSection('meeting');
+  renderMeetingLoading(session);
+  try {
+    const isHost = currentUser.id === session.interviewerId;
+    const shouldStart = isHost && normalizeMeetingStatus(session) !== 'LIVE';
+    const access = await api(
+      shouldStart ? `/api/sessions/${sessionId}/meeting/start` : `/api/sessions/${sessionId}/meeting-access`,
+      shouldStart ? { method: 'POST' } : {},
+    );
+    activeMeetingAccess = access;
+    syncSession({
+      ...session,
+      meetingProvider: access.meetingProvider,
+      meetingId: access.meetingId,
+      meetingStatus: access.meetingStatus,
+      joinUrl: access.joinUrl || session.joinUrl || session.meetingLink,
+      hostUrl: access.hostUrl || session.hostUrl,
+      meetingStartedAt: access.meetingStartedAt || session.meetingStartedAt,
+      meetingEndedAt: access.meetingEndedAt || session.meetingEndedAt,
+    });
+    renderOverview();
+    renderSessions('upcoming');
+    renderInterviewerPanel();
+    await renderMeetingRoom(access);
+  } catch (err) {
+    renderMeetingError(err.message || 'Could not open meeting.');
+    toast(err.message || 'Could not open meeting.', 'error');
+  }
+}
+
+function renderMeetingPlaceholder() {
+  renderMeetingSummary({
+    title: 'Interview room',
+    subtitle: 'Select an upcoming session to join or start the meeting.',
+    providerLabel: 'Meeting',
+    meetingStatus: 'SCHEDULED',
+  });
+  document.getElementById('meeting-meta').innerHTML = emptyState('Choose a scheduled session to see meeting details.');
+  const fallback = document.getElementById('meeting-fallback');
+  const embed = document.getElementById('meeting-embed-root');
+  document.getElementById('meeting-toolbar').hidden = true;
+  document.getElementById('meeting-open-external').hidden = true;
+  embed.innerHTML = '';
+  fallback.hidden = false;
+  fallback.innerHTML = `<div class="meeting-fallback-card"><h3>No meeting selected</h3><p>Open a session card from your dashboard to launch the room.</p></div>`;
+  resetMeetingTimer();
+}
+
+function renderMeetingLoading(session) {
+  renderMeetingSummary({
+    title: session.interviewType || session.title || 'Interview session',
+    subtitle: `Preparing ${providerLabel(session.meetingProvider)} access for ${fmtDate(session.startTime)}`,
+    providerLabel: providerLabel(session.meetingProvider),
+    meetingStatus: normalizeMeetingStatus(session),
+  });
+  document.getElementById('meeting-meta').innerHTML = skeletonCards(2);
+  const fallback = document.getElementById('meeting-fallback');
+  fallback.hidden = false;
+  fallback.innerHTML = `<div class="meeting-fallback-card"><h3>Preparing your room</h3><p>Loading secure access and meeting controls.</p></div>`;
+  document.getElementById('meeting-embed-root').innerHTML = '';
+  document.getElementById('meeting-toolbar').hidden = true;
+  resetMeetingTimer();
+}
+
+async function renderMeetingRoom(access) {
+  renderMeetingSummary({
+    title: access.sessionTitle || activeMeetingSession?.interviewType || 'Interview session',
+    subtitle: `${fmtDate(access.scheduledAt)} • ${access.durationMinutes || activeMeetingSession?.durationMinutes || 45} min • ${access.interviewerName || 'Interviewer'} & ${access.intervieweeName || 'Interviewee'}`,
+    providerLabel: access.providerLabel || providerLabel(access.meetingProvider),
+    meetingStatus: access.meetingStatus,
+  });
+  renderMeetingMeta(access);
+  startMeetingTimer(access.meetingStartedAt || access.scheduledAt);
+  const external = document.getElementById('meeting-open-external');
+  external.hidden = !access.launchUrl;
+  if (access.launchUrl) external.href = access.launchUrl;
+  if (access.canEmbed && access.embedScriptUrl && access.embedDomain && access.roomName) {
+    document.getElementById('meeting-toolbar').hidden = false;
+    document.getElementById('meeting-fallback').hidden = true;
+    await mountJitsiMeeting(access);
+    return;
+  }
+  document.getElementById('meeting-toolbar').hidden = true;
+  destroyMeetingFrame(false);
+  renderMeetingFallback(access);
+}
+
+function renderMeetingSummary({ title, subtitle, providerLabel: label, meetingStatus }) {
+  document.getElementById('meeting-page-heading').textContent = title || 'Interview room';
+  document.getElementById('meeting-title').textContent = title || 'Interview room';
+  document.getElementById('meeting-subtitle').textContent = subtitle || 'Meeting details will appear here.';
+  document.getElementById('meeting-provider-badge').textContent = label || 'Meeting';
+  const statusBadge = document.getElementById('meeting-status-badge');
+  statusBadge.textContent = meetingStatusText(meetingStatus);
+  statusBadge.className = `badge badge-${meetingStatusClass(meetingStatus)}`;
+}
+
+function renderMeetingMeta(access) {
+  const session = activeMeetingSession || {};
+  const scheduledAt = access.scheduledAt || access.startTime || session.startTime;
+  const passcodeLine = access.meetingPasscode ? `<dt>Passcode</dt><dd>${esc(access.meetingPasscode)}</dd>` : '';
+  const notesLine = session.notes ? `<div class="meeting-meta-card"><h3>Goals</h3><p>${esc(session.notes)}</p></div>` : '';
+  document.getElementById('meeting-meta').innerHTML = `
+    <div class="meeting-meta-stack">
+      <div class="meeting-meta-card">
+        <h3>Meeting details</h3>
+        <dl>
+          <dt>Provider</dt><dd>${esc(access.providerLabel || providerLabel(access.meetingProvider))}</dd>
+          <dt>Status</dt><dd>${esc(meetingStatusText(access.meetingStatus))}</dd>
+          <dt>Role</dt><dd>${esc(access.participantRole === 'HOST' ? 'Interviewer / host' : 'Interviewee / participant')}</dd>
+          <dt>When</dt><dd>${fmtDate(scheduledAt)}</dd>
+          <dt>Length</dt><dd>${esc(String(access.durationMinutes || 45))} minutes</dd>
+          <dt>Interviewer</dt><dd>${esc(access.interviewerName || 'Interviewer')}</dd>
+          <dt>Interviewee</dt><dd>${esc(access.intervieweeName || 'Interviewee')}</dd>
+          ${passcodeLine}
+        </dl>
+      </div>
+      ${notesLine}
+      <div class="meeting-meta-card">
+        <h3>Access</h3>
+        <p>${access.canEmbed ? 'This meeting opens directly inside InterviewPrep. You can still launch it in a separate tab if you prefer.' : 'This provider opens securely in a separate browser tab or Zoom web window.'}</p>
+        <div class="meeting-launch-row">
+          ${access.launchUrl ? `<a class="btn btn-primary btn-sm" href="${esc(access.launchUrl)}" target="_blank" rel="noreferrer">Open link</a>` : ''}
+          ${access.joinUrl ? `<a class="btn btn-outline btn-sm" href="${esc(access.joinUrl)}" target="_blank" rel="noreferrer">Join URL</a>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMeetingFallback(access) {
+  const fallback = document.getElementById('meeting-fallback');
+  const embed = document.getElementById('meeting-embed-root');
+  embed.innerHTML = '';
+  fallback.hidden = false;
+  fallback.innerHTML = `
+    <div class="meeting-fallback-card">
+      <h3>${esc(access.providerLabel || providerLabel(access.meetingProvider))} meeting</h3>
+      <p>${access.externalLaunchRequired ? 'This meeting provider launches outside the embedded room. Use the secure link below to continue.' : 'Open the meeting in a new tab if the embedded room is unavailable.'}</p>
+      <div class="meeting-launch-row">
+        ${access.launchUrl ? `<a class="btn btn-primary" href="${esc(access.launchUrl)}" target="_blank" rel="noreferrer">Open secure meeting</a>` : ''}
+        ${access.joinUrl ? `<a class="btn btn-outline" href="${esc(access.joinUrl)}" target="_blank" rel="noreferrer">Copy join path</a>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderMeetingError(message) {
+  renderMeetingSummary({
+    title: activeMeetingSession?.interviewType || activeMeetingSession?.title || 'Interview room',
+    subtitle: message,
+    providerLabel: providerLabel(activeMeetingSession?.meetingProvider),
+    meetingStatus: normalizeMeetingStatus(activeMeetingSession || {}),
+  });
+  document.getElementById('meeting-toolbar').hidden = true;
+  document.getElementById('meeting-open-external').hidden = true;
+  document.getElementById('meeting-meta').innerHTML = emptyState(message);
+  document.getElementById('meeting-embed-root').innerHTML = '';
+  const fallback = document.getElementById('meeting-fallback');
+  fallback.hidden = false;
+  fallback.innerHTML = `<div class="meeting-fallback-card"><h3>Meeting unavailable</h3><p>${esc(message)}</p></div>`;
+  resetMeetingTimer();
+}
+
+async function mountJitsiMeeting(access) {
+  const embed = document.getElementById('meeting-embed-root');
+  destroyMeetingFrame(false);
+  await loadJitsiScript(access.embedScriptUrl);
+  embed.innerHTML = '';
+  const options = {
+    roomName: access.roomName,
+    width: '100%',
+    height: '100%',
+    parentNode: embed,
+    userInfo: {
+      displayName: access.displayName || (currentUser.name || currentUser.username || 'InterviewPrep user'),
+      email: access.email || currentUser.email || '',
+    },
+    configOverwrite: {
+      prejoinPageEnabled: false,
+      disableDeepLinking: true,
+      startWithAudioMuted: false,
+      startWithVideoMuted: false,
+      enableWelcomePage: false,
+    },
+    interfaceConfigOverwrite: {
+      MOBILE_APP_PROMO: false,
+    },
+  };
+  if (access.jwt) options.jwt = access.jwt;
+  jitsiApi = new window.JitsiMeetExternalAPI(access.embedDomain, options);
+  attachMeetingListener('videoConferenceJoined', () => {
+    meetingUiState.joined = true;
+    meetingUiState.participants = Math.max(1, meetingUiState.participants);
+    if (!activeMeetingAccess?.meetingStartedAt) {
+      activeMeetingAccess = { ...activeMeetingAccess, meetingStartedAt: new Date().toISOString(), meetingStatus: 'LIVE' };
+      startMeetingTimer(activeMeetingAccess.meetingStartedAt);
+    }
+    renderMeetingSummary({
+      title: activeMeetingAccess?.sessionTitle || access.sessionTitle,
+      subtitle: `${fmtDate(access.scheduledAt)} • ${access.durationMinutes || 45} min • ${access.interviewerName || 'Interviewer'} & ${access.intervieweeName || 'Interviewee'}`,
+      providerLabel: access.providerLabel || providerLabel(access.meetingProvider),
+      meetingStatus: 'LIVE',
+    });
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('participantJoined', () => {
+    meetingUiState.participants += 1;
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('participantLeft', () => {
+    meetingUiState.participants = Math.max(1, meetingUiState.participants - 1);
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('audioMuteStatusChanged', event => {
+    meetingUiState.audioMuted = Boolean(event?.muted);
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('videoMuteStatusChanged', event => {
+    meetingUiState.videoMuted = Boolean(event?.muted);
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('contentSharingParticipantsChanged', event => {
+    const participants = Array.isArray(event?.data) ? event.data : [];
+    meetingUiState.screenSharing = participants.length > 0;
+    updateMeetingToolbar();
+  });
+  attachMeetingListener('readyToClose', () => leaveMeetingRoom(true));
+  updateMeetingToolbar();
+}
+
+function attachMeetingListener(eventName, handler) {
+  if (!jitsiApi || typeof handler !== 'function') return;
+  if (typeof jitsiApi.addEventListener === 'function') {
+    jitsiApi.addEventListener(eventName, handler);
+    return;
+  }
+  if (typeof jitsiApi.addListener === 'function') {
+    jitsiApi.addListener(eventName, handler);
+  }
+}
+
+function loadJitsiScript(src) {
+  if (window.JitsiMeetExternalAPI) return Promise.resolve();
+  if (jitsiScriptPromise) return jitsiScriptPromise;
+  jitsiScriptPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Could not load meeting embed script.'));
+    document.head.appendChild(script);
+  });
+  return jitsiScriptPromise;
+}
+
+function updateMeetingToolbar() {
+  const toolbar = document.getElementById('meeting-toolbar');
+  if (toolbar.hidden) return;
+  const buttons = toolbar.querySelectorAll('.btn');
+  buttons[0]?.classList.toggle('active', !meetingUiState.audioMuted);
+  if (buttons[0]) buttons[0].textContent = meetingUiState.audioMuted ? 'Mic Off' : 'Mic On';
+  buttons[1]?.classList.toggle('active', !meetingUiState.videoMuted);
+  if (buttons[1]) buttons[1].textContent = meetingUiState.videoMuted ? 'Camera Off' : 'Camera On';
+  buttons[2]?.classList.toggle('active', meetingUiState.screenSharing);
+  if (buttons[2]) buttons[2].textContent = meetingUiState.screenSharing ? 'Stop Share' : 'Share Screen';
+  if (buttons[3]) buttons[3].textContent = `Tile View (${meetingUiState.participants})`;
+}
+
+function toggleMeetingAudio() {
+  jitsiApi?.executeCommand?.('toggleAudio');
+}
+
+function toggleMeetingVideo() {
+  jitsiApi?.executeCommand?.('toggleVideo');
+}
+
+function toggleMeetingScreenShare() {
+  jitsiApi?.executeCommand?.('toggleShareScreen');
+}
+
+function toggleMeetingTileView() {
+  jitsiApi?.executeCommand?.('toggleTileView');
+}
+
+function leaveMeetingRoom(goBack = false) {
+  if (jitsiApi?.executeCommand && !goBack) {
+    jitsiApi.executeCommand('hangup');
+    return;
+  }
+  destroyMeetingFrame();
+  if (goBack) showSection('sessions');
+}
+
+function destroyMeetingFrame(clearAccess = true) {
+  clearInterval(activeMeetingTimer);
+  activeMeetingTimer = null;
+  if (jitsiApi?.dispose) {
+    try { jitsiApi.dispose(); } catch {}
+  }
+  jitsiApi = null;
+  document.getElementById('meeting-embed-root').innerHTML = '';
+  if (clearAccess) {
+    activeMeetingAccess = null;
+  }
+}
+
+function startMeetingTimer(value) {
+  clearInterval(activeMeetingTimer);
+  const start = value ? new Date(value).getTime() : NaN;
+  if (!Number.isFinite(start)) {
+    document.getElementById('meeting-timer').textContent = '00:00';
+    return;
+  }
+  const update = () => {
+    const diff = Math.max(0, Date.now() - start);
+    const totalSeconds = Math.floor(diff / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    document.getElementById('meeting-timer').textContent = hours > 0
+      ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  };
+  update();
+  activeMeetingTimer = setInterval(update, 1000);
+}
+
+function resetMeetingTimer() {
+  clearInterval(activeMeetingTimer);
+  activeMeetingTimer = null;
+  document.getElementById('meeting-timer').textContent = '00:00';
+}
+
+function syncSession(session) {
+  const index = sessions.findIndex(item => item.id === session.id);
+  if (index === -1) {
+    sessions.unshift(session);
+    return;
+  }
+  sessions[index] = { ...sessions[index], ...session };
+}
+
 async function verifyProfileOtp() {
   const btn = document.getElementById('profile-verify-btn');
   setButtonLoading(btn, true, 'Verifying');
@@ -917,6 +1330,55 @@ function countdown(value) {
 
 function statusClass(status) {
   return { PENDING: 'yellow', CONFIRMED: 'purple', COMPLETED: 'green', CANCELLED: 'red' }[status] || 'gray';
+}
+
+function normalizeMeetingStatus(sessionOrStatus) {
+  if (typeof sessionOrStatus === 'string') {
+    return String(sessionOrStatus || '').toUpperCase() || 'SCHEDULED';
+  }
+  const raw = String(sessionOrStatus?.meetingStatus || '').toUpperCase();
+  if (raw) return raw;
+  const sessionStatus = String(sessionOrStatus?.status || '').toUpperCase();
+  if (sessionStatus === 'COMPLETED') return 'COMPLETED';
+  if (sessionStatus === 'CANCELLED') return 'CANCELLED';
+  return 'SCHEDULED';
+}
+
+function meetingStatusText(status) {
+  return {
+    READY: 'Ready',
+    SCHEDULED: 'Scheduled',
+    LIVE: 'Live',
+    COMPLETED: 'Completed',
+    CANCELLED: 'Cancelled',
+  }[normalizeMeetingStatus(status)] || 'Scheduled';
+}
+
+function meetingStatusClass(status) {
+  return {
+    READY: 'gray',
+    SCHEDULED: 'yellow',
+    LIVE: 'green',
+    COMPLETED: 'purple',
+    CANCELLED: 'red',
+  }[normalizeMeetingStatus(status)] || 'gray';
+}
+
+function providerLabel(provider) {
+  const key = String(provider || '').toUpperCase();
+  return meetingProviders.find(item => item.key === key)?.label
+    || DEFAULT_MEETING_PROVIDERS.find(item => item.key === key)?.label
+    || (key === 'ZOOM' ? 'Zoom' : 'In-platform meeting');
+}
+
+function sortSessions(list) {
+  return (list || []).slice().sort((a, b) => {
+    const leftRaw = new Date(a?.startTime || a?.scheduledAt || 0).getTime();
+    const rightRaw = new Date(b?.startTime || b?.scheduledAt || 0).getTime();
+    const left = Number.isFinite(leftRaw) ? leftRaw : Number.MAX_SAFE_INTEGER;
+    const right = Number.isFinite(rightRaw) ? rightRaw : Number.MAX_SAFE_INTEGER;
+    return left - right;
+  });
 }
 
 function skeletonCards(count) {

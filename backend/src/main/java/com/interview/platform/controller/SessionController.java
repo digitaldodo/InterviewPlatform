@@ -1,9 +1,14 @@
 package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
+import com.interview.platform.dto.MeetingDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Session;
+import com.interview.platform.model.User;
+import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.SessionService;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,45 +36,73 @@ public class SessionController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Session>> getSessionById(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<Session>> getSessionById(@PathVariable String id, Authentication authentication) {
         Session session = sessionService.getById(id)
+                .map(found -> sessionService.getByIdForUser(found.getId(), currentUser(authentication)))
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
         return ResponseEntity.ok(ApiResponse.success("Session fetched successfully", session));
     }
 
     @GetMapping("/interviewer/{id}")
-    public ResponseEntity<ApiResponse<List<Session>>> getSessionsByInterviewer(@PathVariable String id) {
-        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getByInterviewerId(id)));
+    public ResponseEntity<ApiResponse<List<Session>>> getSessionsByInterviewer(@PathVariable String id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getByInterviewerId(id, currentUser(authentication))));
     }
 
     @GetMapping("/interviewee/{id}")
-    public ResponseEntity<ApiResponse<List<Session>>> getSessionsByInterviewee(@PathVariable String id) {
-        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getByIntervieweeId(id)));
+    public ResponseEntity<ApiResponse<List<Session>>> getSessionsByInterviewee(@PathVariable String id, Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Sessions fetched successfully", sessionService.getByIntervieweeId(id, currentUser(authentication))));
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<ApiResponse<Session>> updateSessionStatus(@PathVariable String id, @RequestBody Map<String, String> request) {
-        Session updatedSession = sessionService.updateSessionStatus(id, request.get("status"));
+    public ResponseEntity<ApiResponse<Session>> updateSessionStatus(@PathVariable String id, @RequestBody Map<String, String> request,
+                                                                    Authentication authentication) {
+        Session updatedSession = sessionService.updateSessionStatus(id, request.get("status"), currentUser(authentication));
         return ResponseEntity.ok(ApiResponse.success("Session status updated successfully", updatedSession));
+    }
+
+    @GetMapping("/meeting-providers")
+    public ResponseEntity<ApiResponse<List<MeetingDtos.MeetingProviderOption>>> getMeetingProviders() {
+        return ResponseEntity.ok(ApiResponse.success("Meeting providers fetched successfully", sessionService.getMeetingProviderOptions()));
+    }
+
+    @GetMapping("/{id}/meeting-access")
+    public ResponseEntity<ApiResponse<MeetingDtos.MeetingAccessResponse>> getMeetingAccess(@PathVariable String id,
+                                                                                            Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting access fetched successfully",
+                sessionService.getMeetingAccess(id, currentUser(authentication))));
+    }
+
+    @PostMapping("/{id}/meeting/start")
+    public ResponseEntity<ApiResponse<MeetingDtos.MeetingAccessResponse>> startMeeting(@PathVariable String id,
+                                                                                        Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Meeting started successfully",
+                sessionService.startMeeting(id, currentUser(authentication))));
     }
 
     @PatchMapping("/{id}/confirm")
-    public ResponseEntity<ApiResponse<Session>> confirmSession(@PathVariable String id) {
-        return updateStatus(id, "CONFIRMED");
+    public ResponseEntity<ApiResponse<Session>> confirmSession(@PathVariable String id, Authentication authentication) {
+        return updateStatus(id, "CONFIRMED", authentication);
     }
 
     @PatchMapping("/{id}/complete")
-    public ResponseEntity<ApiResponse<Session>> completeSession(@PathVariable String id) {
-        return updateStatus(id, "COMPLETED");
+    public ResponseEntity<ApiResponse<Session>> completeSession(@PathVariable String id, Authentication authentication) {
+        return updateStatus(id, "COMPLETED", authentication);
     }
 
     @PatchMapping("/{id}/cancel")
-    public ResponseEntity<ApiResponse<Session>> cancelSession(@PathVariable String id) {
-        return updateStatus(id, "CANCELLED");
+    public ResponseEntity<ApiResponse<Session>> cancelSession(@PathVariable String id, Authentication authentication) {
+        return updateStatus(id, "CANCELLED", authentication);
     }
 
-    private ResponseEntity<ApiResponse<Session>> updateStatus(String id, String status) {
-        Session updatedSession = sessionService.updateSessionStatus(id, status);
+    private ResponseEntity<ApiResponse<Session>> updateStatus(String id, String status, Authentication authentication) {
+        Session updatedSession = sessionService.updateSessionStatus(id, status, currentUser(authentication));
         return ResponseEntity.ok(ApiResponse.success("Session status updated successfully", updatedSession));
+    }
+
+    private User currentUser(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal principal)) {
+            throw new UnauthorizedException("Authentication required");
+        }
+        return principal.getUser();
     }
 }

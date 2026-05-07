@@ -1,5 +1,7 @@
 package com.interview.platform.service;
 
+import com.interview.platform.dto.MeetingDtos;
+import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.exception.ResourceNotFoundException;
@@ -8,7 +10,11 @@ import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -25,13 +31,16 @@ public class SessionService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final EmailService emailService;
+    private final MeetingProviderService meetingProviderService;
 
     public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
-                          NotificationService notificationService, EmailService emailService) {
+                          NotificationService notificationService, EmailService emailService,
+                          MeetingProviderService meetingProviderService) {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.emailService = emailService;
+        this.meetingProviderService = meetingProviderService;
     }
 
     public Session createSession(Session session) {
@@ -82,26 +91,26 @@ public class SessionService {
         if (!userRepository.existsById(session.getCandidateId())) {
             throw new IllegalArgumentException("Interviewee does not exist");
         }
+        User interviewer = userRepository.findById(session.getInterviewerId())
+                .orElseThrow(() -> new IllegalArgumentException("Interviewer does not exist"));
+        User interviewee = userRepository.findById(session.getCandidateId())
+                .orElseThrow(() -> new IllegalArgumentException("Interviewee does not exist"));
 
         if (session.getStartTime() == null || session.getStartTime().isBlank()) {
             throw new IllegalArgumentException("Start time is required");
         }
         preventDoubleBooking(session.getInterviewerId(), session.getStartTime());
-        session.setMeetingStatus("ready");
+        meetingProviderService.provision(session, interviewer, interviewee);
         session.setCreatedAt(Instant.now());
         session.setUpdatedAt(Instant.now());
 
         Session saved = sessionRepository.save(session);
-        if (saved.getMeetingLink() == null || saved.getMeetingLink().isBlank()) {
-            saved.setMeetingLink(generateMeetingLink(saved.getId()));
-            saved = sessionRepository.save(saved);
-        }
-        notifyCreated(saved);
+        notifyCreated(saved, interviewer, interviewee);
         return saved;
     }
 
     public List<Session> getAllSessions() {
-        return sessionRepository.findAll();
+        return sortSessions(sessionRepository.findAll());
     }
 
     public Optional<Session> getById(String id) {
@@ -111,22 +120,86 @@ public class SessionService {
         return sessionRepository.findById(id);
     }
 
-    public List<Session> getByInterviewerId(String interviewerId) {
-        return sessionRepository.findByInterviewerId(interviewerId);
+    public List<Session> getByInterviewerId(String interviewerId, User actor) {
+        if (!actor.getId().equals(interviewerId)) {
+            throw new UnauthorizedException("You can only view your own interviewer sessions");
+        }
+        return sortSessions(sessionRepository.findByInterviewerId(interviewerId));
     }
 
-    public List<Session> getByIntervieweeId(String intervieweeId) {
-        return sessionRepository.findByCandidateId(intervieweeId);
+    public List<Session> getByIntervieweeId(String intervieweeId, User actor) {
+        if (!actor.getId().equals(intervieweeId)) {
+            throw new UnauthorizedException("You can only view your own interview sessions");
+        }
+        return sortSessions(sessionRepository.findByCandidateId(intervieweeId));
     }
 
-    public Session updateSessionStatus(String id, String status) {
-        Session session = sessionRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
-        session.setStatus(normalizeStatus(status));
+    public Session getByIdForUser(String id, User actor) {
+        return requireParticipant(id, actor);
+    }
+
+    public Session updateSessionStatus(String id, String status, User actor) {
+        Session session = requireParticipant(id, actor);
+        String normalizedStatus = normalizeStatus(status);
+        if ("CONFIRMED".equals(normalizedStatus) && !actor.getId().equals(session.getInterviewerId())) {
+            throw new UnauthorizedException("Only the assigned interviewer can confirm the session");
+        }
+        session.setStatus(normalizedStatus);
+        if ("COMPLETED".equals(normalizedStatus)) {
+            session.setMeetingStatus("COMPLETED");
+            if (session.getMeetingEndedAt() == null) {
+                session.setMeetingEndedAt(Instant.now());
+            }
+        } else if ("CANCELLED".equals(normalizedStatus)) {
+            session.setMeetingStatus("CANCELLED");
+            if (session.getMeetingEndedAt() == null) {
+                session.setMeetingEndedAt(Instant.now());
+            }
+        } else if ("CONFIRMED".equals(normalizedStatus) && session.getMeetingStatus() == null) {
+            session.setMeetingStatus("SCHEDULED");
+        }
         session.setUpdatedAt(Instant.now());
         Session saved = sessionRepository.save(session);
         notifyStatusChanged(saved);
         return saved;
+    }
+
+    public List<MeetingDtos.MeetingProviderOption> getMeetingProviderOptions() {
+        return meetingProviderService.providerOptions();
+    }
+
+    public MeetingDtos.MeetingAccessResponse getMeetingAccess(String sessionId, User actor) {
+        Session session = requireParticipant(sessionId, actor);
+        if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
+            throw new IllegalArgumentException("Cancelled sessions cannot be joined");
+        }
+        User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
+    }
+
+    public MeetingDtos.MeetingAccessResponse startMeeting(String sessionId, User actor) {
+        Session session = requireParticipant(sessionId, actor);
+        if (!actor.getId().equals(session.getInterviewerId())) {
+            throw new UnauthorizedException("Only the assigned interviewer can start the meeting");
+        }
+        if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus())) || "COMPLETED".equals(normalizeStatusSafe(session.getStatus()))) {
+            throw new IllegalArgumentException("This session is no longer active");
+        }
+        boolean wasLive = "LIVE".equals(normalizeStatusSafe(session.getMeetingStatus()));
+        if (!wasLive) {
+            session.setMeetingStatus("LIVE");
+            session.setMeetingStartedAt(session.getMeetingStartedAt() == null ? Instant.now() : session.getMeetingStartedAt());
+            if ("PENDING".equals(normalizeStatusSafe(session.getStatus()))) {
+                session.setStatus("CONFIRMED");
+            }
+            session.setUpdatedAt(Instant.now());
+            session = sessionRepository.save(session);
+            notifyMeetingStarted(session);
+        }
+        User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
     }
 
     private String normalizeStatus(String status) {
@@ -147,17 +220,38 @@ public class SessionService {
         }
     }
 
-    private String generateMeetingLink(String id) {
-        return "https://meet.jit.si/interviewprep-" + id.replaceAll("[^A-Za-z0-9]", "");
+    private Session requireParticipant(String sessionId, User actor) {
+        Session session = sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
+        if (!actor.getId().equals(session.getCandidateId()) && !actor.getId().equals(session.getInterviewerId())) {
+            throw new UnauthorizedException("You do not have access to this session");
+        }
+        return session;
     }
 
-    private void notifyCreated(Session session) {
+    private void notifyCreated(Session session, User interviewer, User interviewee) {
         notificationService.create(session.getCandidateId(), "SESSION_SCHEDULED", "Booking requested",
                 "Your " + session.getTitle() + " session request was sent.");
         notificationService.create(session.getInterviewerId(), "SESSION_REQUESTED", "New interview request",
                 "You have a new " + session.getTitle() + " interview request.");
-        userRepository.findById(session.getCandidateId()).ifPresent(user ->
-                emailService.sendBookingConfirmation(user.getEmail(), session.getTitle(), session.getStartTime(), session.getMeetingLink()));
+        emailService.sendSessionInvite(
+                interviewee.getEmail(),
+                interviewee.getName(),
+                interviewer.getName(),
+                session.getTitle(),
+                session.getStartTime(),
+                session.getMeetingProvider(),
+                session.getJoinUrl()
+        );
+        emailService.sendSessionInvite(
+                interviewer.getEmail(),
+                interviewer.getName(),
+                interviewee.getName(),
+                session.getTitle(),
+                session.getStartTime(),
+                session.getMeetingProvider(),
+                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl()
+        );
     }
 
     private void notifyStatusChanged(Session session) {
@@ -166,6 +260,55 @@ public class SessionService {
                 "Your " + session.getTitle() + " session is now " + session.getStatus().toLowerCase() + ".");
         notificationService.create(session.getInterviewerId(), "SESSION_" + session.getStatus(), title,
                 "The " + session.getTitle() + " session is now " + session.getStatus().toLowerCase() + ".");
+        userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
+                userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
+                    if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
+                        emailService.sendSessionCancellation(candidate.getEmail(), session.getTitle(), session.getStartTime(), interviewer.getName());
+                        emailService.sendSessionCancellation(interviewer.getEmail(), session.getTitle(), session.getStartTime(), candidate.getName());
+                    } else {
+                        emailService.sendSessionStatusUpdate(candidate.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(), session.getJoinUrl());
+                        emailService.sendSessionStatusUpdate(interviewer.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(),
+                                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl());
+                    }
+                }));
+    }
+
+    private void notifyMeetingStarted(Session session) {
+        notificationService.create(session.getCandidateId(), "MEETING_LIVE", "Interview is live",
+                "Your " + session.getTitle() + " interview room is now live.");
+        notificationService.create(session.getInterviewerId(), "MEETING_LIVE", "Interview is live",
+                "Your " + session.getTitle() + " interview room is now live.");
+        userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
+                userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
+                    emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName());
+                    emailService.sendMeetingReminder(interviewer.getEmail(), session.getTitle(), session.getStartTime(),
+                            session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
+                            candidate.getName());
+                }));
+    }
+
+    private List<Session> sortSessions(List<Session> items) {
+        return items.stream()
+                .sorted(Comparator.comparing(this::sessionSortValue))
+                .toList();
+    }
+
+    private Instant sessionSortValue(Session session) {
+        if (session == null || session.getStartTime() == null || session.getStartTime().isBlank()) {
+            return Instant.MAX;
+        }
+        try {
+            return OffsetDateTime.parse(session.getStartTime()).toInstant();
+        } catch (DateTimeParseException ignored) {
+            return Instant.MAX.minusSeconds(Math.abs(session.getStartTime().hashCode()));
+        }
+    }
+
+    private String normalizeStatusSafe(String status) {
+        if (status == null || status.isBlank()) {
+            return "";
+        }
+        return status.trim().toUpperCase();
     }
 }
 

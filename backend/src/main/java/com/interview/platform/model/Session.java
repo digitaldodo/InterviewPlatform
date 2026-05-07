@@ -25,7 +25,14 @@ public class Session {
     private String interviewType;
     private Integer durationMinutes = 45;
     private String meetingLink;
+    private String meetingId;
+    private String meetingProvider;
+    private String joinUrl;
+    private String hostUrl;
+    private String meetingPasscode;
     private String meetingStatus;
+    private Instant meetingStartedAt;
+    private Instant meetingEndedAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -62,10 +69,44 @@ public class Session {
     public void setInterviewType(String interviewType) { this.interviewType = interviewType; }
     public Integer getDurationMinutes() { return durationMinutes; }
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes == null ? 45 : durationMinutes; }
-    public String getMeetingLink() { return meetingLink; }
-    public void setMeetingLink(String meetingLink) { this.meetingLink = meetingLink; }
+    public String getMeetingLink() {
+        if (meetingLink == null || meetingLink.isBlank()) {
+            return joinUrl;
+        }
+        return meetingLink;
+    }
+    public void setMeetingLink(String meetingLink) {
+        this.meetingLink = meetingLink;
+        if ((this.joinUrl == null || this.joinUrl.isBlank()) && meetingLink != null && !meetingLink.isBlank()) {
+            this.joinUrl = meetingLink;
+        }
+    }
+    public String getMeetingId() { return meetingId; }
+    public void setMeetingId(String meetingId) { this.meetingId = meetingId; }
+    public String getMeetingProvider() { return meetingProvider; }
+    public void setMeetingProvider(String meetingProvider) { this.meetingProvider = meetingProvider; }
+    public String getJoinUrl() {
+        if ((joinUrl == null || joinUrl.isBlank()) && meetingLink != null && !meetingLink.isBlank()) {
+            return meetingLink;
+        }
+        return joinUrl;
+    }
+    public void setJoinUrl(String joinUrl) {
+        this.joinUrl = joinUrl;
+        if ((this.meetingLink == null || this.meetingLink.isBlank()) && joinUrl != null && !joinUrl.isBlank()) {
+            this.meetingLink = joinUrl;
+        }
+    }
+    public String getHostUrl() { return hostUrl; }
+    public void setHostUrl(String hostUrl) { this.hostUrl = hostUrl; }
+    public String getMeetingPasscode() { return meetingPasscode; }
+    public void setMeetingPasscode(String meetingPasscode) { this.meetingPasscode = meetingPasscode; }
     public String getMeetingStatus() { return meetingStatus; }
     public void setMeetingStatus(String meetingStatus) { this.meetingStatus = meetingStatus; }
+    public Instant getMeetingStartedAt() { return meetingStartedAt; }
+    public void setMeetingStartedAt(Instant meetingStartedAt) { this.meetingStartedAt = meetingStartedAt; }
+    public Instant getMeetingEndedAt() { return meetingEndedAt; }
+    public void setMeetingEndedAt(Instant meetingEndedAt) { this.meetingEndedAt = meetingEndedAt; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

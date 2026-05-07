@@ -62,7 +62,7 @@
           <div class="interviewer-row" id="recommended-list"></div>
         </section>
         <section class="panel">
-          <div class="panel-head"><h2>Upcoming interviews</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Manage</button></div>
+          <div class="panel-head"><h2>Upcoming meetings</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Manage</button></div>
           <div id="upcoming-list"></div>
         </section>
       </div>
@@ -137,6 +137,48 @@
         <button class="chip" onclick="renderSessions('history')">History</button>
       </div>
       <div id="sessions-list" class="session-grid"></div>
+    </section>
+
+    <section id="section-meeting" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Meeting Room</p><h1 id="meeting-page-heading">Interview room</h1></div>
+        <div class="topbar-actions">
+          <button class="btn btn-outline" onclick="leaveMeetingRoom(true)">Back to sessions</button>
+          <a class="btn btn-primary" id="meeting-open-external" href="#" target="_blank" rel="noreferrer" hidden>Open externally</a>
+        </div>
+      </div>
+      <div class="meeting-layout">
+        <section class="panel meeting-stage-panel">
+          <div class="meeting-stage-head">
+            <div class="meeting-stage-copy">
+              <div class="meeting-badge-row">
+                <span class="badge badge-gray" id="meeting-provider-badge">Meeting</span>
+                <span class="badge badge-gray" id="meeting-status-badge">Scheduled</span>
+              </div>
+              <h2 id="meeting-title">Interview session</h2>
+              <p id="meeting-subtitle">Open the room from your dashboard when it's time to begin.</p>
+            </div>
+            <div class="meeting-timer-card">
+              <span>Timer</span>
+              <strong id="meeting-timer">00:00</strong>
+            </div>
+          </div>
+          <div class="meeting-toolbar" id="meeting-toolbar" hidden>
+            <button class="btn btn-outline btn-sm" type="button" onclick="toggleMeetingAudio()">Mic</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="toggleMeetingVideo()">Camera</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="toggleMeetingScreenShare()">Share Screen</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="toggleMeetingTileView()">Tile View</button>
+            <button class="btn btn-danger btn-sm" type="button" onclick="leaveMeetingRoom()">Leave</button>
+          </div>
+          <div class="meeting-stage">
+            <div id="meeting-embed-root" class="meeting-embed-root"></div>
+            <div id="meeting-fallback" class="meeting-fallback" hidden></div>
+          </div>
+        </section>
+        <aside class="panel meeting-side-panel">
+          <div id="meeting-meta"></div>
+        </aside>
+      </div>
     </section>
 
     <section id="section-feedback" class="dashboard-section" hidden>

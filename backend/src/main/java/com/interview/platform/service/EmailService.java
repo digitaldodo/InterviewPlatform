@@ -52,6 +52,29 @@ public class EmailService {
         send(to, "Your mock interview is booked", bookingTemplate(title, startTime, meetingLink));
     }
 
+    public void sendSessionInvite(String to, String recipientName, String counterpartName, String title,
+                                  String startTime, String meetingProvider, String meetingLink) {
+        log.info("Preparing session invite email for {}", maskEmail(to));
+        send(to, "Your interview session is scheduled",
+                meetingInviteTemplate(recipientName, counterpartName, title, startTime, meetingProvider, meetingLink));
+    }
+
+    public void sendMeetingReminder(String to, String title, String startTime, String meetingLink, String counterpartName) {
+        log.info("Preparing meeting reminder email for {}", maskEmail(to));
+        send(to, "Your interview room is live",
+                meetingReminderTemplate(title, startTime, meetingLink, counterpartName));
+    }
+
+    public void sendSessionCancellation(String to, String title, String startTime, String counterpartName) {
+        log.info("Preparing session cancellation email for {}", maskEmail(to));
+        send(to, "Interview session cancelled", cancellationTemplate(title, startTime, counterpartName));
+    }
+
+    public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl) {
+        log.info("Preparing session status email for {}", maskEmail(to));
+        send(to, "Interview session update", sessionStatusTemplate(title, status, startTime, launchUrl));
+    }
+
     private void send(String to, String subject, String html) {
         if (apiKey == null || apiKey.isBlank()) {
             log.error("SendGrid API key is not configured. Email '{}' for {} was not sent.", subject, maskEmail(to));
@@ -131,5 +154,62 @@ public class EmailService {
                   </div>
                 </div>
                 """.formatted(title, startTime, meetingLink);
+    }
+
+    private String meetingInviteTemplate(String recipientName, String counterpartName, String title, String startTime,
+                                         String meetingProvider, String meetingLink) {
+        return """
+                <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
+                  <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
+                    <h1 style="margin:0 0 12px">Interview session confirmed</h1>
+                    <p style="color:#a5adbd">Hi %s, your %s session with %s is booked for %s.</p>
+                    <p style="color:#a5adbd">Meeting provider: %s</p>
+                    <p><a href="%s" style="display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Open meeting</a></p>
+                    <p style="color:#a5adbd">You can also join from your InterviewPrep dashboard.</p>
+                  </div>
+                </div>
+                """.formatted(safe(recipientName), safe(title), safe(counterpartName), safe(startTime), safe(meetingProvider), safe(meetingLink));
+    }
+
+    private String meetingReminderTemplate(String title, String startTime, String meetingLink, String counterpartName) {
+        return """
+                <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
+                  <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
+                    <h1 style="margin:0 0 12px">Your meeting is live</h1>
+                    <p style="color:#a5adbd">%s with %s is ready to begin. Scheduled time: %s.</p>
+                    <p><a href="%s" style="display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Join now</a></p>
+                  </div>
+                </div>
+                """.formatted(safe(title), safe(counterpartName), safe(startTime), safe(meetingLink));
+    }
+
+    private String cancellationTemplate(String title, String startTime, String counterpartName) {
+        return """
+                <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
+                  <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
+                    <h1 style="margin:0 0 12px">Session cancelled</h1>
+                    <p style="color:#a5adbd">%s scheduled for %s with %s has been cancelled.</p>
+                  </div>
+                </div>
+                """.formatted(safe(title), safe(startTime), safe(counterpartName));
+    }
+
+    private String sessionStatusTemplate(String title, String status, String startTime, String launchUrl) {
+        String button = (launchUrl == null || launchUrl.isBlank()) ? "" :
+                "<p><a href=\"%s\" style=\"display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none\">Open session</a></p>"
+                        .formatted(safe(launchUrl));
+        return """
+                <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
+                  <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
+                    <h1 style="margin:0 0 12px">Session update</h1>
+                    <p style="color:#a5adbd">%s is now %s. Scheduled time: %s.</p>
+                    %s
+                  </div>
+                </div>
+                """.formatted(safe(title), safe(status), safe(startTime), button);
+    }
+
+    private String safe(String value) {
+        return value == null ? "" : value;
     }
 }

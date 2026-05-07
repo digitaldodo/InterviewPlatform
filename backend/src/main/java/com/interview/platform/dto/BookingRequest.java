@@ -13,6 +13,7 @@ public class BookingRequest {
     private String startTime;
     private Integer durationMinutes;
     private String notes;
+    private String meetingProvider;
 
     public String getInterviewerId() { return interviewerId; }
     public void setInterviewerId(String interviewerId) { this.interviewerId = interviewerId; }
@@ -26,4 +27,6 @@ public class BookingRequest {
     public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getMeetingProvider() { return meetingProvider; }
+    public void setMeetingProvider(String meetingProvider) { this.meetingProvider = meetingProvider; }
 }

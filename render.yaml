@@ -23,6 +23,20 @@ services:
         sync: false
       - key: FRONTEND_URL
         value: https://interview-platform-frontend.onrender.com
+      - key: MEETING_DEFAULT_PROVIDER
+        value: JITSI
+      - key: JITSI_DOMAIN
+        value: meet.jit.si
+      - key: JITSI_TENANT
+        value: ""
+      - key: ZOOM_ACCOUNT_ID
+        sync: false
+      - key: ZOOM_CLIENT_ID
+        sync: false
+      - key: ZOOM_CLIENT_SECRET
+        sync: false
+      - key: ZOOM_USER_ID
+        sync: false
 
   - type: web
     name: interview-platform-frontend
