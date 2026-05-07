@@ -92,7 +92,17 @@ const FormUx = (() => {
 
     function render() {
       renderChips(control.chipWrap, control.textInput, state.values, removeAt);
-      renderOptions(control, filteredSuggestions(), state, commit);
+      renderOptions(control, filteredSuggestions(), state, options.suggestionClickCommits === false ? fillSuggestion : commit);
+    }
+
+    function fillSuggestion(raw) {
+      const value = normalizeValue(raw);
+      control.textInput.value = value;
+      state.query = value;
+      state.open = false;
+      state.activeIndex = -1;
+      render();
+      control.textInput.focus();
     }
 
     control.textInput.addEventListener('focus', () => {
@@ -109,7 +119,7 @@ const FormUx = (() => {
 
     control.textInput.addEventListener('keydown', event => {
       const items = filteredSuggestions();
-      if (event.key === 'Enter' || event.key === ',' || (event.key === 'Tab' && control.textInput.value.trim())) {
+      if (event.key === 'Enter' || event.key === ',' || (options.commitOnTab !== false && event.key === 'Tab' && control.textInput.value.trim())) {
         event.preventDefault();
         commit(state.activeIndex >= 0 && items[state.activeIndex] ? items[state.activeIndex] : control.textInput.value);
       } else if (event.key === 'Backspace' && !control.textInput.value && state.values.length) {

@@ -492,6 +492,7 @@ textarea:focus-visible {
 .availability-form-card,
 .availability-content-card,
 .availability-slot-card,
+.availability-preference-card,
 .availability-summary-card,
 .availability-item,
 .booking-selection-banner,
@@ -1811,6 +1812,7 @@ textarea:focus-visible {
 .availability-form-card,
 .availability-content-card,
 .availability-slot-card,
+.availability-preference-card,
 .availability-summary-card,
 .availability-item {
   border: 1px solid var(--line);
@@ -1821,6 +1823,7 @@ textarea:focus-visible {
 .availability-form-card,
 .availability-content-card,
 .availability-slot-card,
+.availability-preference-card,
 .availability-summary-card {
   padding: 1rem;
 }
@@ -1883,9 +1886,20 @@ textarea:focus-visible {
   margin-top: 1rem;
 }
 
-.availability-summary-card {
+.availability-summary-card,
+.availability-preference-card {
   display: grid;
   gap: 0.6rem;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 0.45rem;
+  color: var(--muted);
+}
+
+.compact-textarea {
+  min-height: 84px;
 }
 
 .availability-summary-empty {

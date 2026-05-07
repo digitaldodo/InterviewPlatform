@@ -31,6 +31,16 @@ const DEFAULT_MEETING_PROVIDERS = [
 const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const TOPIC_OPTIONS = ['Java', 'DSA', 'Spring Boot', 'System Design', 'React', 'Node.js', 'SQL', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
+const DOMAIN_SUGGESTIONS = ['Backend', 'Frontend', 'Full Stack', 'DevOps', 'HR', 'DSA', 'System Design', 'Java', 'React', 'Spring Boot'];
+const AVAILABILITY_PREFERENCES = [
+  'Weekday mornings',
+  'Weekday afternoons',
+  'Weekday evenings',
+  'Weekend only',
+  'Flexible schedule',
+  'Late night availability',
+  'Early morning availability',
+];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
@@ -1541,6 +1551,8 @@ function renderProfile() {
   const isVerified = Boolean(currentUser.isVerified);
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
   const showLegacyAvailabilityField = !hasInterviewerRole();
+  const availabilityPreference = intervieweeAvailabilityPreference();
+  const availabilityNotes = intervieweeAvailabilityNotes();
   summary.innerHTML = `
     <div class="preview-profile">
       <div id="profile-summary-avatar">${avatarMarkup(currentUser, 'avatar large', currentProfileAvatarUrl())}</div>
@@ -1613,6 +1625,7 @@ function renderProfile() {
         <div class="form-group">
           <label for="profile-domains">Preferred interview domains</label>
           <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
+          <small class="field-hint">Press Enter or comma to add a domain. Suggestions and custom domains are both supported.</small>
         </div>
         <div class="form-group">
           <label for="profile-experience">Experience level</label>
@@ -1622,9 +1635,28 @@ function renderProfile() {
         </div>
       </div>
       ${showLegacyAvailabilityField ? `
-        <div class="form-group">
-          <label for="profile-availability">Availability notes</label>
-          <input id="profile-availability" value="${esc((currentUser.availability || []).join(', '))}" placeholder="Weekday evenings, Saturday mornings" />
+        <div class="availability-preference-card">
+          <h3>Interviewee availability preferences</h3>
+          <p class="availability-summary-note">These preferences help recommendations and booking context. Interviewers still control the actual schedulable slots.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="profile-availability-preference">Preferred time window</label>
+              <select id="profile-availability-preference">
+                <option value="">Select preference</option>
+                ${AVAILABILITY_PREFERENCES.map(option => `<option value="${esc(option)}" ${option === availabilityPreference ? 'selected' : ''}>${esc(option)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="profile-availability-days">Preferred days</label>
+              <select id="profile-availability-days">
+                ${['', 'Weekdays', 'Weekends', 'Any day'].map(option => `<option value="${esc(option)}" ${option === intervieweePreferredDays() ? 'selected' : ''}>${esc(option || 'Select days')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="profile-availability-notes">Additional availability notes</label>
+            <textarea id="profile-availability-notes" class="compact-textarea" placeholder="Available after office hours, prefer IST timezone, flexible on weekends">${esc(availabilityNotes)}</textarea>
+          </div>
         </div>
       ` : `
         <div class="availability-summary-card">
@@ -1667,7 +1699,41 @@ function renderProfile() {
 
 function initProfileControls() {
   FormUx.initTagInput('profile-skills', { placeholder: 'Add skill or expertise' });
+  FormUx.initTagInput('profile-domains', {
+    placeholder: 'Add domain',
+    label: 'Add preferred interview domain',
+    suggestions: DOMAIN_SUGGESTIONS,
+    commitOnTab: false,
+    suggestionClickCommits: false,
+  });
   FormUx.initLanguageSelect('profile-language', { placeholder: 'Search languages' });
+}
+
+function intervieweeAvailabilityValues() {
+  return Array.isArray(currentUser.availability) ? currentUser.availability.filter(Boolean) : [];
+}
+
+function intervieweeAvailabilityPreference() {
+  return intervieweeAvailabilityValues().find(item => AVAILABILITY_PREFERENCES.includes(item)) || '';
+}
+
+function intervieweePreferredDays() {
+  return intervieweeAvailabilityValues().find(item => ['Weekdays', 'Weekends', 'Any day'].includes(item)) || '';
+}
+
+function intervieweeAvailabilityNotes() {
+  return intervieweeAvailabilityValues()
+    .filter(item => !AVAILABILITY_PREFERENCES.includes(item))
+    .filter(item => !['Weekdays', 'Weekends', 'Any day'].includes(item))
+    .join(', ');
+}
+
+function profileAvailabilityPayload() {
+  return [
+    val('profile-availability-preference'),
+    val('profile-availability-days'),
+    val('profile-availability-notes'),
+  ].filter(Boolean);
 }
 
 function filterSelf(list) {
@@ -2086,12 +2152,11 @@ async function saveProfile(event) {
       bio: val('profile-bio'),
       skills: FormUx.getTagValues('profile-skills'),
       language: FormUx.getLanguageString('profile-language'),
-      preferredDomains: splitList(val('profile-domains')),
+      preferredDomains: FormUx.getTagValues('profile-domains'),
       experienceLevel: val('profile-experience'),
     };
-    const availabilityField = document.getElementById('profile-availability');
-    if (availabilityField) {
-      payload.availability = splitList(availabilityField.value);
+    if (document.getElementById('profile-availability-preference')) {
+      payload.availability = profileAvailabilityPayload();
     }
     const updated = await api('/api/users/me/profile', {
       method: 'PUT',
