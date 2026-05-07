@@ -89,9 +89,9 @@ If your backend runs somewhere else, update `frontend/js/env.js` locally or over
 | `JWT_SECRET` | Yes in production | development fallback | HMAC signing secret, at least 32 characters. |
 | `JWT_ACCESS_TOKEN_MINUTES` | No | `45` | Access token lifetime. |
 | `JWT_REFRESH_TOKEN_DAYS` | No | `14` | Refresh token lifetime. |
-| `SENDGRID_API_KEY` | Yes for email | none | SendGrid API key used for OTP and reset emails. |
+| `SENDGRID_API_KEY` | Yes for email | none | SendGrid API key used for verification and password reset OTP emails. |
 | `SENDGRID_FROM_EMAIL` | Yes for email | `no-reply@interviewprep.local` | Verified SendGrid sender address. |
-| `FRONTEND_URL` | Yes for reset links | `http://localhost:5500` | Public frontend URL used in password reset emails. |
+| `FRONTEND_URL` | No | `http://localhost:5500` | Public frontend URL retained for branded email context. |
 | `JAVA_OPTS` | No | `-XX:MaxRAMPercentage=75.0` | JVM options used by the Docker container. |
 
 ### Frontend
@@ -172,8 +172,9 @@ Use backslashes instead of backticks on macOS/Linux.
 | `POST` | `/api/auth/send-otp` | Send verification OTP |
 | `POST` | `/api/auth/resend-otp` | Rate-limited OTP resend |
 | `POST` | `/api/auth/verify-otp` | Verify OTP and activate account |
-| `POST` | `/api/auth/forgot-password` | Send reset email if account exists |
-| `POST` | `/api/auth/reset-password` | Validate reset token and update password |
+| `POST` | `/api/auth/forgot-password` | Send password reset OTP if account exists |
+| `POST` | `/api/auth/verify-reset-otp` | Verify password reset OTP and issue a short-lived reset token |
+| `POST` | `/api/auth/reset-password` | Validate verified reset token and update password |
 | `POST` | `/api/users/register` | Register a user |
 | `POST` | `/api/users/login` | Login |
 | `GET` | `/api/users` | List users |

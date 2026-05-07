@@ -20,6 +20,8 @@
       <button class="nav-link" data-section="booking" onclick="showSection('booking')">Booking</button>
       <button class="nav-link" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
       <button class="nav-link" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
+      <button class="nav-link" data-section="notifications" onclick="showSection('notifications')">Notifications</button>
+      <button class="nav-link" data-section="profile" onclick="showSection('profile')">Profile</button>
       <button class="nav-link interviewer-only" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
     </nav>
     <div class="sidebar-bottom">
@@ -36,7 +38,7 @@
         <h1 id="welcome-heading">Welcome back</h1>
       </div>
       <div class="topbar-actions">
-        <button class="icon-btn" onclick="toggleNotifications()" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
+        <button class="icon-btn" onclick="showSection('notifications')" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
         <button class="btn btn-primary" onclick="showSection('discover')">Book session</button>
       </div>
       <div class="notification-panel" id="notification-panel"></div>
@@ -172,6 +174,29 @@
         <section class="panel"><h2>Calendar view</h2><div id="calendar-view" class="calendar-view"></div></section>
       </div>
     </section>
+
+    <section id="section-notifications" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Notifications</p><h1>Updates and reminders</h1></div>
+        <button class="btn btn-outline" onclick="loadNotifications()">Refresh</button>
+      </div>
+      <section class="panel">
+        <div id="notifications-list"></div>
+      </section>
+    </section>
+
+    <section id="section-profile" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Profile</p><h1>Account and preferences</h1></div>
+      </div>
+      <div class="content-grid">
+        <section class="panel" id="profile-summary"></section>
+        <section class="panel">
+          <h2>Saved interviewers</h2>
+          <div id="saved-interviewers"></div>
+        </section>
+      </div>
+    </section>
   </main>
 
   <nav class="bottom-nav" aria-label="Mobile navigation">
@@ -179,7 +204,7 @@
     <button onclick="showSection('sessions')">Sessions</button>
     <button onclick="showSection('discover')">Search</button>
     <button onclick="showSection('feedback')">Feedback</button>
-    <button onclick="showSection('overview')">Profile</button>
+    <button onclick="showSection('profile')">Profile</button>
   </nav>
 
   <div id="modal-root"></div>

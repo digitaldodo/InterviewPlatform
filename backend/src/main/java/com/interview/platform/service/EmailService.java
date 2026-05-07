@@ -37,8 +37,11 @@ public class EmailService {
     }
 
     public void sendPasswordReset(String to, String token) {
-        String resetUrl = frontendUrl.replaceAll("/$", "") + "/index.html?resetToken=" + token;
-        send(to, "Reset your InterviewPrep password", resetTemplate(resetUrl));
+        sendPasswordResetOtp(to, token);
+    }
+
+    public void sendPasswordResetOtp(String to, String otp) {
+        send(to, "Reset your InterviewPrep password", resetOtpTemplate(otp));
     }
 
     public void sendBookingConfirmation(String to, String title, String startTime, String meetingLink) {
@@ -79,16 +82,17 @@ public class EmailService {
                 """.formatted(otp);
     }
 
-    private String resetTemplate(String resetUrl) {
+    private String resetOtpTemplate(String otp) {
         return """
                 <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
                   <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
                     <h1 style="margin:0 0 12px">Reset your password</h1>
-                    <p style="color:#a5adbd">This secure link expires in 30 minutes.</p>
-                    <p><a href="%s" style="display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Reset password</a></p>
+                    <p style="color:#a5adbd">Use this one-time code inside InterviewPrep to set a new password.</p>
+                    <div style="font-size:32px;letter-spacing:8px;font-weight:700;color:#f4c95d;margin:24px 0">%s</div>
+                    <p style="color:#a5adbd">This code expires in 10 minutes. If you did not request it, you can ignore this email.</p>
                   </div>
                 </div>
-                """.formatted(resetUrl);
+                """.formatted(otp);
     }
 
     private String bookingTemplate(String title, String startTime, String meetingLink) {

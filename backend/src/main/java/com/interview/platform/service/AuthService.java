@@ -97,6 +97,9 @@ public class AuthService {
         if (!matchesPassword(user, request.getPassword())) {
             throw new UnauthorizedException("Invalid email or password");
         }
+        if (!Boolean.TRUE.equals(user.getIsVerified()) && user.getCreatedAt() == null) {
+            user.setIsVerified(true);
+        }
         if (!Boolean.TRUE.equals(user.getIsVerified())) {
             throw new UnauthorizedException("Please verify your email before signing in");
         }
@@ -169,15 +172,48 @@ public class AuthService {
 
     public void forgotPassword(String email) {
         userRepository.findByEmail(normalizeEmail(email)).ifPresent(user -> {
-            String token = tokenService.randomToken();
+            PasswordResetToken recent = passwordResetTokenRepository
+                    .findTopByUserIdAndUsedFalseOrderByCreatedAtDesc(user.getId())
+                    .orElse(null);
+            Instant now = Instant.now();
+            if (recent != null && recent.getLastSentAt() != null && recent.getLastSentAt().plusSeconds(60).isAfter(now)) {
+                throw new IllegalArgumentException("Please wait before requesting another reset OTP");
+            }
+            String otp = tokenService.otp();
             PasswordResetToken record = new PasswordResetToken();
             record.setUserId(user.getId());
-            record.setTokenHash(tokenService.sha256(token));
-            record.setCreatedAt(Instant.now());
-            record.setExpiresAt(Instant.now().plusSeconds(1800));
+            record.setOtpHash(passwordEncoder.encode(otp));
+            record.setCreatedAt(now);
+            record.setLastSentAt(now);
+            record.setExpiresAt(now.plusSeconds(600));
             passwordResetTokenRepository.save(record);
-            emailService.sendPasswordReset(user.getEmail(), token);
+            emailService.sendPasswordResetOtp(user.getEmail(), otp);
         });
+    }
+
+    public String verifyResetOtp(String email, String otp) {
+        User user = userRepository.findByEmail(normalizeEmail(email))
+                .orElseThrow(() -> new IllegalArgumentException("Invalid reset code"));
+        PasswordResetToken record = passwordResetTokenRepository
+                .findTopByUserIdAndUsedFalseOrderByCreatedAtDesc(user.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Reset code not found"));
+        if (record.getExpiresAt().isBefore(Instant.now())) {
+            throw new IllegalArgumentException("Reset code expired");
+        }
+        if (record.getAttempts() >= 5) {
+            throw new IllegalArgumentException("Too many reset attempts");
+        }
+        if (record.getOtpHash() == null || !passwordEncoder.matches(otp, record.getOtpHash())) {
+            record.setAttempts(record.getAttempts() + 1);
+            passwordResetTokenRepository.save(record);
+            throw new IllegalArgumentException("Invalid reset code");
+        }
+        String resetToken = tokenService.randomToken();
+        record.setTokenHash(tokenService.sha256(resetToken));
+        record.setVerified(true);
+        record.setExpiresAt(Instant.now().plusSeconds(600));
+        passwordResetTokenRepository.save(record);
+        return resetToken;
     }
 
     public void resetPassword(String token, String newPassword) {
@@ -189,10 +225,14 @@ public class AuthService {
         if (record.getExpiresAt().isBefore(Instant.now())) {
             throw new IllegalArgumentException("Reset token expired");
         }
+        if (!record.isVerified()) {
+            throw new IllegalArgumentException("Reset code must be verified first");
+        }
         User user = userRepository.findById(record.getUserId())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         user.setPassword(null);
+        user.setIsVerified(true);
         userRepository.save(user);
         record.setUsed(true);
         passwordResetTokenRepository.save(record);

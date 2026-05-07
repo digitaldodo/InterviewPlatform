@@ -11,13 +11,14 @@ const authStore = {
   },
 };
 
+let resetEmail = '';
+
 window.addEventListener('DOMContentLoaded', () => {
   if (authStore.user()?.id) window.location.href = 'pages/dashboard.html';
   document.getElementById('interviewer-fields').style.display = 'none';
-  document.getElementById('reset-token-group').style.display = 'none';
+  document.getElementById('reset-otp-group').style.display = 'none';
   document.getElementById('reset-password-group').style.display = 'none';
-  const resetToken = new URLSearchParams(window.location.search).get('resetToken');
-  if (resetToken) openResetPanel(resetToken);
+  document.getElementById('reset-resend').style.display = 'none';
 });
 
 document.getElementById('reg-role').addEventListener('change', function () {
@@ -167,32 +168,48 @@ async function resendOtp() {
   }
 }
 
-function openResetPanel(token = '') {
+function openResetPanel() {
   switchTab('reset');
-  const hasToken = Boolean(token);
-  document.getElementById('reset-token').value = token;
-  document.getElementById('forgot-email-group').style.display = hasToken ? 'none' : 'flex';
-  document.getElementById('reset-token-group').style.display = hasToken ? 'flex' : 'none';
-  document.getElementById('reset-password-group').style.display = hasToken ? 'flex' : 'none';
-  document.getElementById('reset-submit').textContent = hasToken ? 'Reset password' : 'Send reset link';
+  resetEmail = '';
+  document.getElementById('reset-form').reset();
+  document.getElementById('forgot-email-group').style.display = 'flex';
+  document.getElementById('reset-otp-group').style.display = 'none';
+  document.getElementById('reset-password-group').style.display = 'none';
+  document.getElementById('reset-resend').style.display = 'none';
+  document.getElementById('reset-submit').textContent = 'Send reset OTP';
 }
 
 document.getElementById('reset-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const token = document.getElementById('reset-token').value.trim();
+  const btn = document.getElementById('reset-submit');
+  setLoading(btn, true, 'Working');
   try {
-    if (!token) {
+    if (!resetEmail) {
+      const email = document.getElementById('forgot-email').value.trim();
       await api('/api/auth/forgot-password', {
         method: 'POST',
-        body: JSON.stringify({ email: document.getElementById('forgot-email').value.trim() }),
+        body: JSON.stringify({ email }),
       });
-      showAlert('reset-alert', 'If that email exists, a reset link has been sent.', 'success');
+      resetEmail = email;
+      document.getElementById('forgot-email-group').style.display = 'none';
+      document.getElementById('reset-otp-group').style.display = 'flex';
+      document.getElementById('reset-password-group').style.display = 'flex';
+      document.getElementById('reset-resend').style.display = 'inline-flex';
+      document.getElementById('reset-submit').textContent = 'Reset password';
+      showAlert('reset-alert', 'If that email exists, a reset OTP has been sent.', 'success');
       return;
     }
+    const verified = await api('/api/auth/verify-reset-otp', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: resetEmail,
+        otp: document.getElementById('reset-otp').value.trim(),
+      }),
+    });
     await api('/api/auth/reset-password', {
       method: 'POST',
       body: JSON.stringify({
-        token,
+        token: verified.resetToken,
         newPassword: document.getElementById('reset-password').value,
       }),
     });
@@ -200,5 +217,23 @@ document.getElementById('reset-form').addEventListener('submit', async event => 
     setTimeout(() => switchTab('login'), 1000);
   } catch (err) {
     showAlert('reset-alert', err.message);
+  } finally {
+    setLoading(btn, false);
+    if (resetEmail) {
+      btn.textContent = 'Reset password';
+    }
   }
 });
+
+async function resendResetOtp() {
+  if (!resetEmail) return;
+  try {
+    await api('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: resetEmail }),
+    });
+    showAlert('reset-alert', 'A fresh reset OTP has been sent.', 'success');
+  } catch (err) {
+    showAlert('reset-alert', err.message);
+  }
+}

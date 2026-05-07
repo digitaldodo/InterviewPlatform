@@ -10,6 +10,7 @@ let selectedInterviewer = null;
 let bookingStep = 1;
 let bookingState = { interviewer: null, interviewType: '', startTime: '' };
 let searchTimer = null;
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'feedback', 'notifications', 'profile', 'interviewer']);
 
 window.addEventListener('DOMContentLoaded', async () => {
   currentUser = readJson('ip_user');
@@ -21,8 +22,10 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindFilters();
   bindFeedbackForm();
   await Promise.all([loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications()]);
-  showSection('overview');
+  showSection(routeFromHash(), false);
 });
+
+window.addEventListener('hashchange', () => showSection(routeFromHash(), false));
 
 function readJson(key) {
   try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
@@ -53,14 +56,25 @@ function toggleSidebar(forceOpen) {
   sidebar.classList.toggle('open');
 }
 
-function showSection(name) {
+function routeFromHash() {
+  const value = window.location.hash.replace(/^#\/?/, '') || 'overview';
+  return ROUTES.has(value) ? value : 'overview';
+}
+
+function showSection(name, updateRoute = true) {
+  const targetName = ROUTES.has(name) ? name : 'overview';
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
-  document.getElementById(`section-${name}`).hidden = false;
-  document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === name));
-  if (name === 'booking') renderBookingStep();
-  if (name === 'feedback') populateFeedbackSessions();
-  if (name === 'sessions') renderSessions('upcoming');
+  document.getElementById(`section-${targetName}`).hidden = false;
+  document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === targetName));
+  if (targetName === 'booking') renderBookingStep();
+  if (targetName === 'feedback') populateFeedbackSessions();
+  if (targetName === 'sessions') renderSessions('upcoming');
+  if (targetName === 'notifications') loadNotifications();
+  if (targetName === 'profile') renderProfile();
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
+  if (updateRoute && window.location.hash !== `#/${targetName}`) {
+    history.pushState(null, '', `#/${targetName}`);
+  }
 }
 
 async function api(path, options = {}, retry = true) {
@@ -449,12 +463,15 @@ async function loadNotifications() {
 
 function renderNotifications(items) {
   const panel = document.getElementById('notification-panel');
-  panel.innerHTML = items.map(item => `
+  const html = items.map(item => `
     <button class="notification-item ${item.read ? '' : 'unread'}" onclick="markNotificationRead('${item.id}')">
       <strong>${esc(item.title || 'Notification')}</strong>
       <span>${esc(item.message || '')}</span>
     </button>
   `).join('') || emptyState('No notifications.');
+  panel.innerHTML = html;
+  const page = document.getElementById('notifications-list');
+  if (page) page.innerHTML = html;
 }
 
 function toggleNotifications() {
@@ -464,6 +481,31 @@ function toggleNotifications() {
 async function markNotificationRead(id) {
   await api(`/api/notifications/${id}/read`, { method: 'PATCH' });
   await loadNotifications();
+}
+
+function renderProfile() {
+  const summary = document.getElementById('profile-summary');
+  if (!summary) return;
+  const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
+  summary.innerHTML = `
+    <div class="preview-profile">
+      <div class="avatar large">${initials(currentUser)}</div>
+      <div>
+        <h2>${esc(currentUser.name || currentUser.username || 'InterviewPrep user')}</h2>
+        <p>${esc(currentUser.email || '')}</p>
+        <span class="badge badge-purple">${esc(role)}</span>
+      </div>
+    </div>
+    <div class="stats-inline" style="margin-top:1rem;">
+      <span>${sessions.length} sessions</span>
+      <span>${Number(currentUser.averageRating || 0).toFixed(1)} rating</span>
+      <span>${currentUser.isVerified ? 'Verified' : 'Verification pending'}</span>
+    </div>
+  `;
+  const saved = document.getElementById('saved-interviewers');
+  const ids = currentUser.favoriteInterviewerIds || [];
+  const savedList = interviewers.filter(item => ids.includes(item.id));
+  saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
 }
 
 function renderSkillProgress() {

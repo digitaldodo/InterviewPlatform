@@ -58,7 +58,13 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody AuthDtos.OtpRequest request) {
         authService.forgotPassword(request.getEmail());
-        return ResponseEntity.ok(ApiResponse.success("If the email exists, a reset link has been sent.", null));
+        return ResponseEntity.ok(ApiResponse.success("If the email exists, a reset OTP has been sent.", null));
+    }
+
+    @PostMapping("/verify-reset-otp")
+    public ResponseEntity<ApiResponse<AuthDtos.ResetOtpResponse>> verifyResetOtp(@Valid @RequestBody AuthDtos.VerifyResetOtpRequest request) {
+        String resetToken = authService.verifyResetOtp(request.getEmail(), request.getOtp());
+        return ResponseEntity.ok(ApiResponse.success("Reset OTP verified", new AuthDtos.ResetOtpResponse(resetToken)));
     }
 
     @PostMapping("/reset-password")

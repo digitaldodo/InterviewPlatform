@@ -78,6 +78,24 @@ public class AuthDtos {
         public void setOtp(String otp) { this.otp = otp; }
     }
 
+    public static class VerifyResetOtpRequest extends OtpRequest {
+        @NotBlank
+        private String otp;
+        public String getOtp() { return otp; }
+        public void setOtp(String otp) { this.otp = otp; }
+    }
+
+    public static class ResetOtpResponse {
+        private String resetToken;
+
+        public ResetOtpResponse(String resetToken) {
+            this.resetToken = resetToken;
+        }
+
+        public String getResetToken() { return resetToken; }
+        public void setResetToken(String resetToken) { this.resetToken = resetToken; }
+    }
+
     public static class ResetPasswordRequest {
         @NotBlank
         private String token;

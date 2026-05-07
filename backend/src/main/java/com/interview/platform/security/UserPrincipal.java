@@ -38,5 +38,5 @@ public class UserPrincipal implements UserDetails {
     public boolean isCredentialsNonExpired() { return true; }
 
     @Override
-    public boolean isEnabled() { return Boolean.TRUE.equals(user.getIsVerified()); }
+    public boolean isEnabled() { return Boolean.TRUE.equals(user.getIsVerified()) || user.getCreatedAt() == null; }
 }

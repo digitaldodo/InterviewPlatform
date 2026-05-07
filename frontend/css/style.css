@@ -751,6 +751,16 @@ textarea:focus-visible {
   display: grid;
   gap: 1rem;
   min-width: 0;
+  animation: viewFade 0.18s ease both;
+}
+
+.dashboard-section[hidden] {
+  display: none !important;
+}
+
+@keyframes viewFade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .stats-grid {
