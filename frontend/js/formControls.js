@@ -46,131 +46,104 @@ const FormUx = (() => {
     if (!input || input.dataset.enhancedControl === 'tag') return input?.__chipControl;
 
     const suggestions = options.suggestions || expertiseSuggestions;
+    const control = createControl(input, {
+      className: 'tag-input-control',
+      placeholder: options.placeholder || input.placeholder || 'Add expertise',
+      label: options.label || 'Add expertise',
+    });
     const state = { values: uniqueValues(input.value), query: '', activeIndex: -1, open: false };
-    const shell = document.createElement('div');
-    const chipWrap = document.createElement('div');
-    const textInput = document.createElement('input');
-    const list = document.createElement('div');
 
     input.type = 'hidden';
     input.dataset.enhancedControl = 'tag';
     input.classList.add('enhanced-source');
-
-    shell.className = 'chip-combobox tag-input-control';
-    chipWrap.className = 'chip-input-shell';
-    textInput.type = 'text';
-    textInput.className = 'chip-text-input';
-    textInput.placeholder = options.placeholder || input.placeholder || 'Add expertise';
-    textInput.setAttribute('aria-label', options.label || 'Add expertise');
-    textInput.setAttribute('autocomplete', 'off');
-    list.className = 'chip-suggestions';
-    list.setAttribute('role', 'listbox');
-
-    shell.append(chipWrap, list);
-    input.insertAdjacentElement('afterend', shell);
-
-    function commit(raw) {
-      const value = normalizeValue(raw);
-      if (!value || state.values.some(item => item.toLowerCase() === value.toLowerCase())) return;
-      state.values.push(value);
-      textInput.value = '';
-      state.query = '';
-      state.activeIndex = -1;
-      sync();
-      render();
-    }
-
-    function removeAt(index) {
-      state.values.splice(index, 1);
-      sync();
-      render();
-      textInput.focus();
-    }
 
     function filteredSuggestions() {
       const query = state.query.toLowerCase();
       return suggestions
         .map(normalizeValue)
         .filter(Boolean)
-        .filter(item => !state.values.some(value => value.toLowerCase() === item.toLowerCase()))
+        .filter(item => !hasValue(state.values, item))
         .filter(item => !query || item.toLowerCase().includes(query))
         .slice(0, 8);
     }
 
-    function sync() {
-      input.value = state.values.join(', ');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+    function commit(raw) {
+      const value = normalizeValue(raw);
+      if (!value || hasValue(state.values, value)) {
+        control.textInput.value = '';
+        state.query = '';
+        render();
+        return;
+      }
+      state.values.push(value);
+      control.textInput.value = '';
+      state.query = '';
+      state.activeIndex = -1;
+      sync(input, state.values);
+      render();
+    }
+
+    function removeAt(index) {
+      state.values.splice(index, 1);
+      sync(input, state.values);
+      render();
+      control.textInput.focus();
     }
 
     function render() {
-      chipWrap.replaceChildren();
-      state.values.forEach((value, index) => chipWrap.appendChild(chip(value, () => removeAt(index))));
-      chipWrap.appendChild(textInput);
-
-      const items = filteredSuggestions();
-      state.open = document.activeElement === textInput && (items.length > 0 || textInput.value.trim().length > 0);
-      shell.classList.toggle('open', state.open);
-      list.replaceChildren();
-      if (!state.open) return;
-      state.activeIndex = Math.min(state.activeIndex, items.length - 1);
-      items.forEach((item, index) => {
-        const option = document.createElement('button');
-        option.type = 'button';
-        option.className = `chip-suggestion${index === state.activeIndex ? ' active' : ''}`;
-        option.setAttribute('role', 'option');
-        option.textContent = item;
-        option.addEventListener('mousedown', event => {
-          event.preventDefault();
-          commit(item);
-        });
-        list.appendChild(option);
-      });
+      renderChips(control.chipWrap, control.textInput, state.values, removeAt);
+      renderOptions(control, filteredSuggestions(), state, commit);
     }
 
-    textInput.addEventListener('input', () => {
-      state.query = textInput.value;
-      state.activeIndex = -1;
+    control.textInput.addEventListener('focus', () => {
+      state.open = true;
       render();
     });
 
-    textInput.addEventListener('keydown', event => {
+    control.textInput.addEventListener('input', () => {
+      state.query = control.textInput.value;
+      state.activeIndex = -1;
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('keydown', event => {
       const items = filteredSuggestions();
-      if (event.key === 'Enter' || event.key === ',') {
+      if (event.key === 'Enter' || event.key === ',' || (event.key === 'Tab' && control.textInput.value.trim())) {
         event.preventDefault();
-        commit(state.activeIndex >= 0 ? items[state.activeIndex] : textInput.value);
-      } else if (event.key === 'Backspace' && !textInput.value && state.values.length) {
+        commit(state.activeIndex >= 0 && items[state.activeIndex] ? items[state.activeIndex] : control.textInput.value);
+      } else if (event.key === 'Backspace' && !control.textInput.value && state.values.length) {
         removeAt(state.values.length - 1);
       } else if (event.key === 'ArrowDown' && items.length) {
         event.preventDefault();
+        state.open = true;
         state.activeIndex = (state.activeIndex + 1) % items.length;
         render();
       } else if (event.key === 'ArrowUp' && items.length) {
         event.preventDefault();
+        state.open = true;
         state.activeIndex = state.activeIndex <= 0 ? items.length - 1 : state.activeIndex - 1;
         render();
       } else if (event.key === 'Escape') {
         state.open = false;
-        textInput.blur();
+        state.activeIndex = -1;
         render();
       }
     });
 
-    textInput.addEventListener('blur', () => {
-      if (textInput.value.trim()) commit(textInput.value);
-      setTimeout(render, 120);
-    });
-    chipWrap.addEventListener('click', () => textInput.focus());
+    control.chipWrap.addEventListener('click', () => control.textInput.focus());
+    addOutsideClose(control.shell, state, render);
 
     input.__chipControl = {
       values: () => [...state.values],
       value: () => state.values.join(', '),
       setValues(values) {
         state.values = uniqueValues(values);
-        sync();
+        sync(input, state.values);
         render();
       },
     };
-    sync();
+    sync(input, state.values);
     render();
     return input.__chipControl;
   }
@@ -180,128 +153,169 @@ const FormUx = (() => {
     if (!input || input.dataset.enhancedControl === 'language') return input?.__languageControl;
 
     const allOptions = options.options || languageOptions;
+    const control = createControl(input, {
+      className: 'language-select-control',
+      placeholder: options.placeholder || 'Search languages',
+      label: options.label || 'Search languages',
+    });
     const state = { values: uniqueValues(input.value), query: '', activeIndex: -1, open: false };
-    const shell = document.createElement('div');
-    const chipWrap = document.createElement('div');
-    const search = document.createElement('input');
-    const list = document.createElement('div');
 
     input.type = 'hidden';
     input.dataset.enhancedControl = 'language';
     input.classList.add('enhanced-source');
 
-    shell.className = 'chip-combobox language-select-control';
-    chipWrap.className = 'chip-input-shell';
-    search.type = 'text';
-    search.className = 'chip-text-input';
-    search.placeholder = options.placeholder || 'Search languages';
-    search.setAttribute('aria-label', options.label || 'Search languages');
-    search.setAttribute('autocomplete', 'off');
-    list.className = 'chip-suggestions';
-    list.setAttribute('role', 'listbox');
-    shell.append(chipWrap, list);
-    input.insertAdjacentElement('afterend', shell);
-
     function filteredOptions() {
       const query = state.query.toLowerCase();
       return allOptions
         .map(normalizeValue)
-        .filter(item => !state.values.some(value => value.toLowerCase() === item.toLowerCase()))
+        .filter(item => !hasValue(state.values, item))
         .filter(item => !query || item.toLowerCase().includes(query));
     }
 
     function select(raw) {
       const value = normalizeValue(raw);
-      if (!value || state.values.some(item => item.toLowerCase() === value.toLowerCase())) return;
+      if (!value || hasValue(state.values, value)) return;
       state.values.push(value);
-      search.value = '';
+      control.textInput.value = '';
       state.query = '';
       state.activeIndex = -1;
-      sync();
+      state.open = false;
+      sync(input, state.values);
       render();
+      control.textInput.focus();
     }
 
     function removeAt(index) {
       state.values.splice(index, 1);
-      sync();
+      sync(input, state.values);
       render();
-      search.focus();
-    }
-
-    function sync() {
-      input.value = state.values.join(', ');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      control.textInput.focus();
     }
 
     function render() {
-      chipWrap.replaceChildren();
-      state.values.forEach((value, index) => chipWrap.appendChild(chip(value, () => removeAt(index))));
-      chipWrap.appendChild(search);
-
-      const items = filteredOptions();
-      state.open = document.activeElement === search && items.length > 0;
-      shell.classList.toggle('open', state.open);
-      list.replaceChildren();
-      if (!state.open) return;
-      state.activeIndex = Math.min(state.activeIndex, items.length - 1);
-      items.forEach((item, index) => {
-        const option = document.createElement('button');
-        option.type = 'button';
-        option.className = `chip-suggestion${index === state.activeIndex ? ' active' : ''}`;
-        option.setAttribute('role', 'option');
-        option.textContent = item;
-        option.addEventListener('mousedown', event => {
-          event.preventDefault();
-          select(item);
-        });
-        list.appendChild(option);
-      });
+      renderChips(control.chipWrap, control.textInput, state.values, removeAt);
+      renderOptions(control, filteredOptions(), state, select);
     }
 
-    search.addEventListener('input', () => {
-      state.query = search.value;
-      state.activeIndex = -1;
+    control.textInput.addEventListener('focus', () => {
+      state.open = true;
       render();
     });
 
-    search.addEventListener('keydown', event => {
+    control.textInput.addEventListener('input', () => {
+      state.query = control.textInput.value;
+      state.activeIndex = -1;
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('keydown', event => {
       const items = filteredOptions();
       if (event.key === 'Enter' && items.length) {
         event.preventDefault();
         select(items[Math.max(0, state.activeIndex)]);
-      } else if (event.key === 'Backspace' && !search.value && state.values.length) {
+      } else if (event.key === 'Backspace' && !control.textInput.value && state.values.length) {
         removeAt(state.values.length - 1);
       } else if (event.key === 'ArrowDown' && items.length) {
         event.preventDefault();
+        state.open = true;
         state.activeIndex = (state.activeIndex + 1) % items.length;
         render();
       } else if (event.key === 'ArrowUp' && items.length) {
         event.preventDefault();
+        state.open = true;
         state.activeIndex = state.activeIndex <= 0 ? items.length - 1 : state.activeIndex - 1;
         render();
       } else if (event.key === 'Escape') {
         state.open = false;
-        search.blur();
+        state.activeIndex = -1;
         render();
       }
     });
 
-    search.addEventListener('focus', render);
-    search.addEventListener('blur', () => setTimeout(render, 120));
-    chipWrap.addEventListener('click', () => search.focus());
+    control.chipWrap.addEventListener('click', () => control.textInput.focus());
+    addOutsideClose(control.shell, state, render);
 
     input.__languageControl = {
       values: () => [...state.values],
       value: () => state.values.join(', '),
       setValues(values) {
         state.values = uniqueValues(values);
-        sync();
+        sync(input, state.values);
         render();
       },
     };
-    sync();
+    sync(input, state.values);
     render();
     return input.__languageControl;
+  }
+
+  function createControl(input, config) {
+    const shell = document.createElement('div');
+    const chipWrap = document.createElement('div');
+    const textInput = document.createElement('input');
+    const list = document.createElement('div');
+
+    shell.className = `chip-combobox ${config.className}`;
+    chipWrap.className = 'chip-input-shell';
+    textInput.type = 'text';
+    textInput.className = 'chip-text-input';
+    textInput.placeholder = config.placeholder;
+    textInput.setAttribute('aria-label', config.label);
+    textInput.setAttribute('autocomplete', 'off');
+    textInput.setAttribute('role', 'combobox');
+    textInput.setAttribute('aria-expanded', 'false');
+    list.className = 'chip-suggestions';
+    list.setAttribute('role', 'listbox');
+
+    chipWrap.appendChild(textInput);
+    shell.append(chipWrap, list);
+    input.insertAdjacentElement('afterend', shell);
+    return { shell, chipWrap, textInput, list };
+  }
+
+  function renderChips(chipWrap, textInput, values, removeAt) {
+    chipWrap.querySelectorAll('.input-chip').forEach(item => item.remove());
+    values.forEach((value, index) => chipWrap.insertBefore(chip(value, () => removeAt(index)), textInput));
+  }
+
+  function renderOptions(control, options, state, onSelect) {
+    const shouldOpen = state.open && options.length > 0;
+    control.shell.classList.toggle('open', shouldOpen);
+    control.textInput.setAttribute('aria-expanded', String(shouldOpen));
+    control.list.replaceChildren();
+    if (!shouldOpen) return;
+    state.activeIndex = Math.max(-1, Math.min(state.activeIndex, options.length - 1));
+    options.forEach((item, index) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = `chip-suggestion${index === state.activeIndex ? ' active' : ''}`;
+      option.setAttribute('role', 'option');
+      option.textContent = item;
+      option.addEventListener('mousedown', event => {
+        event.preventDefault();
+        onSelect(item);
+      });
+      control.list.appendChild(option);
+    });
+  }
+
+  function addOutsideClose(shell, state, render) {
+    document.addEventListener('pointerdown', event => {
+      if (shell.contains(event.target)) return;
+      state.open = false;
+      state.activeIndex = -1;
+      render();
+    });
+  }
+
+  function sync(input, values) {
+    input.value = values.join(', ');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  function hasValue(values, value) {
+    return values.some(item => item.toLowerCase() === value.toLowerCase());
   }
 
   function chip(label, onRemove) {
