@@ -107,6 +107,9 @@ public class UserService {
         if (request.getSkills() != null) {
             user.setSkills(cleanList(request.getSkills()));
         }
+        if (request.getLanguage() != null) {
+            user.setLanguage(trimToNull(request.getLanguage()));
+        }
         if (request.getPreferredDomains() != null) {
             user.setPreferredDomains(cleanList(request.getPreferredDomains()));
         }

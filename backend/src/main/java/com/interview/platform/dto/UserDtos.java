@@ -12,6 +12,7 @@ public class UserDtos {
         @Size(max = 1000)
         private String bio;
         private List<String> skills;
+        private String language;
         private List<String> preferredDomains;
         private String experienceLevel;
         private List<String> availability;
@@ -24,6 +25,8 @@ public class UserDtos {
         public void setBio(String bio) { this.bio = bio; }
         public List<String> getSkills() { return skills; }
         public void setSkills(List<String> skills) { this.skills = skills; }
+        public String getLanguage() { return language; }
+        public void setLanguage(String language) { this.language = language; }
         public List<String> getPreferredDomains() { return preferredDomains; }
         public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains; }
         public String getExperienceLevel() { return experienceLevel; }

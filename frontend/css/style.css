@@ -882,6 +882,138 @@ textarea:focus-visible {
   margin-top: 1rem;
 }
 
+.enhanced-source {
+  display: none !important;
+}
+
+.chip-combobox {
+  position: relative;
+  width: 100%;
+}
+
+.chip-input-shell {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  padding: 0.42rem 0.5rem;
+  color: var(--text);
+  background: #0f1319;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: text;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.chip-combobox.open .chip-input-shell,
+.chip-input-shell:focus-within {
+  border-color: rgba(110, 231, 200, 0.7);
+  box-shadow: 0 0 0 3px rgba(110, 231, 200, 0.12);
+}
+
+.chip-text-input {
+  width: auto;
+  flex: 1 1 120px;
+  min-width: 96px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.2rem;
+  background: transparent;
+}
+
+.chip-text-input:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.input-chip {
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  min-height: 28px;
+  padding: 0.22rem 0.28rem 0.22rem 0.62rem;
+  border: 1px solid rgba(110, 231, 200, 0.18);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(110, 231, 200, 0.1);
+  font-size: 0.83rem;
+  font-weight: 800;
+  animation: chipIn 0.16s ease-out;
+}
+
+.input-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  width: 22px;
+  min-height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.06);
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.chip-remove:hover,
+.chip-remove:focus-visible {
+  color: var(--text);
+  background: rgba(255,255,255,0.14);
+}
+
+.chip-suggestions {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.35rem);
+  left: 0;
+  right: 0;
+  display: none;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #10151d;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+.chip-combobox.open .chip-suggestions {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.chip-suggestion {
+  min-height: 36px;
+  border: 0;
+  border-radius: calc(var(--radius) - 4px);
+  padding: 0.48rem 0.6rem;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chip-suggestion:hover,
+.chip-suggestion.active {
+  background: rgba(110, 231, 200, 0.1);
+}
+
+@keyframes chipIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .security-stack {
   display: grid;
   gap: 0.75rem;

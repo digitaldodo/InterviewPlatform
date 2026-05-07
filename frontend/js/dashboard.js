@@ -571,11 +571,15 @@ function renderProfile() {
           <input id="profile-skills" value="${esc((currentUser.skills || []).join(', '))}" placeholder="Java, DSA, System Design" />
         </div>
         <div class="form-group">
-          <label for="profile-domains">Preferred interview domains</label>
-          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
+          <label for="profile-language">Languages</label>
+          <input id="profile-language" value="${esc(currentUser.language || '')}" placeholder="English, Hindi" />
         </div>
       </div>
       <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-domains">Preferred interview domains</label>
+          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
+        </div>
         <div class="form-group">
           <label for="profile-experience">Experience level</label>
           <select id="profile-experience">
@@ -609,6 +613,12 @@ function renderProfile() {
   const ids = currentUser.favoriteInterviewerIds || [];
   const savedList = interviewers.filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
+  initProfileControls();
+}
+
+function initProfileControls() {
+  FormUx.initTagInput('profile-skills', { placeholder: 'Add skill or expertise' });
+  FormUx.initLanguageSelect('profile-language', { placeholder: 'Search languages' });
 }
 
 async function resendProfileOtp() {
@@ -654,7 +664,8 @@ async function saveProfile(event) {
         name: val('profile-name'),
         avatarUrl: val('profile-avatar'),
         bio: val('profile-bio'),
-        skills: splitList(val('profile-skills')),
+        skills: FormUx.getTagValues('profile-skills'),
+        language: FormUx.getLanguageString('profile-language'),
         preferredDomains: splitList(val('profile-domains')),
         experienceLevel: val('profile-experience'),
         availability: splitList(val('profile-availability')),

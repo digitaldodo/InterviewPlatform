@@ -19,11 +19,17 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reset-otp-group').style.display = 'none';
   document.getElementById('reset-password-group').style.display = 'none';
   document.getElementById('reset-resend').style.display = 'none';
+  initRegisterControls();
 });
 
 document.getElementById('reg-role').addEventListener('change', function () {
   document.getElementById('interviewer-fields').style.display = this.value === 'interviewer' ? 'block' : 'none';
 });
+
+function initRegisterControls() {
+  FormUx.initLanguageSelect('reg-language', { placeholder: 'Search languages' });
+  FormUx.initTagInput('reg-skills', { placeholder: 'Add expertise' });
+}
 
 function switchTab(tab) {
   ['login', 'register', 'verify', 'reset'].forEach(name => {
@@ -103,7 +109,7 @@ document.getElementById('register-form').addEventListener('submit', async event 
   event.preventDefault();
   const btn = document.getElementById('register-submit');
   const role = document.getElementById('reg-role').value;
-  const skillsRaw = document.getElementById('reg-skills').value;
+  const skills = FormUx.getTagValues('reg-skills');
   setLoading(btn, true, 'Creating account');
   try {
     const session = await api('/api/auth/register', {
@@ -116,8 +122,8 @@ document.getElementById('register-form').addEventListener('submit', async event 
         company: document.getElementById('reg-company').value.trim(),
         currentRole: document.getElementById('reg-current-role').value.trim(),
         yearsExperience: Number(document.getElementById('reg-years').value || 0),
-        language: document.getElementById('reg-language').value.trim(),
-        skills: skillsRaw.split(',').map(item => item.trim()).filter(Boolean),
+        language: FormUx.getLanguageString('reg-language'),
+        skills,
       }),
     });
     authStore.set(session);
