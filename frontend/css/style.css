@@ -218,10 +218,30 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
   border-radius: var(--radius);
   background: linear-gradient(135deg, var(--accent), var(--gold));
   color: #101217;
   font-weight: 900;
+}
+
+.avatar-fallback {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .avatar.large {
@@ -667,6 +687,23 @@ textarea:focus-visible {
   word-break: break-word;
 }
 
+.sidebar-profile-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sidebar-profile-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.sidebar-profile-copy strong,
+.profile-avatar-copy strong {
+  color: var(--text);
+}
+
 .dashboard-main {
   flex: 1;
   min-width: 0;
@@ -833,7 +870,7 @@ textarea:focus-visible {
   text-align: left;
 }
 
-.mini-interviewer span:nth-child(2),
+.mini-interviewer .mini-interviewer-copy,
 .mini-card {
   display: grid;
 }
@@ -880,6 +917,32 @@ textarea:focus-visible {
   display: grid;
   gap: 0.9rem;
   margin-top: 1rem;
+}
+
+.profile-avatar-upload {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.profile-avatar-preview-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+}
+
+.profile-avatar-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.32rem;
+}
+
+.profile-avatar-preview-card small {
+  color: var(--muted);
 }
 
 .profile-status-row,
@@ -1938,6 +2001,7 @@ textarea:focus-visible {
   .session-actions,
   .card-actions,
   .profile-actions-row,
+  .profile-avatar-preview-card,
   .availability-form-actions,
   .availability-item-actions,
   .hero-actions,
@@ -1945,9 +2009,15 @@ textarea:focus-visible {
     width: 100%;
   }
 
+  .profile-avatar-preview-card {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+
   .session-actions .btn,
   .card-actions .btn,
   .profile-actions-row .btn,
+  .profile-avatar-preview-card .btn,
   .availability-form-actions .btn,
   .availability-item-actions .btn,
   .topbar-actions .btn,

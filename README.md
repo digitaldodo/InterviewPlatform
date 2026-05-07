@@ -91,6 +91,10 @@ If your backend runs somewhere else, update `frontend/js/env.js` locally or over
 | `JWT_REFRESH_TOKEN_DAYS` | No | `14` | Refresh token lifetime. |
 | `SENDGRID_API_KEY` | Yes for email | none | SendGrid API key used for verification and password reset OTP emails. |
 | `SENDGRID_FROM_EMAIL` | Yes for email | `no-reply@interviewprep.local` | Verified SendGrid sender address. |
+| `CLOUDINARY_CLOUD_NAME` | Yes for avatar uploads | none | Cloudinary cloud name used by the backend upload endpoint. |
+| `CLOUDINARY_API_KEY` | Yes for avatar uploads | none | Cloudinary API key used only on the backend. |
+| `CLOUDINARY_API_SECRET` | Yes for avatar uploads | none | Cloudinary API secret used to sign backend uploads. Never expose it in the frontend. |
+| `CLOUDINARY_FOLDER` | No | `interviewprep/avatars` | Folder where profile images are stored in Cloudinary. |
 | `FRONTEND_URL` | No | `http://localhost:5500` | Public frontend URL retained for branded email context. |
 | `JAVA_OPTS` | No | `-XX:MaxRAMPercentage=75.0` | JVM options used by the Docker container. |
 
@@ -117,7 +121,7 @@ It creates:
 2. In Render, choose **New +** then **Blueprint**.
 3. Connect the GitHub repository.
 4. Render will detect `render.yaml` and create both services.
-5. Set `MONGO_URI`, `JWT_SECRET`, and the SendGrid variables on `interview-platform-api`.
+5. Set `MONGO_URI`, `JWT_SECRET`, the SendGrid variables, and the Cloudinary variables on `interview-platform-api`.
 6. Deploy the blueprint.
 7. After the first deployment, confirm:
    - Backend health: `https://<api-service>.onrender.com/api/health`
@@ -175,6 +179,7 @@ Use backslashes instead of backticks on macOS/Linux.
 | `POST` | `/api/auth/forgot-password` | Send password reset OTP if account exists |
 | `POST` | `/api/auth/verify-reset-otp` | Verify password reset OTP and issue a short-lived reset token |
 | `POST` | `/api/auth/reset-password` | Validate verified reset token and update password |
+| `POST` | `/api/users/me/avatar` | Authenticated multipart upload that stores a Cloudinary-backed profile image URL |
 | `POST` | `/api/users/register` | Register a user |
 | `POST` | `/api/users/login` | Login |
 | `GET` | `/api/users` | List users |

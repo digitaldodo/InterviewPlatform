@@ -6,6 +6,7 @@ import com.interview.platform.model.User;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.List;
@@ -19,10 +20,14 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final CloudinaryImageService cloudinaryImageService;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository,
+                       PasswordEncoder passwordEncoder,
+                       CloudinaryImageService cloudinaryImageService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.cloudinaryImageService = cloudinaryImageService;
     }
 
     public User register(User user) {
@@ -116,6 +121,13 @@ public class UserService {
         if (request.getAvailability() != null) {
             user.setAvailability(cleanList(request.getAvailability()));
         }
+        return userRepository.save(user);
+    }
+
+    public User uploadOwnAvatar(String userId, MultipartFile file) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setAvatarUrl(cloudinaryImageService.uploadProfileImage(userId, file));
         return userRepository.save(user);
     }
 

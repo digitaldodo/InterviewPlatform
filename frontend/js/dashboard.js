@@ -23,6 +23,8 @@ let generatedAvailabilitySlots = [];
 let availabilityEditId = null;
 let availabilityLoading = false;
 let availabilityError = '';
+let profileAvatarFile = null;
+let profileAvatarPreviewUrl = '';
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
 ];
@@ -30,6 +32,7 @@ const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const BOOKING_TYPES = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'notifications', 'profile', 'interviewer']);
+const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 
 function createBookingState() {
@@ -88,7 +91,16 @@ function initUi() {
   const workspace = activeWorkspace.toLowerCase();
   document.getElementById('welcome-heading').textContent = `Welcome back, ${currentUser.name || currentUser.username || currentUser.email}`;
   document.getElementById('role-eyebrow').textContent = workspace === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
-  document.getElementById('sidebar-user-info').innerHTML = `<strong>${esc(currentUser.name || currentUser.username || 'User')}</strong><span>${esc(currentUser.email || '')}</span><span class="badge badge-purple">${esc(workspace)}</span>`;
+  document.getElementById('sidebar-user-info').innerHTML = `
+    <div class="sidebar-profile-card">
+      ${avatarMarkup(currentUser)}
+      <div class="sidebar-profile-copy">
+        <strong>${esc(currentUser.name || currentUser.username || 'User')}</strong>
+        <span>${esc(currentUser.email || '')}</span>
+        <span class="badge badge-purple">${esc(workspace)}</span>
+      </div>
+    </div>
+  `;
   renderWorkspaceSwitcher(roles);
   applyWorkspaceVisibility();
   document.getElementById('primary-action').textContent = workspace === 'interviewer' ? 'View requests' : 'Book session';
@@ -212,13 +224,17 @@ function showSection(name, updateRoute = true) {
 
 async function api(path, options = {}, retry = true) {
   const token = localStorage.getItem('ip_access_token');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+  if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
+    headers,
   });
   const payload = await readPayload(res);
   if (res.status === 401 && retry && localStorage.getItem('ip_refresh_token')) {
@@ -336,7 +352,7 @@ function renderInterviewerGrid(list) {
   grid.innerHTML = list.map(interviewer => `
     <article class="interviewer-card">
       <div class="card-top">
-        <div class="avatar">${initials(interviewer)}</div>
+        ${avatarMarkup(interviewer)}
         <button class="icon-btn" title="Save favorite" onclick="favoriteInterviewer('${interviewer.id}')">♡</button>
       </div>
       <h3>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h3>
@@ -355,8 +371,8 @@ function renderInterviewerGrid(list) {
 function renderCompactInterviewer(interviewer) {
   return `
     <button class="mini-interviewer" onclick="selectInterviewer('${interviewer.id}')">
-      <span class="avatar">${initials(interviewer)}</span>
-      <span><strong>${esc(interviewer.name || interviewer.username || 'Interviewer')}</strong><small>${esc(interviewer.currentRole || 'Interview coach')}</small></span>
+      ${avatarMarkup(interviewer)}
+      <span class="mini-interviewer-copy"><strong>${esc(interviewer.name || interviewer.username || 'Interviewer')}</strong><small>${esc(interviewer.currentRole || 'Interview coach')}</small></span>
     </button>
   `;
 }
@@ -373,7 +389,7 @@ async function openProfile(id) {
     rememberInterviewers([interviewer]);
     modal(`
       <div class="profile-modal">
-        <div class="avatar large">${initials(interviewer)}</div>
+        ${avatarMarkup(interviewer, 'avatar large')}
         <h2>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h2>
         <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
         <div class="tag-row">${(interviewer.skills || []).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
@@ -1355,7 +1371,7 @@ function renderProfile() {
   const showLegacyAvailabilityField = !hasInterviewerRole();
   summary.innerHTML = `
     <div class="preview-profile">
-      <div class="avatar large">${currentUser.avatarUrl ? `<img src="${esc(currentUser.avatarUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit;">` : initials(currentUser)}</div>
+      <div id="profile-summary-avatar">${avatarMarkup(currentUser, 'avatar large', currentProfileAvatarUrl())}</div>
       <div>
         <h2>${esc(currentUser.name || currentUser.username || 'InterviewPrep user')}</h2>
         <p>${esc(currentUser.email || '')}</p>
@@ -1394,19 +1410,18 @@ function renderProfile() {
     <div class="divider"></div>
     <form class="profile-form" onsubmit="saveProfile(event)">
       <h2>Edit profile</h2>
-      <div class="form-grid">
-        <div class="form-group">
-          <label for="profile-name">Full name</label>
-          <input id="profile-name" value="${esc(currentUser.name || currentUser.username || '')}" required />
-        </div>
-        <div class="form-group">
-          <label for="profile-avatar">Avatar URL</label>
-          <input id="profile-avatar" value="${esc(currentUser.avatarUrl || '')}" placeholder="https://..." />
-        </div>
-      </div>
       <div class="form-group">
-        <label for="profile-avatar-file">Upload avatar preview</label>
-        <input id="profile-avatar-file" type="file" accept="image/*" onchange="previewAvatarFile(event)" />
+        <label for="profile-name">Full name</label>
+        <input id="profile-name" value="${esc(currentUser.name || currentUser.username || '')}" required />
+      </div>
+      <div class="profile-avatar-upload">
+        <div class="profile-avatar-preview-card" id="profile-avatar-preview">
+          ${profileAvatarPreviewCard()}
+        </div>
+        <div class="form-group">
+          <label for="profile-avatar-file">Profile photo / logo / avatar / DP</label>
+          <input id="profile-avatar-file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" onchange="previewAvatarFile(event)" />
+        </div>
       </div>
       <div class="form-group">
         <label for="profile-bio">Bio/About</label>
@@ -1895,7 +1910,6 @@ async function saveProfile(event) {
   try {
     const payload = {
       name: val('profile-name'),
-      avatarUrl: val('profile-avatar'),
       bio: val('profile-bio'),
       skills: FormUx.getTagValues('profile-skills'),
       language: FormUx.getLanguageString('profile-language'),
@@ -1912,9 +1926,17 @@ async function saveProfile(event) {
     });
     currentUser = updated;
     localStorage.setItem('ip_user', JSON.stringify(updated));
+    let imageUploadError = '';
+    if (profileAvatarFile) {
+      try {
+        currentUser = await uploadSelectedAvatar();
+      } catch (err) {
+        imageUploadError = err.message || 'Profile image upload failed.';
+      }
+    }
     initUi();
     renderProfile();
-    toast('Profile saved.', 'success');
+    toast(imageUploadError ? `Profile saved, but image upload failed: ${imageUploadError}` : 'Profile saved.', imageUploadError ? 'error' : 'success');
   } catch (err) {
     toast(err.message, 'error');
   } finally {
@@ -1947,15 +1969,20 @@ async function changePassword(event) {
 function previewAvatarFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
-  if (file.size > 600_000) {
-    toast('Please choose an image under 600 KB.', 'error');
+  if (file.size > 5 * 1024 * 1024) {
+    resetProfileAvatarSelection();
+    toast('Please choose an image under 5 MB.', 'error');
     return;
   }
-  const reader = new FileReader();
-  reader.onload = () => {
-    document.getElementById('profile-avatar').value = reader.result;
-  };
-  reader.readAsDataURL(file);
+  if (!PROFILE_IMAGE_TYPES.has(String(file.type || '').toLowerCase())) {
+    resetProfileAvatarSelection();
+    toast('Only JPG, PNG, WEBP, GIF, and AVIF images are supported.', 'error');
+    return;
+  }
+  releaseProfileAvatarPreview();
+  profileAvatarFile = file;
+  profileAvatarPreviewUrl = URL.createObjectURL(file);
+  renderProfileAvatarPreview();
 }
 
 function splitList(value) {
@@ -2063,6 +2090,82 @@ function val(id) {
 function initials(user) {
   const name = user.name || user.username || user.email || 'IP';
   return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function avatarMarkup(user, className = 'avatar', imageUrl = '') {
+  const src = imageUrl || user?.avatarUrl || '';
+  const label = user?.name || user?.username || user?.email || 'InterviewPrep user';
+  return `
+    <div class="${className}${src ? ' has-image' : ''}">
+      <span class="avatar-fallback">${initials(user || { name: label })}</span>
+      ${src ? `<img src="${esc(src)}" alt="${esc(label)} avatar" loading="lazy" onerror="this.remove()">` : ''}
+    </div>
+  `;
+}
+
+function currentProfileAvatarUrl() {
+  return profileAvatarPreviewUrl || currentUser?.avatarUrl || '';
+}
+
+function profileAvatarPreviewCard() {
+  const hasPendingUpload = Boolean(profileAvatarFile);
+  const hasSavedImage = Boolean(currentUser?.avatarUrl);
+  return `
+    ${avatarMarkup(currentUser, 'avatar large', currentProfileAvatarUrl())}
+    <div class="profile-avatar-copy">
+      <strong>Preview your profile image</strong>
+      <p>${hasPendingUpload
+        ? 'This preview is local for now. Save your profile to upload it securely through the backend and persist it after reload or login.'
+        : hasSavedImage
+          ? 'Your saved image is already attached to your profile and will keep showing in the sidebar.'
+          : 'No profile image yet. Your initials will be used until you upload a photo, logo, avatar, or display picture.'}</p>
+      <small>${hasPendingUpload
+        ? `${esc(profileAvatarFile.name)} selected`
+        : hasSavedImage
+          ? 'Cloudinary-backed image saved to your profile.'
+          : 'Accepted: JPG, PNG, WEBP, GIF, or AVIF up to 5 MB.'}</small>
+    </div>
+    ${hasPendingUpload ? '<button class="btn btn-outline btn-sm" type="button" onclick="clearSelectedAvatar()">Clear preview</button>' : ''}
+  `;
+}
+
+function renderProfileAvatarPreview() {
+  const preview = document.getElementById('profile-avatar-preview');
+  if (preview) preview.innerHTML = profileAvatarPreviewCard();
+  const summaryAvatar = document.getElementById('profile-summary-avatar');
+  if (summaryAvatar) summaryAvatar.innerHTML = avatarMarkup(currentUser, 'avatar large', currentProfileAvatarUrl());
+}
+
+function clearSelectedAvatar() {
+  resetProfileAvatarSelection();
+}
+
+function resetProfileAvatarSelection() {
+  profileAvatarFile = null;
+  releaseProfileAvatarPreview();
+  const input = document.getElementById('profile-avatar-file');
+  if (input) input.value = '';
+  renderProfileAvatarPreview();
+}
+
+function releaseProfileAvatarPreview() {
+  if (profileAvatarPreviewUrl && profileAvatarPreviewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(profileAvatarPreviewUrl);
+  }
+  profileAvatarPreviewUrl = '';
+}
+
+async function uploadSelectedAvatar() {
+  const formData = new FormData();
+  formData.append('file', profileAvatarFile);
+  const updated = await api('/api/users/me/avatar', {
+    method: 'POST',
+    body: formData,
+  });
+  profileAvatarFile = null;
+  releaseProfileAvatarPreview();
+  localStorage.setItem('ip_user', JSON.stringify(updated));
+  return updated;
 }
 
 function formatDayLabel(value) {

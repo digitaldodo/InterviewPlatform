@@ -10,9 +10,11 @@ import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.AuthService;
 import com.interview.platform.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -63,6 +65,13 @@ public class UserController {
                                                               @Valid @RequestBody UserDtos.ProfileUpdateRequest request) {
         User updated = userService.updateOwnProfile(currentUser(authentication).getId(), request);
         return ResponseEntity.ok(ApiResponse.success("Profile updated successfully", updated));
+    }
+
+    @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponse<User>> uploadOwnAvatar(Authentication authentication,
+                                                             @RequestParam("file") MultipartFile file) {
+        User updated = userService.uploadOwnAvatar(currentUser(authentication).getId(), file);
+        return ResponseEntity.ok(ApiResponse.success("Profile image uploaded successfully", updated));
     }
 
     @PostMapping("/me/change-password")
