@@ -878,6 +878,23 @@ textarea:focus-visible {
   flex-wrap: wrap;
 }
 
+.workspace-switcher {
+  display: grid;
+  gap: 0.38rem;
+  margin: 0;
+}
+
+.workspace-switcher span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+}
+
+.workspace-switcher select {
+  min-height: 40px;
+  padding: 0.55rem 0.65rem;
+}
+
 .profile-completion {
   margin-top: 1rem;
 }
@@ -1029,6 +1046,30 @@ textarea:focus-visible {
 }
 
 .check-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.role-choice-group {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.role-choice {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0.72rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.role-choice input {
   width: 18px;
   min-height: 18px;
 }

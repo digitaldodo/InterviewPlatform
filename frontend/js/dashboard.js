@@ -10,6 +10,7 @@ let selectedInterviewer = null;
 let bookingStep = 1;
 let bookingState = { interviewer: null, interviewType: '', startTime: '' };
 let searchTimer = null;
+let activeWorkspace = 'INTERVIEWEE';
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'feedback', 'notifications', 'profile', 'interviewer']);
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -18,6 +19,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '../index.html';
     return;
   }
+  activeWorkspace = savedWorkspace();
   initUi();
   bindFilters();
   bindFeedbackForm();
@@ -39,12 +41,73 @@ function logout() {
 }
 
 function initUi() {
-  const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
+  const roles = userRoles();
+  if (!roles.includes(activeWorkspace)) activeWorkspace = roles[0] || 'INTERVIEWEE';
+  currentUser.activeWorkspace = activeWorkspace;
+  localStorage.setItem('ip_user', JSON.stringify(currentUser));
+  const workspace = activeWorkspace.toLowerCase();
   document.getElementById('welcome-heading').textContent = `Welcome back, ${currentUser.name || currentUser.username || currentUser.email}`;
-  document.getElementById('role-eyebrow').textContent = role === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
-  document.getElementById('sidebar-user-info').innerHTML = `<strong>${esc(currentUser.name || currentUser.username || 'User')}</strong><span>${esc(currentUser.email || '')}</span><span class="badge badge-purple">${esc(role)}</span>`;
-  document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = role === 'interviewer' ? 'flex' : 'none');
+  document.getElementById('role-eyebrow').textContent = workspace === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
+  document.getElementById('sidebar-user-info').innerHTML = `<strong>${esc(currentUser.name || currentUser.username || 'User')}</strong><span>${esc(currentUser.email || '')}</span><span class="badge badge-purple">${esc(workspace)}</span>`;
+  renderWorkspaceSwitcher(roles);
+  applyWorkspaceVisibility();
+  document.getElementById('primary-action').textContent = workspace === 'interviewer' ? 'View requests' : 'Book session';
   renderBookingStep();
+}
+
+function userRoles() {
+  const roles = Array.isArray(currentUser.roles) && currentUser.roles.length ? currentUser.roles : [currentUser.role || 'INTERVIEWEE'];
+  return [...new Set(roles.map(role => String(role || '').toUpperCase()).filter(role => ['INTERVIEWEE', 'INTERVIEWER'].includes(role)))];
+}
+
+function savedWorkspace() {
+  const roles = userRoles();
+  const saved = localStorage.getItem(`ip_workspace_${currentUser.id}`) || currentUser.activeWorkspace || currentUser.role || 'INTERVIEWEE';
+  const normalized = String(saved).toUpperCase();
+  return roles.includes(normalized) ? normalized : (roles[0] || 'INTERVIEWEE');
+}
+
+function renderWorkspaceSwitcher(roles) {
+  const wrap = document.getElementById('workspace-switcher-wrap');
+  const select = document.getElementById('workspace-switcher');
+  if (!wrap || !select) return;
+  wrap.style.display = roles.length > 1 ? 'grid' : 'none';
+  select.innerHTML = roles.map(role => `<option value="${role}" ${role === activeWorkspace ? 'selected' : ''}>${workspaceLabel(role)}</option>`).join('');
+}
+
+function switchWorkspace(workspace) {
+  const normalized = String(workspace || '').toUpperCase();
+  if (!userRoles().includes(normalized)) return;
+  activeWorkspace = normalized;
+  currentUser.activeWorkspace = normalized;
+  localStorage.setItem(`ip_workspace_${currentUser.id}`, normalized);
+  localStorage.setItem('ip_user', JSON.stringify(currentUser));
+  initUi();
+  if (!routeAllowed(routeFromHash())) showSection('overview');
+  loadSessions();
+  loadRecommended();
+  loadInterviewers();
+}
+
+function primaryWorkspaceAction() {
+  showSection(activeWorkspace === 'INTERVIEWER' ? 'interviewer' : 'discover');
+}
+
+function workspaceLabel(role) {
+  return role === 'INTERVIEWER' ? 'Interviewer Workspace' : 'Interviewee Workspace';
+}
+
+function applyWorkspaceVisibility() {
+  const isInterviewer = activeWorkspace === 'INTERVIEWER';
+  document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = isInterviewer ? 'flex' : 'none');
+  document.querySelectorAll('.interviewee-workspace').forEach(el => el.style.display = isInterviewer ? 'none' : '');
+  document.body.classList.toggle('interviewer-workspace-active', isInterviewer);
+}
+
+function routeAllowed(route) {
+  if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
+  if (route === 'interviewer') return false;
+  return true;
 }
 
 async function loadOwnProfile() {
@@ -73,7 +136,8 @@ function routeFromHash() {
 }
 
 function showSection(name, updateRoute = true) {
-  const targetName = ROUTES.has(name) ? name : 'overview';
+  let targetName = ROUTES.has(name) ? name : 'overview';
+  if (!routeAllowed(targetName)) targetName = 'overview';
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
   document.getElementById(`section-${targetName}`).hidden = false;
   document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === targetName));
@@ -139,6 +203,11 @@ function bindFilters() {
 
 async function loadInterviewers() {
   const grid = document.getElementById('interviewer-grid');
+  if (!grid) return;
+  if (activeWorkspace === 'INTERVIEWER') {
+    grid.innerHTML = emptyState('Switch to the interviewee workspace to browse interviewers.');
+    return;
+  }
   grid.innerHTML = skeletonCards(6);
   try {
     const params = new URLSearchParams({
@@ -147,6 +216,7 @@ async function loadInterviewers() {
       company: val('filter-company'),
       language: val('filter-language'),
       sort: val('filter-sort'),
+      excludeUserId: currentUser.id,
       page: interviewerPage,
       size: 9,
     });
@@ -154,7 +224,7 @@ async function loadInterviewers() {
     if (document.getElementById('filter-available').checked) params.set('available', 'true');
     if (document.getElementById('filter-free').checked) params.set('free', 'true');
     const page = await api(`/api/interviewers/search?${params.toString()}`);
-    interviewers = page.items || [];
+    interviewers = filterSelf(page.items || []);
     interviewerTotalPages = Math.max(1, page.totalPages || 1);
     renderInterviewerGrid(interviewers);
     document.getElementById('page-label').textContent = `Page ${interviewerPage + 1} of ${interviewerTotalPages}`;
@@ -166,10 +236,16 @@ async function loadInterviewers() {
 
 async function loadRecommended() {
   const list = document.getElementById('recommended-list');
+  if (!list) return;
+  if (activeWorkspace === 'INTERVIEWER') {
+    list.innerHTML = emptyState('Switch to the interviewee workspace to view recommendations.');
+    return;
+  }
   list.innerHTML = skeletonCards(3);
   try {
     const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
-    list.innerHTML = (data || []).slice(0, 4).map(renderCompactInterviewer).join('') || emptyState('No recommendations yet.');
+    const recommendations = filterSelf(data || []).slice(0, 4);
+    list.innerHTML = recommendations.map(renderCompactInterviewer).join('') || emptyState('No other interviewers available yet.');
   } catch {
     list.innerHTML = emptyState('Recommendations will appear here.');
   }
@@ -177,8 +253,9 @@ async function loadRecommended() {
 
 function renderInterviewerGrid(list) {
   const grid = document.getElementById('interviewer-grid');
+  list = filterSelf(list || []);
   if (!list.length) {
-    grid.innerHTML = emptyState('No interviewers match those filters.');
+    grid.innerHTML = emptyState('No other interviewers available yet.');
     return;
   }
   grid.classList.remove('skeleton-grid');
@@ -259,9 +336,10 @@ function renderBookingStep() {
   document.querySelectorAll('.step').forEach(step => step.classList.toggle('active', Number(step.dataset.step) === bookingStep));
   const host = document.getElementById('booking-step-content');
   if (bookingStep === 1) {
-    host.innerHTML = `<h2>Choose interviewer</h2><div class="interviewer-grid compact">${interviewers.slice(0, 6).map(item => `
+    const available = filterSelf(interviewers).slice(0, 6);
+    host.innerHTML = `<h2>Choose interviewer</h2><div class="interviewer-grid compact">${available.map(item => `
       <article class="mini-card"><div class="avatar">${initials(item)}</div><strong>${esc(item.name || item.username || 'Interviewer')}</strong><small>${esc(item.currentRole || '')}</small><button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Choose</button></article>
-    `).join('') || emptyState('Search for interviewers first.')}</div>`;
+    `).join('') || emptyState('No other interviewers available yet.')}</div>`;
   }
   if (bookingStep === 2) {
     const types = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
@@ -333,8 +411,7 @@ async function confirmBooking() {
 
 async function loadSessions() {
   try {
-    const role = (currentUser.role || '').toLowerCase();
-    const endpoint = role === 'interviewer' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
+    const endpoint = activeWorkspace === 'INTERVIEWER' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
     sessions = await api(endpoint);
     renderOverview();
     renderSessions('upcoming');
@@ -371,7 +448,7 @@ function renderSessions(mode = 'upcoming') {
 
 function renderSessionCard(session) {
   const status = (session.status || 'PENDING').toUpperCase();
-  const isInterviewer = (currentUser.role || '').toLowerCase() === 'interviewer';
+  const isInterviewer = activeWorkspace === 'INTERVIEWER';
   const canConfirm = isInterviewer && status === 'PENDING';
   const canComplete = status === 'CONFIRMED';
   return `
@@ -503,7 +580,7 @@ async function markNotificationRead(id) {
 function renderProfile() {
   const summary = document.getElementById('profile-summary');
   if (!summary) return;
-  const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
+  const roles = userRoles().map(workspaceLabel).join(', ');
   const isVerified = Boolean(currentUser.isVerified);
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
   summary.innerHTML = `
@@ -513,7 +590,7 @@ function renderProfile() {
         <h2>${esc(currentUser.name || currentUser.username || 'InterviewPrep user')}</h2>
         <p>${esc(currentUser.email || '')}</p>
         <div class="profile-status-row">
-          <span class="badge badge-purple">${esc(role)}</span>
+          <span class="badge badge-purple">${esc(roles)}</span>
           <span class="badge ${isVerified ? 'badge-green' : 'badge-yellow'}">${isVerified ? 'Verified' : 'Verification pending'}</span>
         </div>
       </div>
@@ -611,7 +688,7 @@ function renderProfile() {
   `;
   const saved = document.getElementById('saved-interviewers');
   const ids = currentUser.favoriteInterviewerIds || [];
-  const savedList = interviewers.filter(item => ids.includes(item.id));
+  const savedList = filterSelf(interviewers).filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || emptyState('Saved interviewers will appear here.');
   initProfileControls();
 }
@@ -619,6 +696,10 @@ function renderProfile() {
 function initProfileControls() {
   FormUx.initTagInput('profile-skills', { placeholder: 'Add skill or expertise' });
   FormUx.initLanguageSelect('profile-language', { placeholder: 'Search languages' });
+}
+
+function filterSelf(list) {
+  return (list || []).filter(item => item?.id !== currentUser.id);
 }
 
 async function resendProfileOtp() {

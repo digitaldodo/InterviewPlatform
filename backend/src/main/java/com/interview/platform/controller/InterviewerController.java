@@ -30,12 +30,13 @@ public class InterviewerController {
             @RequestParam(required = false) Boolean available,
             @RequestParam(required = false) Boolean free,
             @RequestParam(required = false) String language,
+            @RequestParam(required = false) String excludeUserId,
             @RequestParam(defaultValue = "top-rated") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "9") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Interviewers fetched",
-                interviewerService.search(q, expertise, company, role, minExperience, minRating, available, free, language, sort, page, size)));
+                interviewerService.search(q, expertise, company, role, minExperience, minRating, available, free, language, excludeUserId, sort, page, size)));
     }
 
     @GetMapping("/{id}")
@@ -49,8 +50,8 @@ public class InterviewerController {
     }
 
     @GetMapping("/top-rated")
-    public ResponseEntity<ApiResponse<List<User>>> topRated() {
-        return ResponseEntity.ok(ApiResponse.success("Top-rated interviewers fetched", interviewerService.topRated()));
+    public ResponseEntity<ApiResponse<List<User>>> topRated(@RequestParam(required = false) String excludeUserId) {
+        return ResponseEntity.ok(ApiResponse.success("Top-rated interviewers fetched", interviewerService.topRated(excludeUserId)));
     }
 
     @GetMapping("/recommended")

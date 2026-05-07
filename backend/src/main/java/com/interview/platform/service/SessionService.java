@@ -54,7 +54,9 @@ public class SessionService {
 
         if (session.getInterviewerId() == null || session.getInterviewerId().isBlank()) {
 
-            List<User> interviewers = userRepository.findByRole("INTERVIEWER");
+            List<User> interviewers = userRepository.findByRole("INTERVIEWER").stream()
+                    .filter(user -> !user.getId().equals(session.getCandidateId()))
+                    .toList();
 
             if (!interviewers.isEmpty()) {
                 // Preferred: find an interviewer whose skills overlap with the session title
@@ -72,6 +74,9 @@ public class SessionService {
             }
         } else if (!userRepository.existsById(session.getInterviewerId())) {
             throw new IllegalArgumentException("Interviewer does not exist");
+        }
+        if (session.getInterviewerId() != null && session.getInterviewerId().equals(session.getCandidateId())) {
+            throw new IllegalArgumentException("You cannot book yourself as interviewer");
         }
 
         if (!userRepository.existsById(session.getCandidateId())) {

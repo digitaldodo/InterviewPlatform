@@ -61,7 +61,7 @@ public class AuthService {
         user.setUsername(trim(request.getName()));
         user.setEmail(normalizeEmail(request.getEmail()));
         user.setPassword(request.getPassword());
-        user.setRole(request.getRole());
+        user.setRoles(normalizeRoles(request.getRoles(), request.getRole()));
         user.setSkills(request.getSkills());
         user.setCompany(trim(request.getCompany()));
         user.setCurrentRole(trim(request.getCurrentRole()));
@@ -85,9 +85,10 @@ public class AuthService {
         user.setPassword(null);
         user.setCreatedAt(Instant.now());
         user.setIsVerified(verifiedByDefault);
-        if (isBlank(user.getRole())) {
-            user.setRole("INTERVIEWEE");
+        if (user.getRoles().isEmpty()) {
+            user.setRoles(List.of("INTERVIEWEE"));
         }
+        user.setActiveWorkspace(user.getActiveWorkspace());
         if (user.getSkills() == null) {
             user.setSkills(List.of());
         }
@@ -278,11 +279,21 @@ public class AuthService {
         if (user.getPassword().length() < 6) {
             throw new IllegalArgumentException("Password must be at least 6 characters");
         }
-        String role = user.getRole() == null ? "INTERVIEWEE" : user.getRole().toUpperCase(Locale.ROOT);
-        if (!role.equals("ADMIN") && !role.equals("INTERVIEWER") && !role.equals("INTERVIEWEE")) {
-            throw new IllegalArgumentException("Role must be ADMIN, INTERVIEWER, or INTERVIEWEE");
+        user.setRoles(normalizeRoles(user.getRoles(), user.getRole()));
+    }
+
+    private List<String> normalizeRoles(List<String> roles, String fallbackRole) {
+        List<String> source = roles == null || roles.isEmpty() ? List.of(isBlank(fallbackRole) ? "INTERVIEWEE" : fallbackRole) : roles;
+        List<String> normalized = source.stream()
+                .filter(role -> role != null && !role.isBlank())
+                .map(role -> role.trim().toUpperCase(Locale.ROOT))
+                .filter(role -> role.equals("INTERVIEWER") || role.equals("INTERVIEWEE"))
+                .distinct()
+                .toList();
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one role");
         }
-        user.setRole(role);
+        return normalized;
     }
 
     private String normalizeEmail(String email) {

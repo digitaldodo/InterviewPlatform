@@ -31,12 +31,13 @@ public class InterviewerService {
 
     public PageResponse<User> search(String q, String expertise, String company, String role, Integer minExperience,
                                      Double minRating, Boolean available, Boolean free, String language,
-                                     String sort, int page, int size) {
+                                     String excludeUserId, String sort, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 24));
         Query query = new Query();
         List<Criteria> criteria = new ArrayList<>();
-        criteria.add(Criteria.where("role").is("INTERVIEWER"));
+        criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
+        if (!isBlank(excludeUserId)) criteria.add(Criteria.where("id").ne(excludeUserId.trim()));
         if (!isBlank(q)) {
             Pattern pattern = Pattern.compile(Pattern.quote(q.trim()), Pattern.CASE_INSENSITIVE);
             criteria.add(new Criteria().orOperator(
@@ -65,18 +66,24 @@ public class InterviewerService {
 
     public User getById(String id) {
         User user = userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
-        if (!"INTERVIEWER".equalsIgnoreCase(user.getRole())) {
+        if (!user.hasRole("INTERVIEWER")) {
             throw new ResourceNotFoundException("Interviewer not found");
         }
         return user;
     }
 
-    public List<User> topRated() {
-        return userRepository.findTop6ByRoleOrderByAverageRatingDesc("INTERVIEWER");
+    public List<User> topRated(String excludeUserId) {
+        return userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER").stream()
+                .filter(user -> isBlank(excludeUserId) || !excludeUserId.equals(user.getId()))
+                .limit(6)
+                .toList();
     }
 
     public List<User> recommended(String intervieweeId) {
-        return userRepository.findTop8ByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true);
+        return userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
+                .filter(user -> isBlank(intervieweeId) || !intervieweeId.equals(user.getId()))
+                .limit(8)
+                .toList();
     }
 
     public List<String> availableSlots(String interviewerId) {

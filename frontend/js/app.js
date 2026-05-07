@@ -20,11 +20,18 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reset-password-group').style.display = 'none';
   document.getElementById('reset-resend').style.display = 'none';
   initRegisterControls();
+  updateRoleFields();
 });
 
-document.getElementById('reg-role').addEventListener('change', function () {
-  document.getElementById('interviewer-fields').style.display = this.value === 'interviewer' ? 'block' : 'none';
-});
+document.querySelectorAll('#reg-role-group input').forEach(input => input.addEventListener('change', updateRoleFields));
+
+function selectedRoles() {
+  return Array.from(document.querySelectorAll('#reg-role-group input:checked')).map(input => input.value);
+}
+
+function updateRoleFields() {
+  document.getElementById('interviewer-fields').style.display = selectedRoles().includes('INTERVIEWER') ? 'block' : 'none';
+}
 
 function initRegisterControls() {
   FormUx.initLanguageSelect('reg-language', { placeholder: 'Search languages' });
@@ -108,8 +115,12 @@ document.getElementById('login-form').addEventListener('submit', async event => 
 document.getElementById('register-form').addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('register-submit');
-  const role = document.getElementById('reg-role').value;
+  const roles = selectedRoles();
   const skills = FormUx.getTagValues('reg-skills');
+  if (!roles.length) {
+    showAlert('register-alert', 'Select at least one workspace role.');
+    return;
+  }
   setLoading(btn, true, 'Creating account');
   try {
     const session = await api('/api/auth/register', {
@@ -118,7 +129,8 @@ document.getElementById('register-form').addEventListener('submit', async event 
         name: document.getElementById('reg-name').value.trim(),
         email: document.getElementById('reg-email').value.trim(),
         password: document.getElementById('reg-password').value,
-        role,
+        role: roles[0],
+        roles,
         company: document.getElementById('reg-company').value.trim(),
         currentRole: document.getElementById('reg-current-role').value.trim(),
         yearsExperience: Number(document.getElementById('reg-years').value || 0),

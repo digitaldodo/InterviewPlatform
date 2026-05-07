@@ -44,11 +44,8 @@ public class UserService {
         }
         user.setUsername(user.getUsername().trim());
         user.setEmail(email);
-        if (isBlank(user.getRole())) {
-            user.setRole("INTERVIEWEE");
-        }
-        if (!"ADMIN".equals(user.getRole()) && !"INTERVIEWER".equals(user.getRole()) && !"INTERVIEWEE".equals(user.getRole())) {
-            throw new IllegalArgumentException("Role must be ADMIN, INTERVIEWER, or INTERVIEWEE");
+        if (user.getRoles().isEmpty()) {
+            user.setRole(isBlank(user.getRole()) ? "INTERVIEWEE" : user.getRole());
         }
         user.setPasswordHash(passwordEncoder.encode(user.getPassword()));
         user.setPassword(null);

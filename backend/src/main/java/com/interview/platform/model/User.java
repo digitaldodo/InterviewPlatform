@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Document(collection = "users")
-@CompoundIndex(name = "role_active_rating_idx", def = "{'role': 1, 'isVerified': 1, 'averageRating': -1}")
+@CompoundIndex(name = "multi_role_active_rating_idx", def = "{'roles': 1, 'role': 1, 'isVerified': 1, 'averageRating': -1}")
 public class User {
 
     @Id
@@ -24,7 +24,10 @@ public class User {
     private String password;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordHash;
-    private String role;       // e.g. "INTERVIEWER" or "INTERVIEWEE"
+    private String role;       // Compatibility primary role for older clients.
+    @Indexed
+    private List<String> roles = new ArrayList<>();
+    private String activeWorkspace;
     @Indexed
     private List<String> skills = new ArrayList<>();
     private List<String> availability = new ArrayList<>();
@@ -72,8 +75,69 @@ public class User {
     public String getPasswordHash() { return passwordHash; }
     public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
 
-    public String getRole() { return role; }
-    public void setRole(String role) { this.role = role == null ? null : role.toUpperCase(); }
+    public String getRole() {
+        if (role == null && roles != null && !roles.isEmpty()) {
+            return normalizeRole(roles.get(0));
+        }
+        role = normalizeRole(role);
+        return role;
+    }
+    public void setRole(String role) {
+        this.role = normalizeRole(role);
+        if (this.role != null && (roles == null || roles.isEmpty())) {
+            roles = new ArrayList<>(List.of(this.role));
+        }
+        if (activeWorkspace == null && this.role != null) {
+            activeWorkspace = this.role;
+        }
+    }
+
+    public List<String> getRoles() {
+        if ((roles == null || roles.isEmpty()) && role != null) {
+            String normalizedRole = normalizeRole(role);
+            roles = normalizedRole == null ? new ArrayList<>() : new ArrayList<>(List.of(normalizedRole));
+        }
+        if (roles != null) {
+            List<String> normalized = new ArrayList<>();
+            for (String item : roles) {
+                String value = normalizeRole(item);
+                if (value != null && !normalized.contains(value)) {
+                    normalized.add(value);
+                }
+            }
+            roles = normalized;
+        }
+        return roles == null ? new ArrayList<>() : roles;
+    }
+    public void setRoles(List<String> roles) {
+        List<String> normalized = new ArrayList<>();
+        if (roles != null) {
+            for (String item : roles) {
+                String value = normalizeRole(item);
+                if (value != null && !normalized.contains(value)) {
+                    normalized.add(value);
+                }
+            }
+        }
+        this.roles = normalized;
+        if (!normalized.isEmpty()) {
+            this.role = normalized.contains("INTERVIEWEE") ? "INTERVIEWEE" : normalized.get(0);
+            if (activeWorkspace == null || !normalized.contains(activeWorkspace)) {
+                activeWorkspace = this.role;
+            }
+        }
+    }
+
+    public String getActiveWorkspace() {
+        if (activeWorkspace == null) {
+            activeWorkspace = getRole() == null ? "INTERVIEWEE" : getRole();
+        }
+        return activeWorkspace;
+    }
+    public void setActiveWorkspace(String activeWorkspace) {
+        String normalized = normalizeRole(activeWorkspace);
+        this.activeWorkspace = normalized;
+    }
 
     public List<String> getSkills() { return skills; }
     public void setSkills(List<String> skills) { this.skills = skills == null ? new ArrayList<>() : skills; }
@@ -131,4 +195,14 @@ public class User {
 
     public Instant getLastLogin() { return lastLogin; }
     public void setLastLogin(Instant lastLogin) { this.lastLogin = lastLogin; }
+
+    public boolean hasRole(String role) {
+        String normalized = normalizeRole(role);
+        return normalized != null && getRoles().contains(normalized);
+    }
+
+    private String normalizeRole(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim().toUpperCase();
+    }
 }

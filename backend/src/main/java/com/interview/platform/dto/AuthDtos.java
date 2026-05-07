@@ -15,8 +15,8 @@ public class AuthDtos {
         private String email;
         @NotBlank @Size(min = 6)
         private String password;
-        @NotBlank
         private String role;
+        private List<String> roles;
         private List<String> skills;
         private String company;
         private String currentRole;
@@ -32,6 +32,8 @@ public class AuthDtos {
         public void setPassword(String password) { this.password = password; }
         public String getRole() { return role; }
         public void setRole(String role) { this.role = role; }
+        public List<String> getRoles() { return roles; }
+        public void setRoles(List<String> roles) { this.roles = roles; }
         public List<String> getSkills() { return skills; }
         public void setSkills(List<String> skills) { this.skills = skills; }
         public String getCompany() { return company; }

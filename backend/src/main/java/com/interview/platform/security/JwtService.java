@@ -34,6 +34,8 @@ public class JwtService {
                 .subject(user.getEmail())
                 .claim("uid", user.getId())
                 .claim("role", user.getRole())
+                .claim("roles", user.getRoles())
+                .claim("activeWorkspace", user.getActiveWorkspace())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusSeconds(accessTokenMinutes * 60)))
                 .signWith(key)

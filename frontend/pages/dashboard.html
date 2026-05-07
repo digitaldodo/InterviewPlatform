@@ -16,8 +16,8 @@
     <div class="brand side-brand"><span class="brand-mark">IP</span><span>InterviewPrep</span></div>
     <nav class="nav-menu" aria-label="Dashboard navigation">
       <button class="nav-link active" data-section="overview" onclick="showSection('overview')">Home</button>
-      <button class="nav-link" data-section="discover" onclick="showSection('discover')">Search</button>
-      <button class="nav-link" data-section="booking" onclick="showSection('booking')">Booking</button>
+      <button class="nav-link interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
+      <button class="nav-link interviewee-workspace" data-section="booking" onclick="showSection('booking')">Booking</button>
       <button class="nav-link" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
       <button class="nav-link" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
       <button class="nav-link" data-section="notifications" onclick="showSection('notifications')">Notifications</button>
@@ -25,6 +25,10 @@
       <button class="nav-link interviewer-only" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
     </nav>
     <div class="sidebar-bottom">
+      <label class="workspace-switcher" id="workspace-switcher-wrap">
+        <span>Workspace</span>
+        <select id="workspace-switcher" onchange="switchWorkspace(this.value)"></select>
+      </label>
       <div class="sidebar-user-info" id="sidebar-user-info"></div>
       <button class="btn btn-outline btn-full" onclick="logout()">Logout</button>
     </div>
@@ -39,7 +43,7 @@
       </div>
       <div class="topbar-actions">
         <button class="icon-btn" onclick="showSection('notifications')" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
-        <button class="btn btn-primary" onclick="showSection('discover')">Book session</button>
+        <button class="btn btn-primary" id="primary-action" onclick="primaryWorkspaceAction()">Book session</button>
       </div>
       <div class="notification-panel" id="notification-panel"></div>
     </header>
@@ -53,7 +57,7 @@
       </div>
 
       <div class="content-grid">
-        <section class="panel">
+        <section class="panel interviewee-workspace">
           <div class="panel-head"><h2>Recommended interviewers</h2><button class="btn btn-ghost btn-sm" onclick="showSection('discover')">View all</button></div>
           <div class="interviewer-row" id="recommended-list"></div>
         </section>
@@ -64,7 +68,7 @@
       </div>
 
       <div class="content-grid">
-        <section class="panel">
+        <section class="panel interviewee-workspace">
           <div class="panel-head"><h2>Skill progress</h2></div>
           <div class="progress-list" id="skill-progress"></div>
         </section>
@@ -202,7 +206,7 @@
   <nav class="bottom-nav" aria-label="Mobile navigation">
     <button onclick="showSection('overview')">Home</button>
     <button onclick="showSection('sessions')">Sessions</button>
-    <button onclick="showSection('discover')">Search</button>
+    <button class="interviewee-workspace" onclick="showSection('discover')">Search</button>
     <button onclick="showSection('feedback')">Feedback</button>
     <button onclick="showSection('profile')">Profile</button>
   </nav>
