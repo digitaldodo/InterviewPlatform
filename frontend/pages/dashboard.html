@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Workspace - InterviewPrep</title>
   <meta name="description" content="Browse interviewers, book sessions, manage meetings, and review feedback." />
+  <link rel="icon" type="image/png" sizes="32x32" href="../assets/brand/favicon-32.png" />
+  <link rel="apple-touch-icon" href="../assets/brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
@@ -13,7 +15,9 @@
 <body class="app-shell">
   <button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open navigation">☰</button>
   <aside class="sidebar" id="sidebar">
-    <div class="brand side-brand"><span class="brand-mark">IP</span><span>InterviewPrep</span></div>
+    <div class="brand side-brand">
+      <img class="brand-logo brand-logo-sidebar" src="../assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1200" height="270" />
+    </div>
     <nav class="nav-menu" aria-label="Dashboard navigation">
       <button class="nav-link active" data-section="overview" onclick="showSection('overview')">Home</button>
       <button class="nav-link interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
@@ -37,6 +41,9 @@
 
   <main class="dashboard-main">
     <header class="topbar">
+      <div class="topbar-brand" aria-hidden="true">
+        <img class="brand-logo-mark" src="../assets/brand/interviewprep-mark.png" alt="" width="512" height="512" />
+      </div>
       <div class="topbar-copy">
         <p class="eyebrow" id="role-eyebrow">Workspace</p>
         <h1 id="welcome-heading">Welcome back</h1>

@@ -297,6 +297,37 @@ textarea:focus-visible {
   align-items: center;
   gap: 0.7rem;
   font-weight: 900;
+  min-width: 0;
+}
+
+.brand-logo,
+.brand-logo-mark {
+  display: block;
+  object-fit: contain;
+  max-width: 100%;
+  flex-shrink: 0;
+}
+
+.brand-logo-nav {
+  width: clamp(148px, 16vw, 196px);
+  height: auto;
+}
+
+.brand-logo-sidebar {
+  width: min(196px, 100%);
+  height: auto;
+}
+
+.brand-logo-auth {
+  width: min(260px, 100%);
+  height: auto;
+}
+
+.brand-logo-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255,255,255,0.08);
 }
 
 .brand-mark,
@@ -708,6 +739,13 @@ textarea:focus-visible {
   padding: 1.2rem;
 }
 
+.auth-brand {
+  display: grid;
+  place-items: center;
+  padding: 0.25rem 0 1rem;
+  margin-bottom: 0.2rem;
+}
+
 .tab-bar {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -799,7 +837,8 @@ textarea:focus-visible {
 }
 
 .side-brand {
-  padding: 0.4rem;
+  width: 100%;
+  padding: 0.35rem 0.25rem 0.7rem;
 }
 
 .nav-menu {
@@ -884,8 +923,16 @@ textarea:focus-visible {
   background: rgba(12, 14, 18, 0.78);
 }
 
+.topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
 .topbar-copy {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .topbar-actions {
@@ -2384,6 +2431,14 @@ textarea:focus-visible {
     display: none;
   }
 
+  .brand-logo-nav {
+    width: 154px;
+  }
+
+  .brand-logo-auth {
+    width: min(230px, 100%);
+  }
+
   .public-hero {
     min-height: auto;
     padding: 3rem 0;
@@ -2434,6 +2489,10 @@ textarea:focus-visible {
   .topbar {
     gap: 0.85rem;
     padding-bottom: 1rem;
+  }
+
+  .topbar-brand {
+    margin-left: 3.3rem;
   }
 
   .booking-selection-banner,

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>InterviewPrep - Mock Interview Practice</title>
   <meta name="description" content="Book focused mock interviews with experienced engineers, product leaders, and hiring managers." />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
@@ -13,8 +15,7 @@
 <body class="public-shell">
   <header class="public-nav">
     <a class="brand" href="#top" aria-label="InterviewPrep home">
-      <span class="brand-mark">IP</span>
-      <span>InterviewPrep</span>
+      <img class="brand-logo brand-logo-nav" src="assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1200" height="270" />
     </a>
     <nav class="public-links" aria-label="Primary">
       <a href="#interviewers">Interviewers</a>
@@ -124,6 +125,9 @@
         <p>Email verification, refresh tokens, and password reset flows are built in for production deployment.</p>
       </div>
       <div class="auth-card">
+        <div class="auth-brand">
+          <img class="brand-logo brand-logo-auth" src="assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1200" height="270" />
+        </div>
         <div class="tab-bar" role="tablist">
           <button id="tab-login" class="tab-btn active" role="tab" onclick="switchTab('login')">Login</button>
           <button id="tab-register" class="tab-btn" role="tab" onclick="switchTab('register')">Register</button>
