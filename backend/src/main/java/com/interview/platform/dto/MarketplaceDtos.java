@@ -81,14 +81,34 @@ public class MarketplaceDtos {
             List<PublicReview> reviews
     ) {}
 
-    public record PrepTrack(String title, String summary, List<String> focusAreas) {}
+    public record PrepTrack(
+            String title,
+            String summary,
+            List<String> focusAreas,
+            Integer progressPercent,
+            String stage,
+            List<String> signals
+    ) {}
 
-    public record PrepResource(String title, String type, String description, String actionLabel) {}
+    public record PrepResource(
+            String title,
+            String type,
+            String description,
+            String actionLabel,
+            Integer progressPercent,
+            Boolean recommended,
+            List<String> tags
+    ) {}
 
     public record PrepHubResponse(
+            String persona,
+            List<String> primaryTopics,
+            List<String> targetCompanies,
             List<PrepTrack> companyTracks,
             List<PrepTrack> behavioralTracks,
             List<PrepTrack> codingTracks,
-            List<PrepResource> resources
+            List<PrepTrack> roleTracks,
+            List<PrepResource> resources,
+            List<PrepResource> quickWins
     ) {}
 }

@@ -37,6 +37,9 @@ let sessionViewMode = 'upcoming';
 let sessionSearchQuery = '';
 let sessionTopicFilter = '';
 let prepHub = null;
+let prepHubLoading = false;
+let prepHubSignature = '';
+let prepHubRequestId = 0;
 let adminOverview = null;
 let adminUsers = [];
 let adminSessions = [];
@@ -232,6 +235,7 @@ function switchWorkspace(workspace) {
   loadAvailabilityManagement();
   loadAnalyticsSummary();
   loadAdminData();
+  loadPrepHub();
 }
 
 function primaryWorkspaceAction() {
@@ -275,18 +279,6 @@ function routeAllowed(route) {
   if (route === 'interviewer') return false;
   if (route.startsWith('admin-')) return false;
   return true;
-}
-
-async function loadOwnProfile() {
-  try {
-    currentUser = await api('/api/users/me/profile');
-    localStorage.setItem('ip_user', JSON.stringify(currentUser));
-    initUi();
-    renderProfile();
-    renderAvailabilityPanels();
-  } catch (err) {
-    toast(err.message || 'Could not refresh profile.', 'error');
-  }
 }
 
 function toggleSidebar(forceOpen) {
@@ -3159,6 +3151,8 @@ async function saveProfile(event) {
     }
     initUi();
     renderProfile();
+    prepHubSignature = '';
+    loadPrepHub();
     toast(imageUploadError ? `Profile saved, but image upload failed: ${imageUploadError}` : 'Profile saved.', imageUploadError ? 'error' : 'success');
   } catch (err) {
     toast(err.message, 'error');
@@ -3868,13 +3862,30 @@ function applySearchSuggestion(label, type) {
 async function loadPrepHub() {
   if (!hasIntervieweeRole()) {
     prepHub = null;
+    prepHubLoading = false;
+    prepHubSignature = '';
+    renderPrepPanels();
     return;
   }
+  const signature = prepProfileSignature();
+  if (prepHub && prepHubSignature === signature) {
+    renderPrepPanels();
+    return;
+  }
+  const requestId = ++prepHubRequestId;
+  prepHubLoading = true;
+  renderPrepPanels();
   try {
-    prepHub = await api('/api/prep/hub');
+    const data = await api('/api/prep/hub');
+    if (requestId !== prepHubRequestId) return;
+    prepHub = data;
+    prepHubSignature = signature;
   } catch {
+    if (requestId !== prepHubRequestId) return;
     prepHub = null;
   } finally {
+    if (requestId !== prepHubRequestId) return;
+    prepHubLoading = false;
     renderPrepPanels();
   }
 }
@@ -3884,9 +3895,10 @@ function renderResumePanel() {
   if (!host) return;
   const hasResume = Boolean(currentUser?.resumeUrl);
   const updatedLabel = currentUser?.resumeUpdatedAt ? fmtDate(currentUser.resumeUpdatedAt) : '';
+  const resumeQuickWin = (prepHub?.quickWins || []).find(item => (item?.tags || []).some(tag => String(tag).toLowerCase().includes('resume')));
   host.innerHTML = `
     <div class="panel-head"><h2>Resume manager</h2>${hasResume ? `<button class="btn btn-outline btn-sm" type="button" onclick="removeResume()">Remove</button>` : ''}</div>
-    <p class="availability-summary-note">Upload a resume once and keep it handy for mock interviews, targeted prep, and interviewer context.</p>
+    <p class="availability-summary-note">Upload a resume once and use it to unlock sharper interview preparation signals.</p>
     ${hasResume ? `
       <div class="resume-card">
         <strong>${esc(currentUser.resumeFileName || 'Uploaded resume')}</strong>
@@ -3897,6 +3909,7 @@ function renderResumePanel() {
         </div>
       </div>
     ` : '<div class="empty-state"><p>No resume uploaded yet.</p></div>'}
+    ${resumeQuickWin ? `<div class="prep-resume-tip"><strong>${esc(resumeQuickWin.title || 'Resume quick win')}</strong><p>${esc(resumeQuickWin.description || '')}</p></div>` : ''}
     <div class="form-group" style="margin-top:1rem;">
       <label for="resume-upload">Upload resume</label>
       <input id="resume-upload" type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onchange="uploadResume(event)" />
@@ -3908,41 +3921,131 @@ function renderPrepPanels() {
   const resourcesHost = document.getElementById('prep-resources-panel');
   const tracksHost = document.getElementById('prep-tracks-panel');
   if (!resourcesHost || !tracksHost) return;
-  if (!prepHub) {
-    resourcesHost.innerHTML = '<h2>Prep resources</h2>' + emptyState('Prep resources are loading.');
-    tracksHost.innerHTML = '<h2>Interview tracks</h2>' + emptyState('Interview tracks will appear here.');
+  if (prepHubLoading) {
+    resourcesHost.innerHTML = `
+      <h2>Preparation resources</h2>
+      <div class="prep-skeleton-grid">${skeletonCards(3)}</div>
+    `;
+    tracksHost.innerHTML = `
+      <h2>Interview tracks</h2>
+      <div class="prep-skeleton-grid">${skeletonCards(4)}</div>
+    `;
     return;
   }
+  if (!prepHub) {
+    resourcesHost.innerHTML = '<h2>Preparation resources</h2>' + emptyState('Personalized preparation data is not available right now.');
+    tracksHost.innerHTML = '<h2>Interview tracks</h2>' + emptyState('Tracks will appear after preparation data syncs.');
+    return;
+  }
+  const summaryTopics = Array.isArray(prepHub.primaryTopics) ? prepHub.primaryTopics : [];
+  const summaryCompanies = Array.isArray(prepHub.targetCompanies) ? prepHub.targetCompanies : [];
+  const quickWins = Array.isArray(prepHub.quickWins) ? prepHub.quickWins : [];
+  const resources = Array.isArray(prepHub.resources) ? prepHub.resources : [];
   resourcesHost.innerHTML = `
-    <h2>Preparation resources</h2>
-    <div class="resource-list">
-      ${(prepHub.resources || []).map(item => `
-        <article class="resource-item">
-          <div><strong>${esc(item.title)}</strong><p>${esc(item.description)}</p></div>
-          <span class="badge badge-gray">${esc(item.type)}</span>
-        </article>
-      `).join('')}
+    <div class="panel-head"><h2>Preparation resources</h2><span class="badge badge-purple">${esc(prepHub.persona || 'Personalized')}</span></div>
+    <div class="prep-summary-grid">
+      <article class="prep-summary-card">
+        <strong>Primary topics</strong>
+        <div class="tag-row">${summaryTopics.length ? summaryTopics.slice(0, 6).map(item => `<span>${esc(item)}</span>`).join('') : '<span>Add profile topics</span>'}</div>
+      </article>
+      <article class="prep-summary-card">
+        <strong>Company focus</strong>
+        <div class="tag-row">${summaryCompanies.length ? summaryCompanies.slice(0, 4).map(item => `<span>${esc(item)}</span>`).join('') : '<span>Discover interviewers by company</span>'}</div>
+      </article>
+    </div>
+    <div class="resource-list prep-resource-list">
+      ${quickWins.map(item => renderPrepResourceCard(item, true)).join('')}
+      ${resources.map(item => renderPrepResourceCard(item, false)).join('')}
     </div>
   `;
   const sections = [
+    ['Role-aware tracks', prepHub.roleTracks || []],
     ['Company-specific tracks', prepHub.companyTracks || []],
-    ['Behavioral prep', prepHub.behavioralTracks || []],
     ['Coding prep', prepHub.codingTracks || []],
+    ['Behavioral prep', prepHub.behavioralTracks || []],
   ];
   tracksHost.innerHTML = sections.map(([title, items]) => `
     <div class="prep-section-block">
       <div class="panel-head"><h2>${esc(title)}</h2></div>
       <div class="prep-track-grid">
-        ${items.map(item => `
-          <article class="prep-track-card">
-            <strong>${esc(item.title)}</strong>
-            <p>${esc(item.summary)}</p>
-            <div class="tag-row">${(item.focusAreas || []).map(point => `<span>${esc(point)}</span>`).join('')}</div>
-          </article>
-        `).join('')}
+        ${items.length ? items.map(item => `
+          ${renderPrepTrackCard(item)}
+        `).join('') : '<div class="empty-state"><p>No tracks generated for this section yet.</p></div>'}
       </div>
     </div>
-  `).join('');
+  `).join('') || emptyState('No prep tracks are available yet.');
+}
+
+function renderPrepTrackCard(item) {
+  const progress = clampPercent(item?.progressPercent);
+  const stage = item?.stage || prepStage(progress);
+  return `
+    <article class="prep-track-card prep-card">
+      <div class="prep-card-head">
+        <strong>${esc(item?.title || 'Preparation track')}</strong>
+        <span class="badge badge-gray">${esc(stage)}</span>
+      </div>
+      <p>${esc(item?.summary || 'Track summary unavailable.')}</p>
+      <div class="prep-progress-row">
+        <div class="prep-progress"><i style="width:${progress}%"></i></div>
+        <span>${progress}%</span>
+      </div>
+      <div class="tag-row">${(item?.focusAreas || []).slice(0, 6).map(point => `<span>${esc(point)}</span>`).join('')}</div>
+      ${(item?.signals || []).length ? `<div class="tag-row subtle">${item.signals.map(signal => `<span>${esc(signal)}</span>`).join('')}</div>` : ''}
+    </article>
+  `;
+}
+
+function renderPrepResourceCard(item, isQuickWin) {
+  const progress = clampPercent(item?.progressPercent);
+  const badges = Array.isArray(item?.tags) ? item.tags : [];
+  return `
+    <article class="resource-item prep-resource-card ${isQuickWin ? 'quick-win' : ''}">
+      <div class="prep-card-head">
+        <strong>${esc(item?.title || 'Prep resource')}</strong>
+        <span class="badge ${isQuickWin ? 'badge-green' : 'badge-gray'}">${esc(item?.type || (isQuickWin ? 'Quick win' : 'Resource'))}</span>
+      </div>
+      <p>${esc(item?.description || '')}</p>
+      <div class="prep-progress-row">
+        <div class="prep-progress"><i style="width:${progress}%"></i></div>
+        <span>${progress}%</span>
+      </div>
+      <div class="prep-resource-foot">
+        <div class="tag-row subtle">${badges.slice(0, 4).map(tag => `<span>${esc(tag)}</span>`).join('')}</div>
+        <span class="prep-action-label">${esc(item?.actionLabel || 'Open')}</span>
+      </div>
+    </article>
+  `;
+}
+
+function prepProfileSignature() {
+  if (!currentUser?.id) return '';
+  const data = {
+    id: currentUser.id,
+    role: currentUser.currentRole || '',
+    years: Number(currentUser.yearsExperience || 0),
+    skills: (currentUser.skills || []).join(','),
+    topics: (currentUser.interviewTopics || []).join(','),
+    domains: (currentUser.preferredDomains || []).join(','),
+    company: currentUser.company || '',
+    availability: (currentUser.availability || []).join(','),
+    resumeUrl: currentUser.resumeUrl || '',
+    resumeUpdatedAt: currentUser.resumeUpdatedAt || '',
+  };
+  return JSON.stringify(data);
+}
+
+function prepStage(progress) {
+  if (progress >= 75) return 'Strong';
+  if (progress >= 50) return 'Building';
+  if (progress >= 30) return 'Foundation';
+  return 'Starting';
+}
+
+function clampPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(100, Math.round(number)));
 }
 
 async function uploadResume(event) {
@@ -3954,7 +4057,9 @@ async function uploadResume(event) {
     currentUser = await api('/api/users/me/resume', { method: 'POST', body: formData });
     localStorage.setItem('ip_user', JSON.stringify(currentUser));
     toast('Resume uploaded.', 'success');
+    prepHubSignature = '';
     renderResumePanel();
+    loadPrepHub();
   } catch (err) {
     toast(err.message || 'Could not upload resume.', 'error');
   }
@@ -3965,7 +4070,9 @@ async function removeResume() {
     currentUser = await api('/api/users/me/resume', { method: 'DELETE' });
     localStorage.setItem('ip_user', JSON.stringify(currentUser));
     toast('Resume removed.', 'success');
+    prepHubSignature = '';
     renderResumePanel();
+    loadPrepHub();
   } catch (err) {
     toast(err.message || 'Could not remove resume.', 'error');
   }
