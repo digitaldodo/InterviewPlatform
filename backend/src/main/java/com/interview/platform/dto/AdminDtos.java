@@ -61,6 +61,90 @@ public class AdminDtos {
 
     public record TopicCount(String topic, long count) {}
 
+    public record TrendPoint(String label, long value) {}
+
+    public record RateTrendPoint(String label, double value) {}
+
+    public record PlatformHealthIndicator(
+            String key,
+            String status,
+            String detail,
+            String updatedAt
+    ) {}
+
+    public record AdminUserItem(
+            String id,
+            String displayName,
+            String email,
+            List<String> roles,
+            Boolean accountEnabled,
+            Boolean publicProfileVisible,
+            Boolean interviewerVerified,
+            String verificationRequestStatus,
+            String company,
+            String currentRole,
+            String createdAt,
+            String lastLogin,
+            Double trustScore,
+            Boolean flagged,
+            Long moderationActionCount
+    ) {}
+
+    public record AdminSessionItem(
+            String id,
+            String title,
+            String status,
+            String startTime,
+            Integer durationMinutes,
+            String meetingProvider,
+            String interviewerId,
+            String interviewerName,
+            String candidateId,
+            String candidateName,
+            List<String> topics,
+            Boolean cancellation,
+            Boolean noShowRisk,
+            Boolean disputeRisk,
+            Long reportCount,
+            Long openReportCount,
+            String lastReportStatus
+    ) {}
+
+    public record AdminReportItem(
+            String id,
+            String category,
+            String reason,
+            String details,
+            String status,
+            Integer duplicateCount,
+            String reporterId,
+            String reporterName,
+            String reportedUserId,
+            String reportedUserName,
+            String sessionId,
+            String createdAt,
+            String moderatedAt,
+            String reviewedByAdminId,
+            String resolutionNotes
+    ) {}
+
+    public record AdminAnalyticsResponse(
+            int days,
+            List<TrendPoint> userGrowthTrend,
+            List<TrendPoint> activeUserTrend,
+            List<TrendPoint> sessionTrend,
+            List<TrendPoint> completedSessionTrend,
+            List<TrendPoint> cancellationTrend,
+            List<TrendPoint> reviewTrend,
+            List<TrendPoint> reportTrend,
+            List<RateTrendPoint> averageRatingTrend,
+            List<RateTrendPoint> trustTrend,
+            long activeUsers,
+            long flaggedUsers,
+            long disputedSessions,
+            long noShowSessions
+    ) {}
+
     public record ReviewTopicSummary(
             String topic,
             Integer rating,
@@ -151,14 +235,18 @@ public class AdminDtos {
 
     public record OverviewResponse(
             long totalUsers,
+            long activeUsers,
             long totalInterviewers,
             long totalAdmins,
             long enabledUsers,
             long verifiedInterviewers,
+            long flaggedUsers,
             long totalSessions,
             long completedSessions,
             long cancelledSessions,
             long pendingSessions,
+            long disputedSessions,
+            long noShowSessions,
             long openReports,
             long visiblePublicReviews,
             long hiddenPublicReviews,
@@ -169,6 +257,7 @@ public class AdminDtos {
             double cancellationRate,
             double averageReviewQualityScore,
             double averageTrustScore,
-            List<TopicCount> topTopics
+            List<TopicCount> topTopics,
+            List<PlatformHealthIndicator> healthIndicators
     ) {}
 }

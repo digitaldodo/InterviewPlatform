@@ -2,8 +2,8 @@ package com.interview.platform.controller;
 
 import com.interview.platform.api.ApiResponse;
 import com.interview.platform.dto.AdminDtos;
+import com.interview.platform.dto.PageResponse;
 import com.interview.platform.exception.UnauthorizedException;
-import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
 import com.interview.platform.security.UserPrincipal;
@@ -12,8 +12,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -30,31 +28,58 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("Admin overview fetched", adminService.overview()));
     }
 
-    @GetMapping("/users")
-    public ResponseEntity<ApiResponse<List<User>>> users(@RequestParam(required = false) String q,
-                                                         @RequestParam(required = false) String role,
-                                                         @RequestParam(required = false) Boolean enabled) {
-        return ResponseEntity.ok(ApiResponse.success("Users fetched", adminService.users(q, role, enabled)));
+    @GetMapping("/analytics")
+    public ResponseEntity<ApiResponse<AdminDtos.AdminAnalyticsResponse>> analytics(@RequestParam(required = false) Integer days) {
+        return ResponseEntity.ok(ApiResponse.success("Admin analytics fetched", adminService.analytics(days)));
     }
 
-    @GetMapping("/interviewers")
-    public ResponseEntity<ApiResponse<List<User>>> interviewers(@RequestParam(required = false) Boolean verified) {
-        return ResponseEntity.ok(ApiResponse.success("Interviewers fetched", adminService.interviewers(verified)));
+    @GetMapping("/users")
+    public ResponseEntity<ApiResponse<PageResponse<AdminDtos.AdminUserItem>>> users(@RequestParam(required = false) String q,
+                                                                                     @RequestParam(required = false) String role,
+                                                                                     @RequestParam(required = false) Boolean enabled,
+                                                                                     @RequestParam(required = false) String verification,
+                                                                                     @RequestParam(required = false) Boolean flagged,
+                                                                                     @RequestParam(required = false) String sortBy,
+                                                                                     @RequestParam(required = false) String sortDir,
+                                                                                     @RequestParam(required = false) Integer page,
+                                                                                     @RequestParam(required = false) Integer size) {
+        return ResponseEntity.ok(ApiResponse.success("Users fetched", adminService.users(q, role, enabled, verification, flagged, sortBy, sortDir, page, size)));
     }
 
     @GetMapping("/sessions")
-    public ResponseEntity<ApiResponse<List<Session>>> sessions(@RequestParam(required = false) String status) {
-        return ResponseEntity.ok(ApiResponse.success("Sessions fetched", adminService.sessions(status)));
+    public ResponseEntity<ApiResponse<PageResponse<AdminDtos.AdminSessionItem>>> sessions(@RequestParam(required = false) String q,
+                                                                                            @RequestParam(required = false) String status,
+                                                                                            @RequestParam(required = false) Boolean cancellationOnly,
+                                                                                            @RequestParam(required = false) Boolean noShowOnly,
+                                                                                            @RequestParam(required = false) Boolean disputedOnly,
+                                                                                            @RequestParam(required = false) String sortBy,
+                                                                                            @RequestParam(required = false) String sortDir,
+                                                                                            @RequestParam(required = false) Integer page,
+                                                                                            @RequestParam(required = false) Integer size) {
+        return ResponseEntity.ok(ApiResponse.success("Sessions fetched", adminService.sessions(q, status, cancellationOnly, noShowOnly, disputedOnly, sortBy, sortDir, page, size)));
     }
 
     @GetMapping("/reports")
-    public ResponseEntity<ApiResponse<List<UserReport>>> reports(@RequestParam(required = false) String status) {
-        return ResponseEntity.ok(ApiResponse.success("Reports fetched", adminService.reports(status)));
+    public ResponseEntity<ApiResponse<PageResponse<AdminDtos.AdminReportItem>>> reports(@RequestParam(required = false) String q,
+                                                                                          @RequestParam(required = false) String status,
+                                                                                          @RequestParam(required = false) String category,
+                                                                                          @RequestParam(required = false) String sortBy,
+                                                                                          @RequestParam(required = false) String sortDir,
+                                                                                          @RequestParam(required = false) Integer page,
+                                                                                          @RequestParam(required = false) Integer size) {
+        return ResponseEntity.ok(ApiResponse.success("Reports fetched", adminService.reports(q, status, category, sortBy, sortDir, page, size)));
     }
 
     @GetMapping("/reviews")
-    public ResponseEntity<ApiResponse<List<AdminDtos.ReviewQueueItem>>> reviews(@RequestParam(required = false) Boolean visible) {
-        return ResponseEntity.ok(ApiResponse.success("Review moderation queue fetched", adminService.reviews(visible)));
+    public ResponseEntity<ApiResponse<PageResponse<AdminDtos.ReviewQueueItem>>> reviews(@RequestParam(required = false) String q,
+                                                                                          @RequestParam(required = false) Boolean visible,
+                                                                                          @RequestParam(required = false) Integer minRating,
+                                                                                          @RequestParam(required = false) Boolean flaggedOnly,
+                                                                                          @RequestParam(required = false) String sortBy,
+                                                                                          @RequestParam(required = false) String sortDir,
+                                                                                          @RequestParam(required = false) Integer page,
+                                                                                          @RequestParam(required = false) Integer size) {
+        return ResponseEntity.ok(ApiResponse.success("Review moderation queue fetched", adminService.reviews(q, visible, minRating, flaggedOnly, sortBy, sortDir, page, size)));
     }
 
     @GetMapping("/trust-dashboard")
@@ -66,8 +91,10 @@ public class AdminController {
     public ResponseEntity<ApiResponse<AdminDtos.AuditLogPage>> auditLogs(@RequestParam(required = false) Integer page,
                                                                          @RequestParam(required = false) Integer size,
                                                                          @RequestParam(required = false) String entityType,
-                                                                         @RequestParam(required = false) String subjectUserId) {
-        return ResponseEntity.ok(ApiResponse.success("Audit logs fetched", adminService.auditLogs(page, size, entityType, subjectUserId)));
+                                                                         @RequestParam(required = false) String subjectUserId,
+                                                                         @RequestParam(required = false) String actorUserId,
+                                                                         @RequestParam(required = false) String q) {
+        return ResponseEntity.ok(ApiResponse.success("Audit logs fetched", adminService.auditLogs(page, size, entityType, subjectUserId, actorUserId, q)));
     }
 
     @PatchMapping("/users/{userId}/moderation")

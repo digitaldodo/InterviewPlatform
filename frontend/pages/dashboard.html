@@ -29,9 +29,11 @@
       <button class="nav-link user-workspace" data-section="profile" onclick="showSection('profile')">Profile</button>
       <button class="nav-link interviewer-only user-workspace" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
       <button class="nav-link admin-only" data-section="admin-overview" onclick="showSection('admin-overview')">Control Center</button>
+      <button class="nav-link admin-only" data-section="admin-analytics" onclick="showSection('admin-analytics')">Analytics</button>
       <button class="nav-link admin-only" data-section="admin-users" onclick="showSection('admin-users')">Users</button>
       <button class="nav-link admin-only" data-section="admin-sessions" onclick="showSection('admin-sessions')">Sessions</button>
       <button class="nav-link admin-only" data-section="admin-reports" onclick="showSection('admin-reports')">Moderation</button>
+      <button class="nav-link admin-only" data-section="admin-audit" onclick="showSection('admin-audit')">Audit Trail</button>
       <button class="nav-link admin-only" data-section="profile" onclick="showSection('profile')">Profile</button>
     </nav>
     <div class="sidebar-bottom">
@@ -341,10 +343,23 @@
           <option value="INTERVIEWER">Interviewer</option>
           <option value="ADMIN">Admin</option>
         </select>
+        <select class="input" id="admin-user-verification" onchange="renderAdminUsers()">
+          <option value="">Any verification</option>
+          <option value="NONE">None</option>
+          <option value="PENDING">Pending</option>
+          <option value="APPROVED">Approved</option>
+          <option value="REJECTED">Rejected</option>
+        </select>
         <select class="input" id="admin-user-enabled" onchange="renderAdminUsers()">
           <option value="">All access states</option>
           <option value="enabled">Enabled</option>
           <option value="disabled">Disabled</option>
+        </select>
+        <select class="input" id="admin-user-sort" onchange="renderAdminUsers()">
+          <option value="CREATED_AT_DESC">Newest accounts</option>
+          <option value="LAST_LOGIN_DESC">Last login</option>
+          <option value="TRUST_ASC">Lowest trust first</option>
+          <option value="NAME_ASC">Name A-Z</option>
         </select>
       </div>
       <section class="panel admin-panel" id="admin-users-panel"></section>
@@ -363,6 +378,18 @@
           <option value="COMPLETED">Completed</option>
           <option value="CANCELLED">Cancelled</option>
         </select>
+        <select class="input" id="admin-session-focus" onchange="renderAdminSessions()">
+          <option value="">All session signals</option>
+          <option value="cancellation">Cancellations</option>
+          <option value="no-show">No-show risk</option>
+          <option value="disputed">Disputes</option>
+        </select>
+        <select class="input" id="admin-session-sort" onchange="renderAdminSessions()">
+          <option value="START_TIME_DESC">Latest scheduled</option>
+          <option value="START_TIME_ASC">Earliest scheduled</option>
+          <option value="REPORTS_DESC">Most reports</option>
+          <option value="STATUS_ASC">Status A-Z</option>
+        </select>
       </div>
       <section class="panel admin-panel" id="admin-sessions-panel"></section>
     </section>
@@ -372,6 +399,20 @@
         <div><p class="eyebrow">Admin Moderation</p><h1>Reports and trust queue</h1></div>
       </div>
       <section class="panel admin-panel" id="admin-reports-panel"></section>
+    </section>
+
+    <section id="section-admin-audit" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Audit Trail</p><h1>Immutable action history</h1></div>
+      </div>
+      <section class="panel admin-panel" id="admin-audit-panel"></section>
+    </section>
+
+    <section id="section-admin-analytics" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Analytics</p><h1>Growth and operations trends</h1></div>
+      </div>
+      <section class="panel admin-panel" id="admin-analytics-detail-panel"></section>
     </section>
 
     <section id="section-profile" class="dashboard-section" hidden>

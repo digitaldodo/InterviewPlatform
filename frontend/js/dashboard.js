@@ -47,23 +47,30 @@ let resumeUploadState = 'idle';
 let jdMatchSubmitting = false;
 let adminOverview = null;
 let adminUsers = [];
+let adminUsersPage = null;
 let adminSessions = [];
+let adminSessionsPage = null;
 let adminReports = [];
+let adminReportsPage = null;
 let adminReviews = [];
+let adminReviewsPage = null;
 let adminTrustDashboard = null;
 let adminAuditLogPage = null;
+let adminAnalytics = null;
 let adminLoading = false;
 let moderationDialogState = null;
 let reportDialogState = null;
 let discoverFiltersOpen = false;
 let lastDiscoveryResultCount = 0;
 let searchSuggestionTimer = null;
+let adminReloadTimer = null;
 const adminState = {
-  users: { page: 0, size: 6 },
-  sessions: { page: 0, size: 8 },
-  reports: { page: 0, size: 5, status: 'OPEN', query: '', category: '' },
-  reviews: { page: 0, size: 5, visibility: '', query: '', minRating: '' },
-  audit: { page: 0, size: 8, entityType: '', subjectUserId: '' },
+  users: { page: 0, size: 8, q: '', role: '', enabled: '', verification: '', flagged: false, sortBy: 'CREATED_AT', sortDir: 'DESC' },
+  sessions: { page: 0, size: 8, q: '', status: '', focus: '', sortBy: 'START_TIME', sortDir: 'DESC' },
+  reports: { page: 0, size: 6, status: '', query: '', category: '', sortBy: 'CREATED_AT', sortDir: 'DESC' },
+  reviews: { page: 0, size: 6, visibility: '', query: '', minRating: '', flaggedOnly: false, sortBy: 'CREATED_AT', sortDir: 'DESC' },
+  audit: { page: 0, size: 10, entityType: '', subjectUserId: '', actorUserId: '', q: '' },
+  analytics: { days: 30 },
 };
 const REPORT_CATEGORY_OPTIONS = [
   { value: 'SAFETY', label: 'Safety concern', hint: 'Harassment, hate speech, threats, discrimination, or abuse.' },
@@ -90,7 +97,7 @@ const AVAILABILITY_PREFERENCES = [
   'Late night availability',
   'Early morning availability',
 ];
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-users', 'admin-sessions', 'admin-reports']);
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 let analyticsSummary = null;
@@ -286,7 +293,7 @@ function applyWorkspaceVisibility() {
 }
 
 function routeAllowed(route) {
-  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-users', 'admin-sessions', 'admin-reports', 'profile'].includes(route);
+  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'profile'].includes(route);
   if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
   if (route === 'interviewer') return false;
   if (route.startsWith('admin-')) return false;
@@ -5709,6 +5716,16 @@ function changeAuditPage(delta) {
   loadAdminData(true);
 }
 
+window.loadAdminData = loadAdminData;
+window.renderAdminPanels = renderAdminPanels;
+window.renderAdminUsers = renderAdminUsers;
+window.renderAdminSessions = renderAdminSessions;
+window.renderAdminReports = renderAdminReports;
+window.setAdminFilter = setAdminFilter;
+window.setAdminPage = setAdminPage;
+window.setAuditFilter = setAuditFilter;
+window.changeAuditPage = changeAuditPage;
+
 function toggleUserAccess(userId, enabled) {
   const user = adminUsers.find(item => item.id === userId);
   if (!user) return toast('User not found.', 'error');
@@ -5903,7 +5920,7 @@ function renderModerationDialog() {
         <label class="form-group">
           <span>Status</span>
           <select class="input" onchange="updateModerationDialogField('status', this.value)">
-            ${['PENDING', 'APPROVED', 'REJECTED'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+            ${['NONE', 'PENDING', 'APPROVED', 'REJECTED'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status === 'NONE' ? 'RESET' : status}</option>`).join('')}
           </select>
         </label>
         <label class="form-group">
@@ -6102,4 +6119,563 @@ function esc(value) {
 
 function jsArg(value) {
   return esc(JSON.stringify(String(value)));
+}
+
+function parseSortValue(value, fallbackBy, fallbackDir) {
+  const [sortBy, sortDir] = String(value || `${fallbackBy}_${fallbackDir}`).split('_');
+  return {
+    sortBy: sortBy || fallbackBy,
+    sortDir: sortDir || fallbackDir,
+  };
+}
+
+function queueAdminReload() {
+  clearTimeout(adminReloadTimer);
+  adminReloadTimer = setTimeout(() => loadAdminData(true), 220);
+}
+
+function syncAdminUserFiltersFromControls() {
+  const search = String(document.getElementById('admin-user-search')?.value || '').trim();
+  const role = String(document.getElementById('admin-user-role')?.value || '').trim().toUpperCase();
+  const verification = String(document.getElementById('admin-user-verification')?.value || '').trim().toUpperCase();
+  const enabledSelect = String(document.getElementById('admin-user-enabled')?.value || '').trim().toLowerCase();
+  const enabled = enabledSelect === 'enabled' ? true : enabledSelect === 'disabled' ? false : '';
+  const sortValue = document.getElementById('admin-user-sort')?.value || 'CREATED_AT_DESC';
+  const { sortBy, sortDir } = parseSortValue(sortValue, 'CREATED_AT', 'DESC');
+  const next = { q: search, role, verification, enabled, sortBy, sortDir };
+  const changed = Object.keys(next).some(key => String(adminState.users[key] ?? '') !== String(next[key] ?? ''));
+  Object.assign(adminState.users, next);
+  if (changed) adminState.users.page = 0;
+  return changed;
+}
+
+function syncAdminSessionFiltersFromControls() {
+  const search = String(document.getElementById('admin-session-search')?.value || '').trim();
+  const status = String(document.getElementById('admin-session-status')?.value || '').trim().toUpperCase();
+  const focus = String(document.getElementById('admin-session-focus')?.value || '').trim().toLowerCase();
+  const sortValue = document.getElementById('admin-session-sort')?.value || 'START_TIME_DESC';
+  const { sortBy, sortDir } = parseSortValue(sortValue, 'START_TIME', 'DESC');
+  const next = { q: search, status, focus, sortBy, sortDir };
+  const changed = Object.keys(next).some(key => String(adminState.sessions[key] ?? '') !== String(next[key] ?? ''));
+  Object.assign(adminState.sessions, next);
+  if (changed) adminState.sessions.page = 0;
+  return changed;
+}
+
+function syncAdminAuditFiltersFromControls() {
+  if (!document.getElementById('admin-audit-entity') && !document.getElementById('admin-audit-search')) {
+    return false;
+  }
+  const entityType = String(document.getElementById('admin-audit-entity')?.value || '').trim().toUpperCase();
+  const actorUserId = String(document.getElementById('admin-audit-actor')?.value || '').trim();
+  const subjectUserId = String(document.getElementById('admin-audit-subject')?.value || '').trim();
+  const q = String(document.getElementById('admin-audit-search')?.value || '').trim();
+  const next = { entityType, actorUserId, subjectUserId, q };
+  const changed = Object.keys(next).some(key => String(adminState.audit[key] ?? '') !== String(next[key] ?? ''));
+  Object.assign(adminState.audit, next);
+  if (changed) adminState.audit.page = 0;
+  return changed;
+}
+
+function buildAdminUsersQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.users.page || 0));
+  params.set('size', String(adminState.users.size || 8));
+  if (adminState.users.q) params.set('q', adminState.users.q);
+  if (adminState.users.role) params.set('role', adminState.users.role);
+  if (adminState.users.verification) params.set('verification', adminState.users.verification);
+  if (adminState.users.enabled !== '') params.set('enabled', String(adminState.users.enabled));
+  if (adminState.users.sortBy) params.set('sortBy', adminState.users.sortBy);
+  if (adminState.users.sortDir) params.set('sortDir', adminState.users.sortDir);
+  if (adminState.users.flagged) params.set('flagged', 'true');
+  return params.toString();
+}
+
+function buildAdminSessionsQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.sessions.page || 0));
+  params.set('size', String(adminState.sessions.size || 8));
+  if (adminState.sessions.q) params.set('q', adminState.sessions.q);
+  if (adminState.sessions.status) params.set('status', adminState.sessions.status);
+  if (adminState.sessions.sortBy) params.set('sortBy', adminState.sessions.sortBy);
+  if (adminState.sessions.sortDir) params.set('sortDir', adminState.sessions.sortDir);
+  if (adminState.sessions.focus === 'cancellation') params.set('cancellationOnly', 'true');
+  if (adminState.sessions.focus === 'no-show') params.set('noShowOnly', 'true');
+  if (adminState.sessions.focus === 'disputed') params.set('disputedOnly', 'true');
+  return params.toString();
+}
+
+function buildAdminReportsQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.reports.page || 0));
+  params.set('size', String(adminState.reports.size || 6));
+  if (adminState.reports.query) params.set('q', adminState.reports.query);
+  if (adminState.reports.status) params.set('status', adminState.reports.status);
+  if (adminState.reports.category) params.set('category', adminState.reports.category);
+  if (adminState.reports.sortBy) params.set('sortBy', adminState.reports.sortBy);
+  if (adminState.reports.sortDir) params.set('sortDir', adminState.reports.sortDir);
+  return params.toString();
+}
+
+function buildAdminReviewsQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.reviews.page || 0));
+  params.set('size', String(adminState.reviews.size || 6));
+  if (adminState.reviews.query) params.set('q', adminState.reviews.query);
+  if (adminState.reviews.visibility) params.set('visible', adminState.reviews.visibility === 'visible' ? 'true' : 'false');
+  if (adminState.reviews.minRating) params.set('minRating', String(adminState.reviews.minRating));
+  if (adminState.reviews.flaggedOnly) params.set('flaggedOnly', 'true');
+  if (adminState.reviews.sortBy) params.set('sortBy', adminState.reviews.sortBy);
+  if (adminState.reviews.sortDir) params.set('sortDir', adminState.reviews.sortDir);
+  return params.toString();
+}
+
+function buildAuditQuery() {
+  const params = new URLSearchParams();
+  params.set('page', String(adminState.audit.page || 0));
+  params.set('size', String(adminState.audit.size || 10));
+  if (adminState.audit.entityType) params.set('entityType', adminState.audit.entityType);
+  if (adminState.audit.subjectUserId) params.set('subjectUserId', adminState.audit.subjectUserId);
+  if (adminState.audit.actorUserId) params.set('actorUserId', adminState.audit.actorUserId);
+  if (adminState.audit.q) params.set('q', adminState.audit.q);
+  return params.toString();
+}
+
+function buildAdminAnalyticsQuery() {
+  const params = new URLSearchParams();
+  params.set('days', String(adminState.analytics.days || 30));
+  return params.toString();
+}
+
+async function loadAdminData(force = false) {
+  if (!hasAdminRole()) return;
+  if (!force && adminOverview && adminTrustDashboard && adminAuditLogPage && adminUsersPage && adminSessionsPage) {
+    renderAdminPanels();
+    return;
+  }
+  adminLoading = true;
+  renderAdminPanels();
+  try {
+    const [overview, usersPage, sessionsPage, reportsPage, reviewsPage, trustDashboard, auditLogPage, analytics] = await Promise.all([
+      api('/api/admin/overview'),
+      api(`/api/admin/users?${buildAdminUsersQuery()}`),
+      api(`/api/admin/sessions?${buildAdminSessionsQuery()}`),
+      api(`/api/admin/reports?${buildAdminReportsQuery()}`),
+      api(`/api/admin/reviews?${buildAdminReviewsQuery()}`),
+      api('/api/admin/trust-dashboard'),
+      api(`/api/admin/audit-logs?${buildAuditQuery()}`),
+      api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
+    ]);
+    adminOverview = overview || null;
+    adminUsersPage = usersPage || null;
+    adminSessionsPage = sessionsPage || null;
+    adminReportsPage = reportsPage || null;
+    adminReviewsPage = reviewsPage || null;
+    adminUsers = Array.isArray(usersPage?.items) ? usersPage.items : [];
+    adminSessions = Array.isArray(sessionsPage?.items) ? sessionsPage.items : [];
+    adminReports = Array.isArray(reportsPage?.items) ? reportsPage.items : [];
+    adminReviews = Array.isArray(reviewsPage?.items) ? reviewsPage.items : [];
+    adminTrustDashboard = trustDashboard || null;
+    adminAuditLogPage = auditLogPage || null;
+    adminAnalytics = analytics || null;
+  } catch (err) {
+    toast(err.message || 'Could not load admin data.', 'error');
+  } finally {
+    adminLoading = false;
+    renderAdminPanels();
+  }
+}
+
+function renderAdminPanels() {
+  if (!hasAdminRole()) return;
+  renderAdminOverview();
+  renderAdminUsers();
+  renderAdminSessions();
+  renderAdminReports();
+  renderAdminAudit();
+  renderAdminAnalytics();
+}
+
+function renderAdminOverview() {
+  const metricsHost = document.getElementById('admin-metrics-grid');
+  const analyticsHost = document.getElementById('admin-analytics-panel');
+  const liveHost = document.getElementById('admin-live-sessions-panel');
+  if (metricsHost) {
+    if (adminLoading && !adminOverview) {
+      metricsHost.innerHTML = skeletonCards(6);
+    } else if (adminOverview) {
+      const health = Array.isArray(adminOverview.healthIndicators) ? adminOverview.healthIndicators : [];
+      metricsHost.innerHTML = [
+        statMetric('Total users', adminOverview.totalUsers || 0, 'badge-purple'),
+        statMetric('Active users', adminOverview.activeUsers || 0, 'badge-green'),
+        statMetric('Verified interviewers', adminOverview.verifiedInterviewers || 0, 'badge-green'),
+        statMetric('Completed sessions', adminOverview.completedSessions || 0, 'badge-green'),
+        statMetric('Cancellation rate', `${adminOverview.cancellationRate || 0}%`, 'badge-yellow'),
+        statMetric('Pending reports', adminOverview.openReports || 0, 'badge-red'),
+        statMetric('Flagged users', adminOverview.flaggedUsers || 0, 'badge-red'),
+        statMetric('No-show sessions', adminOverview.noShowSessions || 0, 'badge-yellow'),
+      ].join('');
+      if (analyticsHost) {
+        analyticsHost.innerHTML = `
+          <div class="panel-head"><h2>Platform health</h2><span class="badge badge-gray">${esc(String(health.length))} indicators</span></div>
+          <div class="admin-list">
+            ${health.map(item => `
+              <article class="admin-list-item">
+                <div>
+                  <strong>${esc(String(item.key || 'HEALTH'))}</strong>
+                  <p>${esc(item.detail || 'Healthy')}</p>
+                  <small>${esc(fmtDate(item.updatedAt))}</small>
+                </div>
+                <span class="badge badge-${item.status === 'DEGRADED' ? 'red' : item.status === 'WATCH' ? 'yellow' : 'green'}">${esc(item.status || 'HEALTHY')}</span>
+              </article>
+            `).join('') || emptyState('No platform health indicators yet.')}
+          </div>
+        `;
+      }
+    }
+  }
+  if (liveHost) {
+    liveHost.innerHTML = adminLoading && !adminSessions.length
+      ? skeletonCards(2)
+      : `
+        <div class="panel-head"><h2>Session operations monitor</h2><span class="badge badge-gray">${esc(String(adminSessionsPage?.total || adminSessions.length || 0))} matching</span></div>
+        <div class="admin-list">
+          ${adminSessions.slice(0, 6).map(session => `
+            <article class="admin-list-item">
+              <div>
+                <strong>${esc(session.title || sessionTitle(session))}</strong>
+                <p>${esc(session.interviewerName || 'Interviewer')} • ${esc(session.candidateName || 'Candidate')}</p>
+                <small>${esc(fmtDate(session.startTime))}</small>
+              </div>
+              <div class="tag-row">
+                <span class="badge badge-${statusClass((session.status || '').toUpperCase())}">${esc(session.status || 'PENDING')}</span>
+                ${session.disputeRisk ? '<span class="badge badge-red">Dispute risk</span>' : ''}
+                ${session.noShowRisk ? '<span class="badge badge-yellow">No-show risk</span>' : ''}
+              </div>
+            </article>
+          `).join('') || emptyState('No sessions found for the current operations filters.')}
+        </div>
+      `;
+  }
+}
+
+function renderAdminUsers() {
+  const host = document.getElementById('admin-users-panel');
+  if (!host) return;
+  const changed = syncAdminUserFiltersFromControls();
+  if (changed && !adminLoading) queueAdminReload();
+  if (adminLoading && !adminUsers.length) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const flaggedMap = new Map((adminTrustDashboard?.flaggedUsers || []).map(item => [item.userId, item]));
+  host.innerHTML = `
+    <div class="admin-table-shell">
+      <div class="admin-table-meta">
+        <strong>${esc(String(adminUsersPage?.total || 0))}</strong>
+        <span>matching users</span>
+      </div>
+      <div class="admin-table">
+        ${adminUsers.map(user => {
+          const trust = flaggedMap.get(user.id);
+          return `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(user.displayName || accountDisplayName(user))}</strong>
+                  <div class="tag-row">
+                    ${(user.roles || []).map(roleName => `<span>${esc(roleName)}</span>`).join('')}
+                    ${user.interviewerVerified ? '<span>Verified interviewer</span>' : ''}
+                    ${user.verificationRequestStatus && user.verificationRequestStatus !== 'NONE' ? `<span>${esc(user.verificationRequestStatus)}</span>` : ''}
+                    ${user.flagged ? '<span>Flagged</span>' : ''}
+                  </div>
+                </div>
+                <p>${esc(user.email || '')}</p>
+                <small>${esc(user.company || 'No company')} • Last login ${esc(fmtDate(user.lastLogin || user.createdAt))}</small>
+                ${trust ? `<div class="admin-signal-row">${renderSignalChips(trust.indicators || [])}</div>` : ''}
+              </div>
+              <div class="card-actions">
+                ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', '${user.interviewerVerified ? 'REJECTED' : user.verificationRequestStatus === 'PENDING' ? 'APPROVED' : 'PENDING'}')">${user.interviewerVerified ? 'Review verification' : 'Manage verification'}</button>` : ''}
+                ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', 'NONE')">Reset verification</button>` : ''}
+                <button class="btn btn-outline btn-sm" type="button" onclick="togglePublicProfileVisibility('${user.id}', ${user.publicProfileVisible === false ? 'true' : 'false'})">${user.publicProfileVisible === false ? 'Show profile' : 'Hide profile'}</button>
+                <button class="btn ${user.accountEnabled === false ? 'btn-success' : 'btn-danger'} btn-sm" type="button" onclick="toggleUserAccess('${user.id}', ${user.accountEnabled === false ? 'true' : 'false'})">${user.accountEnabled === false ? 'Restore account' : 'Suspend account'}</button>
+              </div>
+            </article>
+          `;
+        }).join('') || emptyState('No users match the current filters.')}
+      </div>
+      ${renderServerPage('users', adminUsersPage)}
+    </div>
+  `;
+}
+
+function renderAdminSessions() {
+  const host = document.getElementById('admin-sessions-panel');
+  if (!host) return;
+  const changed = syncAdminSessionFiltersFromControls();
+  if (changed && !adminLoading) queueAdminReload();
+  if (adminLoading && !adminSessions.length) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  host.innerHTML = `
+    <div class="admin-table-shell">
+      <div class="admin-table-meta">
+        <strong>${esc(String(adminSessionsPage?.total || 0))}</strong>
+        <span>matching sessions</span>
+      </div>
+      <div class="admin-table">
+        ${adminSessions.map(session => `
+          <article class="admin-table-row">
+            <div class="admin-row-main">
+              <div class="admin-row-head">
+                <strong>${esc(session.title || sessionTitle(session))}</strong>
+                <div class="tag-row">
+                  ${(session.topics || []).slice(0, 3).map(topic => `<span>${esc(topic)}</span>`).join('')}
+                </div>
+              </div>
+              <p>${esc(session.interviewerName || 'Interviewer')} • ${esc(session.candidateName || 'Candidate')}</p>
+              <small>${esc(fmtDate(session.startTime))} • ${esc(providerLabel(session.meetingProvider))}</small>
+              <div class="admin-signal-row">
+                ${session.cancellation ? '<span class="admin-signal-chip">Cancellation</span>' : ''}
+                ${session.noShowRisk ? '<span class="admin-signal-chip">No-show risk</span>' : ''}
+                ${session.disputeRisk ? '<span class="admin-signal-chip">Dispute risk</span>' : ''}
+                ${session.reportCount ? `<span class="admin-signal-chip">${esc(String(session.reportCount))} reports</span>` : ''}
+              </div>
+            </div>
+            <div class="card-actions">
+              <span class="badge badge-${statusClass((session.status || '').toUpperCase())}">${esc(session.status || 'PENDING')}</span>
+              <button class="btn btn-outline btn-sm" type="button" onclick="showSection('admin-reports'); setAdminFilter('reports', 'query', '${esc(session.id || '')}')">Audit reports</button>
+            </div>
+          </article>
+        `).join('') || emptyState('No sessions found.')}
+      </div>
+      ${renderServerPage('sessions', adminSessionsPage)}
+    </div>
+  `;
+}
+
+function renderAdminReports() {
+  const host = document.getElementById('admin-reports-panel');
+  if (!host) return;
+  const reportStatus = String(adminState.reports.status || '').trim().toUpperCase();
+  const reportCategory = String(adminState.reports.category || '').trim().toUpperCase();
+  const reviewVisibility = String(adminState.reviews.visibility || '').trim().toLowerCase();
+  const changedReport = false;
+  if (adminLoading && !adminReports.length && !adminReviews.length) {
+    host.innerHTML = skeletonCards(4);
+    return;
+  }
+  host.innerHTML = `
+    <div class="admin-trust-summary-grid">
+      <article class="admin-trust-card"><strong>Flagged reviews</strong><span>${esc(String(adminTrustDashboard?.flaggedReviewCount || 0))}</span><small>Potentially suspicious or policy-sensitive feedback.</small></article>
+      <article class="admin-trust-card"><strong>Pending verification</strong><span>${esc(String(adminTrustDashboard?.pendingVerificationCount || 0))}</span><small>Interviewers waiting for decision.</small></article>
+      <article class="admin-trust-card"><strong>Flagged users</strong><span>${esc(String(adminTrustDashboard?.flaggedUserCount || 0))}</span><small>Accounts with elevated trust indicators.</small></article>
+      <article class="admin-trust-card"><strong>Open reports</strong><span>${esc(String(adminTrustDashboard?.openReportCount || 0))}</span><small>Report queue pressure.</small></article>
+    </div>
+    <div class="admin-moderation-grid">
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Trust reports</h2><span class="badge badge-gray">${esc(String(adminReportsPage?.total || 0))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
+            <option value="">All statuses</option>
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
+          </select>
+          <select class="input" onchange="setAdminFilter('reports', 'category', this.value)">
+            <option value="">All categories</option>
+            ${REPORT_CATEGORY_OPTIONS.map(option => `<option value="${esc(option.value)}" ${reportCategory === option.value ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="admin-table">
+          ${adminReports.map(report => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(reportCategoryLabel(report.category || report.reason))}</strong>
+                  <span class="badge badge-${report.status === 'OPEN' ? 'yellow' : report.status === 'ACTIONED' ? 'red' : 'gray'}">${esc(report.status || 'OPEN')}</span>
+                </div>
+                <p>${esc(report.details || 'No details provided.')}</p>
+                <small>${esc(report.reporterName || report.reporterId || 'Reporter')} → ${esc(report.reportedUserName || report.reportedUserId || 'Target')}</small>
+                <small>${esc(fmtDate(report.createdAt))}</small>
+                ${report.resolutionNotes ? `<p class="admin-note-chip">Last note: ${esc(report.resolutionNotes)}</p>` : ''}
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'REVIEWED')">Review</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'ACTIONED')">Escalate</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No trust reports in this queue.')}
+        </div>
+        ${renderServerPage('reports', adminReportsPage)}
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Review moderation</h2><span class="badge badge-gray">${esc(String(adminReviewsPage?.total || 0))}</span></div>
+        <div class="admin-inline-filters">
+          <input class="input" value="${esc(adminState.reviews.query || '')}" placeholder="Search reviews" oninput="setAdminFilter('reviews', 'query', this.value)" />
+          <select class="input" onchange="setAdminFilter('reviews', 'visibility', this.value)">
+            <option value="">All visibility</option>
+            <option value="visible" ${reviewVisibility === 'visible' ? 'selected' : ''}>Visible</option>
+            <option value="hidden" ${reviewVisibility === 'hidden' ? 'selected' : ''}>Hidden</option>
+          </select>
+          <select class="input" onchange="setAdminFilter('reviews', 'minRating', this.value)">
+            <option value="">Any rating</option>
+            <option value="4" ${String(adminState.reviews.minRating || '') === '4' ? 'selected' : ''}>4+ rating</option>
+            <option value="3" ${String(adminState.reviews.minRating || '') === '3' ? 'selected' : ''}>3+ rating</option>
+            <option value="2" ${String(adminState.reviews.minRating || '') === '2' ? 'selected' : ''}>2+ rating</option>
+          </select>
+        </div>
+        <div class="admin-table">
+          ${adminReviews.map(review => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(review.reviewerName || 'Member')} → ${esc(review.interviewerName || 'Interviewer')}</strong>
+                  <span class="badge badge-${review.publicReview ? 'green' : 'gray'}">${review.publicReview ? 'Visible' : 'Hidden'}</span>
+                </div>
+                <p>${esc(review.comments || 'No review comment provided.')}</p>
+                <div class="admin-signal-row">
+                  ${review.suspiciousScore != null ? `<span class="admin-signal-chip">Risk ${esc(String(review.suspiciousScore))}</span>` : ''}
+                  ${review.reviewQualityScore != null ? `<span class="admin-signal-chip">Quality ${esc(String(review.reviewQualityScore))}</span>` : ''}
+                  ${renderSignalChips(review.suspiciousFlags || [])}
+                </div>
+                <small>${esc(review.sessionTitle || 'Session')} • ${esc(fmtDate(review.createdAt))}</small>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReviewModerationModal('${review.id}', ${review.publicReview ? 'false' : 'true'})">${review.publicReview ? 'Hide' : 'Restore'}</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No reviews match these moderation filters.')}
+        </div>
+        ${renderServerPage('reviews', adminReviewsPage)}
+      </article>
+    </div>
+  `;
+  if (changedReport && !adminLoading) queueAdminReload();
+}
+
+function renderAdminAudit() {
+  const host = document.getElementById('admin-audit-panel');
+  if (!host) return;
+  const changed = syncAdminAuditFiltersFromControls();
+  if (changed && !adminLoading) queueAdminReload();
+  const auditItems = adminAuditLogPage?.items || [];
+  host.innerHTML = `
+    <div class="panel-head"><h2>Audit history</h2><span class="badge badge-gray">${esc(String(adminAuditLogPage?.totalElements || 0))}</span></div>
+    <div class="admin-inline-filters">
+      <select class="input" id="admin-audit-entity" onchange="renderAdminAudit()">
+        <option value="">All entities</option>
+        ${['USER', 'REVIEW', 'REPORT', 'VERIFICATION'].map(type => `<option value="${type}" ${String(adminState.audit.entityType || '') === type ? 'selected' : ''}>${type}</option>`).join('')}
+      </select>
+      <input class="input" id="admin-audit-actor" value="${esc(adminState.audit.actorUserId || '')}" placeholder="Actor user id" oninput="renderAdminAudit()" />
+      <input class="input" id="admin-audit-subject" value="${esc(adminState.audit.subjectUserId || '')}" placeholder="Subject user id" oninput="renderAdminAudit()" />
+      <input class="input" id="admin-audit-search" value="${esc(adminState.audit.q || '')}" placeholder="Search reason/action" oninput="renderAdminAudit()" />
+    </div>
+    <div class="audit-log-list">
+      ${auditItems.map(item => `
+        <article class="audit-log-item">
+          <div class="admin-row-head">
+            <strong>${esc(item.action || item.entityType || 'ACTION')}</strong>
+            <span class="badge badge-gray">${esc(item.entityType || 'AUDIT')}</span>
+          </div>
+          <p>${esc(item.summary || 'Moderation action recorded.')}</p>
+          <small>${esc(fmtDate(item.createdAt))} • Actor ${esc(item.actorUserId || 'system')} • Subject ${esc(item.subjectUserId || item.entityId || 'unknown')}</small>
+          ${item.reason ? `<p class="admin-note-chip">Reason: ${esc(item.reason)}</p>` : ''}
+        </article>
+      `).join('') || emptyState('No audit logs found for this query.')}
+    </div>
+    ${renderAuditPagination()}
+  `;
+}
+
+function renderAdminAnalytics() {
+  const host = document.getElementById('admin-analytics-detail-panel');
+  if (!host) return;
+  if (adminLoading && !adminAnalytics) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const chart = (title, list, suffix = '') => `
+    <article class="admin-moderation-card">
+      <div class="panel-head"><h2>${esc(title)}</h2><span class="badge badge-gray">${esc(String(list.length || 0))} points</span></div>
+      <div class="admin-topic-bars">
+        ${(list || []).slice(-14).map(point => `
+          <div class="admin-topic-bar">
+            <span>${esc(point.label || '')}</span>
+            <div><i style="width:${Math.max(4, Math.min(100, Number(point.value || 0) * 8))}%"></i></div>
+            <strong>${esc(String(point.value || 0))}${esc(suffix)}</strong>
+          </div>
+        `).join('') || emptyState('No trend data yet.')}
+      </div>
+    </article>
+  `;
+  host.innerHTML = `
+    <div class="admin-inline-filters">
+      <select class="input" onchange="setAdminFilter('analytics', 'days', Number(this.value))">
+        ${[14, 30, 60, 90].map(days => `<option value="${days}" ${Number(adminState.analytics.days || 30) === days ? 'selected' : ''}>Last ${days} days</option>`).join('')}
+      </select>
+    </div>
+    <div class="admin-trust-summary-grid">
+      <article class="admin-trust-card"><strong>Active users</strong><span>${esc(String(adminAnalytics?.activeUsers || 0))}</span><small>Users active in recent window.</small></article>
+      <article class="admin-trust-card"><strong>Flagged users</strong><span>${esc(String(adminAnalytics?.flaggedUsers || 0))}</span><small>Users with elevated trust risk.</small></article>
+      <article class="admin-trust-card"><strong>Disputed sessions</strong><span>${esc(String(adminAnalytics?.disputedSessions || 0))}</span><small>Sessions linked to trust disputes.</small></article>
+      <article class="admin-trust-card"><strong>No-show sessions</strong><span>${esc(String(adminAnalytics?.noShowSessions || 0))}</span><small>Sessions flagged for no-show behavior.</small></article>
+    </div>
+    <div class="admin-moderation-grid">
+      ${chart('User growth trend', adminAnalytics?.userGrowthTrend || [])}
+      ${chart('Session trend', adminAnalytics?.sessionTrend || [])}
+      ${chart('Review trend', adminAnalytics?.reviewTrend || [])}
+      ${chart('Cancellation trend', adminAnalytics?.cancellationTrend || [])}
+    </div>
+  `;
+}
+
+function renderServerPage(section, pageData) {
+  if (!pageData || Number(pageData.totalPages || 0) <= 1) return '';
+  const page = Number(pageData.page || 0);
+  const totalPages = Number(pageData.totalPages || 1);
+  return `
+    <div class="pagination-row admin-pagination-row">
+      <button class="btn btn-outline btn-sm" type="button" onclick="setAdminPage('${section}', -1)" ${page <= 0 ? 'disabled' : ''}>Previous</button>
+      <span>Page ${page + 1} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" type="button" onclick="setAdminPage('${section}', 1)" ${page >= totalPages - 1 ? 'disabled' : ''}>Next</button>
+    </div>
+  `;
+}
+
+function renderAuditPagination() {
+  if (!adminAuditLogPage || Number(adminAuditLogPage.totalPages || 0) <= 1) return '';
+  const page = Number(adminAuditLogPage.page || 0);
+  const totalPages = Number(adminAuditLogPage.totalPages || 1);
+  return `
+    <div class="pagination-row admin-pagination-row">
+      <button class="btn btn-outline btn-sm" type="button" onclick="changeAuditPage(-1)" ${page <= 0 ? 'disabled' : ''}>Previous</button>
+      <span>Page ${page + 1} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" type="button" onclick="changeAuditPage(1)" ${page >= totalPages - 1 ? 'disabled' : ''}>Next</button>
+    </div>
+  `;
+}
+
+function setAdminPage(section, delta) {
+  if (!adminState[section]) return;
+  adminState[section].page = Math.max(0, Number(adminState[section].page || 0) + Number(delta || 0));
+  loadAdminData(true);
+}
+
+function setAdminFilter(section, key, value) {
+  if (!adminState[section]) return;
+  adminState[section][key] = value;
+  adminState[section].page = 0;
+  loadAdminData(true);
+}
+
+function setAuditFilter(key, value) {
+  adminState.audit[key] = value;
+  adminState.audit.page = 0;
+  loadAdminData(true);
+}
+
+function changeAuditPage(delta) {
+  adminState.audit.page = Math.max(0, Number(adminState.audit.page || 0) + Number(delta || 0));
+  loadAdminData(true);
 }
