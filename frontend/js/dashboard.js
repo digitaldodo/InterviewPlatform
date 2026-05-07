@@ -1,4 +1,4 @@
-const API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
+const API_BASE = window.INTERVIEW_API_BASE;
 
 let currentUser = null;
 let sessions = [];
@@ -44,8 +44,13 @@ function initUi() {
   renderBookingStep();
 }
 
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
+function toggleSidebar(forceOpen) {
+  const sidebar = document.getElementById('sidebar');
+  if (typeof forceOpen === 'boolean') {
+    sidebar.classList.toggle('open', forceOpen);
+    return;
+  }
+  sidebar.classList.toggle('open');
 }
 
 function showSection(name) {

@@ -1,4 +1,4 @@
-const API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
+const API_BASE = window.INTERVIEW_API_BASE;
 
 const authStore = {
   set(session) {
