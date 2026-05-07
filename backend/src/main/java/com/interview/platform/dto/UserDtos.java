@@ -9,6 +9,8 @@ public class UserDtos {
         @Size(min = 1, max = 120)
         private String name;
         @Size(min = 1, max = 120)
+        private String displayName;
+        @Size(min = 3, max = 24)
         private String username;
         private String avatarUrl;
         @Size(max = 1000)
@@ -21,6 +23,8 @@ public class UserDtos {
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
+        public String getDisplayName() { return displayName; }
+        public void setDisplayName(String displayName) { this.displayName = displayName; }
         public String getUsername() { return username; }
         public void setUsername(String username) { this.username = username; }
         public String getAvatarUrl() { return avatarUrl; }

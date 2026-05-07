@@ -9,8 +9,9 @@ import java.util.List;
 
 public class AuthDtos {
     public static class RegisterRequest {
-        @NotBlank
         private String name;
+        private String displayName;
+        private String username;
         @NotBlank @Email
         private String email;
         @NotBlank @Size(min = 6)
@@ -26,6 +27,10 @@ public class AuthDtos {
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
+        public String getDisplayName() { return displayName; }
+        public void setDisplayName(String displayName) { this.displayName = displayName; }
+        public String getUsername() { return username; }
+        public void setUsername(String username) { this.username = username; }
         public String getEmail() { return email; }
         public void setEmail(String email) { this.email = email; }
         public String getPassword() { return password; }

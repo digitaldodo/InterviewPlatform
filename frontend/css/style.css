@@ -2125,6 +2125,35 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
+.field-validation {
+  display: none;
+  margin-top: 0.42rem;
+  font-weight: 800;
+}
+
+.field-validation.show {
+  display: block;
+}
+
+.field-error {
+  color: #ffadb6;
+}
+
+.field-success {
+  color: #a9f0c1;
+}
+
+.field-neutral {
+  color: var(--muted);
+}
+
+.identity-handle {
+  margin-top: 0.2rem;
+  color: var(--accent);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .compact-textarea {
   min-height: 84px;
 }

@@ -21,7 +21,6 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 @Service
 public class AuthService {
@@ -34,6 +33,7 @@ public class AuthService {
     private final JwtService jwtService;
     private final TokenService tokenService;
     private final EmailService emailService;
+    private final AccountIdentityService accountIdentityService;
     private final long refreshTokenDays;
 
     public AuthService(
@@ -45,6 +45,7 @@ public class AuthService {
             JwtService jwtService,
             TokenService tokenService,
             EmailService emailService,
+            AccountIdentityService accountIdentityService,
             @Value("${app.jwt.refresh-token-days}") long refreshTokenDays
     ) {
         this.userRepository = userRepository;
@@ -55,12 +56,15 @@ public class AuthService {
         this.jwtService = jwtService;
         this.tokenService = tokenService;
         this.emailService = emailService;
+        this.accountIdentityService = accountIdentityService;
         this.refreshTokenDays = refreshTokenDays;
     }
 
     public AuthDtos.AuthResponse register(AuthDtos.RegisterRequest request) {
         User user = new User();
-        user.setUsername(trim(request.getName()));
+        String displayName = accountIdentityService.cleanDisplayName(firstNonBlank(request.getDisplayName(), request.getName()));
+        user.setDisplayName(displayName);
+        user.setUsername(request.getUsername());
         user.setEmail(normalizeEmail(request.getEmail()));
         user.setPassword(request.getPassword());
         user.setRoles(normalizeRoles(request.getRoles(), request.getRole()));
@@ -81,8 +85,12 @@ public class AuthService {
         if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
-        String username = cleanUsername(user.getUsername());
-        ensureUsernameAvailable(username);
+        if (!user.hasDisplayName()) {
+            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getUsername()));
+        } else {
+            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getDisplayName()));
+        }
+        String username = accountIdentityService.usernameForRegistration(user.getUsername(), user.getDisplayName(), email);
         user.setUsername(username);
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(user.getPassword()));
@@ -112,6 +120,7 @@ public class AuthService {
         if (!Boolean.TRUE.equals(user.getIsVerified())) {
             throw new UnauthorizedException("Please verify your email before signing in");
         }
+        accountIdentityService.ensureIdentity(user);
         user.setLastLogin(Instant.now());
         userRepository.save(user);
         return authResponse(user);
@@ -132,9 +141,13 @@ public class AuthService {
         if (looksLikeEmail(identifier)) {
             return userRepository.findByEmail(normalizeEmail(identifier));
         }
-        String username = cleanUsername(identifier);
-        return userRepository.findByUsernameKey(usernameKey(username))
-                .or(() -> userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$"));
+        try {
+            String username = accountIdentityService.usernameKey(identifier);
+            return userRepository.findByUsernameKey(username)
+                    .or(() -> userRepository.findFirstByUsernamePattern("^" + java.util.regex.Pattern.quote(username) + "$"));
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
     }
 
     public AuthDtos.AuthResponse refresh(String refreshToken) {
@@ -148,6 +161,9 @@ public class AuthService {
         }
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new UnauthorizedException("Invalid refresh token"));
+        if (accountIdentityService.ensureIdentity(user)) {
+            userRepository.save(user);
+        }
         return authResponse(user);
     }
 
@@ -198,6 +214,7 @@ public class AuthService {
         User user = userRepository.findByEmail(normalized)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         user.setIsVerified(true);
+        accountIdentityService.ensureIdentity(user);
         userRepository.save(user);
         verificationOtpRepository.deleteByEmail(normalized);
     }
@@ -298,24 +315,13 @@ public class AuthService {
     }
 
     private void validateNewUser(User user) {
-        if (user == null || isBlank(user.getUsername()) || isBlank(user.getEmail()) || isBlank(user.getPassword())) {
-            throw new IllegalArgumentException("Name, email, and password are required");
+        if (user == null || (isBlank(user.getUsername()) && !user.hasDisplayName()) || isBlank(user.getEmail()) || isBlank(user.getPassword())) {
+            throw new IllegalArgumentException("Display name, email, and password are required");
         }
         if (user.getPassword().length() < 6) {
             throw new IllegalArgumentException("Password must be at least 6 characters");
         }
         user.setRoles(normalizeRoles(user.getRoles(), user.getRole()));
-    }
-
-    private void ensureUsernameAvailable(String username) {
-        String key = usernameKey(username);
-        if (userRepository.existsByUsernameKey(key)) {
-            throw new IllegalArgumentException("Username already taken");
-        }
-        userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$")
-                .ifPresent(match -> {
-                    throw new IllegalArgumentException("Username already taken");
-                });
     }
 
     private List<String> normalizeRoles(List<String> roles, String fallbackRole) {
@@ -347,20 +353,12 @@ public class AuthService {
         return value == null ? null : value.trim();
     }
 
-    private String cleanUsername(String value) {
-        String username = trim(value);
-        if (isBlank(username)) {
-            throw new IllegalArgumentException("Username is required");
-        }
-        return username.replaceAll("\\s+", " ");
-    }
-
-    private String usernameKey(String value) {
-        return cleanUsername(value).toLowerCase(Locale.ROOT);
-    }
-
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return !isBlank(first) ? first : second;
     }
 
     private String maskEmail(String email) {

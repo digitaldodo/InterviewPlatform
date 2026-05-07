@@ -1,4 +1,5 @@
 const API_BASE = window.INTERVIEW_API_BASE;
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
 
 let currentUser = null;
 let sessions = [];
@@ -25,6 +26,8 @@ let availabilityLoading = false;
 let availabilityError = '';
 let profileAvatarFile = null;
 let profileAvatarPreviewUrl = '';
+let profileUsernameTimer = null;
+let profileUsernameState = { value: '', available: true };
 let discoveryFilterOptions = { expertise: [], languages: [], companies: [] };
 const DEFAULT_MEETING_PROVIDERS = [
   { key: 'JITSI', label: 'In-platform meeting', embedded: true, enabled: true, isDefault: true },
@@ -103,13 +106,13 @@ function initUi() {
   currentUser.activeWorkspace = activeWorkspace;
   localStorage.setItem('ip_user', JSON.stringify(currentUser));
   const workspace = activeWorkspace.toLowerCase();
-  document.getElementById('welcome-heading').textContent = `Welcome back, ${currentUser.name || currentUser.username || currentUser.email}`;
+  document.getElementById('welcome-heading').textContent = `Welcome back, ${accountDisplayName(currentUser)}`;
   document.getElementById('role-eyebrow').textContent = workspace === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
   document.getElementById('sidebar-user-info').innerHTML = `
     <div class="sidebar-profile-card">
       ${avatarMarkup(currentUser)}
       <div class="sidebar-profile-copy">
-        <strong>${esc(currentUser.name || currentUser.username || 'User')}</strong>
+        <strong>${esc(accountDisplayName(currentUser))}</strong>
         <span>${esc(currentUser.email || '')}</span>
         <span class="badge badge-purple">${esc(workspace)}</span>
       </div>
@@ -520,7 +523,7 @@ async function openProfile(id) {
     modal(`
       <div class="profile-modal">
         ${avatarMarkup(interviewer, 'avatar large')}
-        <h2>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h2>
+        <h2>${esc(accountDisplayName(interviewer))}</h2>
         <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
         <div class="tag-row">${(interviewer.skills || []).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
         <p>${esc(interviewer.bio || 'No bio yet.')}</p>
@@ -650,7 +653,7 @@ async function renderBookingDateStep() {
       <div class="booking-stage-head">
         <div>
           <h2>Select date</h2>
-          <p class="availability-muted">${esc(interviewer.name || interviewer.username || 'Selected interviewer')} has real generated slots for the next two weeks.</p>
+          <p class="availability-muted">${esc(accountDisplayName(interviewer))} has real generated slots for the next two weeks.</p>
         </div>
         <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(1)">Change interviewer</button>
       </div>
@@ -697,7 +700,7 @@ async function renderBookingSlotStep() {
       <div class="booking-stage-head">
         <div>
           <h2>Select generated slot</h2>
-          <p class="availability-muted">${esc(interviewer.name || interviewer.username || 'Selected interviewer')} • ${esc(selectedDay?.dateLabel || 'Pick a date')}</p>
+          <p class="availability-muted">${esc(accountDisplayName(interviewer))} - ${esc(selectedDay?.dateLabel || 'Pick a date')}</p>
         </div>
         <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(2)">Change date</button>
       </div>
@@ -967,6 +970,7 @@ function filterBookingInterviewers() {
     if (!term) return true;
     const haystack = [
       item.name,
+      item.displayName,
       item.username,
       item.currentRole,
       item.company,
@@ -979,7 +983,7 @@ function filterBookingInterviewers() {
 function renderBookingSelectionBanner() {
   const interviewer = bookingState.interviewer;
   if (!interviewer) return '';
-  const label = interviewer.name || interviewer.username || 'Selected interviewer';
+  const label = accountDisplayName(interviewer) || 'Selected interviewer';
   return `
     <div class="booking-selection-banner">
       ${avatarMarkup(interviewer, 'avatar avatar-compact')}
@@ -1694,8 +1698,9 @@ function renderProfile() {
     <div class="preview-profile">
       <div id="profile-summary-avatar">${avatarMarkup(currentUser, 'avatar large', currentProfileAvatarUrl())}</div>
       <div>
-        <h2>${esc(currentUser.name || currentUser.username || 'InterviewPrep user')}</h2>
+        <h2>${esc(accountDisplayName(currentUser))}</h2>
         <p>${esc(currentUser.email || '')}</p>
+        <p class="identity-handle">@${esc(currentUser.username || 'username')}</p>
         <div class="profile-status-row">
           <span class="badge badge-purple">${esc(roles)}</span>
           <span class="badge ${isVerified ? 'badge-green' : 'badge-yellow'}">${isVerified ? 'Verified' : 'Verification pending'}</span>
@@ -1731,10 +1736,18 @@ function renderProfile() {
     <div class="divider"></div>
     <form class="profile-form" onsubmit="saveProfile(event)">
       <h2>Edit profile</h2>
-      <div class="form-group">
-        <label for="profile-name">Username / display name</label>
-        <input id="profile-name" value="${esc(currentUser.name || currentUser.username || '')}" required />
-        <small class="field-hint">Usernames are unique across the platform and are checked without case sensitivity.</small>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="profile-username">Username</label>
+          <input id="profile-username" value="${esc(currentUser.username || '')}" required minlength="3" maxlength="24" autocomplete="username" oninput="validateProfileUsernameInput()" />
+          <small class="field-hint">Used for login and profile identity</small>
+          <small id="profile-username-status" class="field-validation"></small>
+        </div>
+        <div class="form-group">
+          <label for="profile-name">Display name</label>
+          <input id="profile-name" value="${esc(accountDisplayName(currentUser))}" required autocomplete="name" />
+          <small class="field-hint">Shown publicly on your profile</small>
+        </div>
       </div>
       <div class="profile-avatar-upload">
         <div class="profile-avatar-preview-card" id="profile-avatar-preview">
@@ -1897,6 +1910,8 @@ function deleteAccountSection() {
 }
 
 function initProfileControls() {
+  profileUsernameState = { value: normalizeUsernameInput(currentUser.username || ''), available: true };
+  setFieldValidation('profile-username-status', '', 'neutral');
   FormUx.initTagInput('profile-skills', { placeholder: 'Add skill or expertise' });
   FormUx.initTagInput('profile-domains', {
     placeholder: 'Add domain',
@@ -2154,7 +2169,7 @@ async function mountJitsiMeeting(access) {
     height: '100%',
     parentNode: embed,
     userInfo: {
-      displayName: access.displayName || (currentUser.name || currentUser.username || 'InterviewPrep user'),
+      displayName: access.displayName || accountDisplayName(currentUser),
       email: access.email || currentUser.email || '',
     },
     configOverwrite: {
@@ -2341,14 +2356,85 @@ async function verifyProfileOtp() {
   }
 }
 
+function normalizeUsernameInput(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function usernameValidationMessage(username) {
+  if (!username) return 'Username is required';
+  if (username.length < 3) return 'Username must be at least 3 characters';
+  if (username.length > 24) return 'Username must be 24 characters or fewer';
+  if (!USERNAME_PATTERN.test(username)) return 'Only lowercase letters, numbers, dots, underscores, and hyphens allowed';
+  return '';
+}
+
+function setFieldValidation(id, message = '', type = 'neutral') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message;
+  el.className = `field-validation ${message ? 'show' : ''} ${type ? `field-${type}` : ''}`;
+}
+
+function validateProfileUsernameInput() {
+  const input = document.getElementById('profile-username');
+  if (!input) return;
+  const username = normalizeUsernameInput(input.value);
+  if (input.value !== username) input.value = username;
+  profileUsernameState = { value: username, available: false };
+  clearTimeout(profileUsernameTimer);
+  const message = usernameValidationMessage(username);
+  if (message) {
+    setFieldValidation('profile-username-status', message, 'error');
+    return;
+  }
+  if (username === normalizeUsernameInput(currentUser.username || '')) {
+    profileUsernameState = { value: username, available: true };
+    setFieldValidation('profile-username-status', 'Current username', 'neutral');
+    return;
+  }
+  setFieldValidation('profile-username-status', 'Checking availability...', 'neutral');
+  profileUsernameTimer = setTimeout(() => checkProfileUsernameAvailability(username), 320);
+}
+
+async function checkProfileUsernameAvailability(username) {
+  try {
+    const result = await api(`/api/users/username-availability?username=${encodeURIComponent(username)}`);
+    profileUsernameState = { value: username, available: Boolean(result.available) };
+    setFieldValidation('profile-username-status', result.available ? 'Username available' : 'Username already taken', result.available ? 'success' : 'error');
+  } catch (err) {
+    profileUsernameState = { value: username, available: false };
+    setFieldValidation('profile-username-status', err.message || 'Could not check username', 'error');
+  }
+}
+
+async function validateProfileUsernameBeforeSubmit() {
+  const input = document.getElementById('profile-username');
+  const username = normalizeUsernameInput(input?.value);
+  if (input && input.value !== username) input.value = username;
+  const message = usernameValidationMessage(username);
+  if (message) {
+    setFieldValidation('profile-username-status', message, 'error');
+    return null;
+  }
+  if (profileUsernameState.value === username && profileUsernameState.available) {
+    return username;
+  }
+  await checkProfileUsernameAvailability(username);
+  return profileUsernameState.value === username && profileUsernameState.available ? username : null;
+}
+
 async function saveProfile(event) {
   event.preventDefault();
   const btn = document.getElementById('profile-save-btn');
   setButtonLoading(btn, true, 'Saving');
   try {
+    const username = await validateProfileUsernameBeforeSubmit();
+    if (!username) return;
+    const displayName = val('profile-name');
     const payload = {
-      name: val('profile-name'),
-      username: val('profile-name'),
+      name: displayName,
+      displayName,
+      username,
       bio: val('profile-bio'),
       skills: FormUx.getTagValues('profile-skills'),
       language: FormUx.getLanguageString('profile-language'),
@@ -2580,12 +2666,16 @@ function val(id) {
 }
 
 function initials(user) {
-  const name = user?.name || user?.username || user?.email || 'IP';
+  const name = accountDisplayName(user);
   return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
+function accountDisplayName(user) {
+  return user?.displayName || user?.name || user?.username || user?.email || 'InterviewPrep user';
+}
+
 function interviewerName(interviewer) {
-  return interviewer?.name || interviewer?.username || 'Interviewer';
+  return accountDisplayName(interviewer) || 'Interviewer';
 }
 
 function interviewerRole(interviewer) {
@@ -2641,7 +2731,7 @@ function avatarSizeForClass(className) {
 
 function avatarMarkup(user, className = 'avatar', imageUrl = '') {
   const src = avatarSource(user, imageUrl, avatarSizeForClass(className));
-  const label = user?.name || user?.username || user?.email || 'InterviewPrep user';
+  const label = accountDisplayName(user);
   return `
     <div class="${className}${src ? ' has-image' : ''}">
       <span class="avatar-fallback">${initials(user || { name: label })}</span>

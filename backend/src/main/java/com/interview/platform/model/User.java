@@ -1,5 +1,6 @@
 package com.interview.platform.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
@@ -23,6 +24,7 @@ public class User {
     private String usernameKey;
     @Indexed(unique = true)
     private String email;
+    private String displayName;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
@@ -58,6 +60,7 @@ public class User {
         this.username = username;
         this.email = email;
         this.password = password;
+        this.displayName = username;
     }
 
     public String getId() { return id; }
@@ -65,15 +68,27 @@ public class User {
 
     public String getUsername() { return username; }
     public void setUsername(String username) {
-        this.username = username == null ? null : username.trim().replaceAll("\\s+", " ");
+        this.username = username == null ? null : username.trim().toLowerCase();
         this.usernameKey = normalizeUsernameKey(this.username);
     }
 
     public String getUsernameKey() { return usernameKey; }
     public void setUsernameKey(String usernameKey) { this.usernameKey = normalizeUsernameKey(usernameKey); }
 
-    public String getName() { return username; }
-    public void setName(String name) { setUsername(name); }
+    public String getDisplayName() {
+        if (displayName == null || displayName.isBlank()) {
+            return username;
+        }
+        return displayName;
+    }
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName == null ? null : displayName.trim().replaceAll("\\s+", " ");
+    }
+    @JsonIgnore
+    public boolean hasDisplayName() { return displayName != null && !displayName.isBlank(); }
+
+    public String getName() { return getDisplayName(); }
+    public void setName(String name) { setDisplayName(name); }
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
@@ -217,6 +232,6 @@ public class User {
 
     private String normalizeUsernameKey(String value) {
         if (value == null || value.isBlank()) return null;
-        return value.trim().replaceAll("\\s+", " ").toLowerCase();
+        return value.trim().toLowerCase();
     }
 }

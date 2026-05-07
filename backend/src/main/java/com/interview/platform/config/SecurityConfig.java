@@ -41,6 +41,7 @@ public class SecurityConfig {
                                 "/api/auth/**",
                                 "/api/users/register",
                                 "/api/users/login",
+                                "/api/users/username-availability",
                                 "/api/users/interviewers",
                                 "/api/interviewers/**"
                         ).permitAll()

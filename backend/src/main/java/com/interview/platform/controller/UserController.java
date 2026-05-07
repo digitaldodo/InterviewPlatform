@@ -57,7 +57,21 @@ public class UserController {
 
     @GetMapping("/me/profile")
     public ResponseEntity<ApiResponse<User>> getOwnProfile(Authentication authentication) {
-        return ResponseEntity.ok(ApiResponse.success("Profile fetched successfully", currentUser(authentication)));
+        User user = userService.getById(currentUser(authentication).getId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        return ResponseEntity.ok(ApiResponse.success("Profile fetched successfully", user));
+    }
+
+    @GetMapping("/username-availability")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> usernameAvailability(@RequestParam String username,
+                                                                                  @RequestParam(required = false) String currentUserId,
+                                                                                  Authentication authentication) {
+        String effectiveCurrentUserId = currentUserId;
+        if (authentication != null && authentication.getPrincipal() instanceof UserPrincipal principal) {
+            effectiveCurrentUserId = principal.getUser().getId();
+        }
+        boolean available = userService.isUsernameAvailable(username, effectiveCurrentUserId);
+        return ResponseEntity.ok(ApiResponse.success("Username availability checked", Map.of("available", available)));
     }
 
     @PutMapping("/me/profile")

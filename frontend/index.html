@@ -134,7 +134,7 @@
           <form id="login-form" novalidate>
             <div class="form-group">
               <label for="login-email">Email or username</label>
-              <input id="login-email" type="text" name="identifier" placeholder="you@example.com or Jane Doe" required autocomplete="username" />
+              <input id="login-email" type="text" name="identifier" placeholder="you@example.com or jane.doe" required autocomplete="username" />
             </div>
             <div class="form-group">
               <label for="login-password">Password</label>
@@ -150,8 +150,9 @@
           <form id="register-form" novalidate>
             <div class="form-grid">
               <div class="form-group">
-                <label for="reg-name">Full name</label>
+                <label for="reg-name">Display name</label>
                 <input id="reg-name" type="text" name="name" placeholder="Jane Doe" required autocomplete="name" />
+                <small class="field-hint">Shown publicly on your profile</small>
               </div>
               <div class="form-group">
                 <label>Workspace access</label>
@@ -160,6 +161,12 @@
                   <label class="role-choice"><input id="reg-role-interviewer" type="checkbox" value="INTERVIEWER" /> <span>Conduct interviews</span></label>
                 </div>
               </div>
+            </div>
+            <div class="form-group">
+              <label for="reg-username">Username</label>
+              <input id="reg-username" type="text" name="username" placeholder="jane.doe" required autocomplete="username" minlength="3" maxlength="24" />
+              <small class="field-hint">Used for login and profile identity</small>
+              <small id="reg-username-status" class="field-validation"></small>
             </div>
             <div class="form-group">
               <label for="reg-email">Email address</label>

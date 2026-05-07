@@ -10,9 +10,9 @@ import com.interview.platform.repository.RefreshTokenRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import com.interview.platform.repository.VerificationOtpRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockMultipartFile;
@@ -59,8 +59,24 @@ class UserServiceTest {
     @Mock
     private VerificationOtpRepository verificationOtpRepository;
 
-    @InjectMocks
     private UserService userService;
+
+    @BeforeEach
+    void setUp() {
+        userService = new UserService(
+                userRepository,
+                passwordEncoder,
+                cloudinaryImageService,
+                availabilityRepository,
+                sessionRepository,
+                feedbackRepository,
+                notificationRepository,
+                refreshTokenRepository,
+                passwordResetTokenRepository,
+                verificationOtpRepository,
+                new AccountIdentityService(userRepository)
+        );
+    }
 
     @Test
     void uploadOwnAvatarStoresCloudinaryUrl() {
@@ -89,14 +105,14 @@ class UserServiceTest {
     void updateOwnProfileRejectsCaseInsensitiveDuplicateUsername() {
         User current = new User();
         current.setId("user-123");
-        current.setUsername("Current User");
+        current.setUsername("current_user");
 
         User duplicate = new User();
         duplicate.setId("user-456");
-        duplicate.setUsername("Ansh");
+        duplicate.setUsername("ansh");
 
         UserDtos.ProfileUpdateRequest request = new UserDtos.ProfileUpdateRequest();
-        request.setName(" ANSH ");
+        request.setUsername(" ANSH ");
 
         when(userRepository.findById("user-123")).thenReturn(Optional.of(current));
         when(userRepository.findByUsernameKey("ansh")).thenReturn(Optional.of(duplicate));
@@ -105,5 +121,41 @@ class UserServiceTest {
                 () -> userService.updateOwnProfile("user-123", request));
 
         assertEquals("Username already taken", ex.getMessage());
+    }
+
+    @Test
+    void updateOwnProfileAllowsDisplayNameSpacesWithoutChangingUsername() {
+        User current = new User();
+        current.setId("user-123");
+        current.setUsername("msdhoni");
+        current.setDisplayName("MSD");
+
+        UserDtos.ProfileUpdateRequest request = new UserDtos.ProfileUpdateRequest();
+        request.setDisplayName(" MS Dhoni ");
+
+        when(userRepository.findById("user-123")).thenReturn(Optional.of(current));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        User updated = userService.updateOwnProfile("user-123", request);
+
+        assertEquals("msdhoni", updated.getUsername());
+        assertEquals("MS Dhoni", updated.getDisplayName());
+    }
+
+    @Test
+    void updateOwnProfileRejectsDisplayNameAsUsername() {
+        User current = new User();
+        current.setId("user-123");
+        current.setUsername("msdhoni");
+
+        UserDtos.ProfileUpdateRequest request = new UserDtos.ProfileUpdateRequest();
+        request.setUsername("MS Dhoni");
+
+        when(userRepository.findById("user-123")).thenReturn(Optional.of(current));
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> userService.updateOwnProfile("user-123", request));
+
+        assertEquals("Only lowercase letters, numbers, dots, underscores, and hyphens allowed", ex.getMessage());
     }
 }

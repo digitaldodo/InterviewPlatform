@@ -1,4 +1,5 @@
 const API_BASE = window.INTERVIEW_API_BASE;
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
 
 const authStore = {
   set(session) {
@@ -12,6 +13,8 @@ const authStore = {
 };
 
 let resetEmail = '';
+let usernameAvailabilityTimer = null;
+let usernameAvailabilityState = { value: '', available: false };
 
 window.addEventListener('DOMContentLoaded', () => {
   if (authStore.user()?.id) window.location.href = 'pages/dashboard.html';
@@ -21,6 +24,7 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('reset-resend').style.display = 'none';
   initRegisterControls();
   FormUx.initPasswordToggles();
+  bindUsernameValidation('reg-username', 'reg-username-status');
   updateRoleFields();
 });
 
@@ -75,6 +79,70 @@ function setLoading(btn, loading, label = 'Please wait') {
   }
 }
 
+function normalizeUsernameInput(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function usernameValidationMessage(username) {
+  if (!username) return 'Username is required';
+  if (username.length < 3) return 'Username must be at least 3 characters';
+  if (username.length > 24) return 'Username must be 24 characters or fewer';
+  if (!USERNAME_PATTERN.test(username)) return 'Only lowercase letters, numbers, dots, underscores, and hyphens allowed';
+  return '';
+}
+
+function setFieldValidation(id, message = '', type = 'neutral') {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message;
+  el.className = `field-validation ${message ? 'show' : ''} ${type ? `field-${type}` : ''}`;
+}
+
+function bindUsernameValidation(inputId, statusId) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const normalized = normalizeUsernameInput(input.value);
+    if (input.value !== normalized) input.value = normalized;
+    usernameAvailabilityState = { value: normalized, available: false };
+    clearTimeout(usernameAvailabilityTimer);
+    const message = usernameValidationMessage(normalized);
+    if (message) {
+      setFieldValidation(statusId, message, 'error');
+      return;
+    }
+    setFieldValidation(statusId, 'Checking availability...', 'neutral');
+    usernameAvailabilityTimer = setTimeout(() => checkUsernameAvailability(normalized, statusId), 320);
+  });
+}
+
+async function checkUsernameAvailability(username, statusId) {
+  try {
+    const result = await api(`/api/users/username-availability?username=${encodeURIComponent(username)}`);
+    usernameAvailabilityState = { value: username, available: Boolean(result.available) };
+    setFieldValidation(statusId, result.available ? 'Username available' : 'Username already taken', result.available ? 'success' : 'error');
+  } catch (err) {
+    usernameAvailabilityState = { value: username, available: false };
+    setFieldValidation(statusId, err.message || 'Could not check username', 'error');
+  }
+}
+
+async function validateUsernameBeforeSubmit(inputId, statusId) {
+  const input = document.getElementById(inputId);
+  const username = normalizeUsernameInput(input?.value);
+  if (input && input.value !== username) input.value = username;
+  const message = usernameValidationMessage(username);
+  if (message) {
+    setFieldValidation(statusId, message, 'error');
+    return null;
+  }
+  if (usernameAvailabilityState.value === username && usernameAvailabilityState.available) {
+    return username;
+  }
+  await checkUsernameAvailability(username, statusId);
+  return usernameAvailabilityState.value === username && usernameAvailabilityState.available ? username : null;
+}
+
 async function api(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -125,10 +193,15 @@ document.getElementById('register-form').addEventListener('submit', async event 
   }
   setLoading(btn, true, 'Creating account');
   try {
+    const username = await validateUsernameBeforeSubmit('reg-username', 'reg-username-status');
+    if (!username) return;
+    const displayName = document.getElementById('reg-name').value.trim();
     const session = await api('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({
-        name: document.getElementById('reg-name').value.trim(),
+        name: displayName,
+        displayName,
+        username,
         email: document.getElementById('reg-email').value.trim(),
         password: document.getElementById('reg-password').value,
         role: roles[0],

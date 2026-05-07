@@ -38,6 +38,7 @@ public class UserService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final VerificationOtpRepository verificationOtpRepository;
+    private final AccountIdentityService accountIdentityService;
 
     public UserService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -48,7 +49,8 @@ public class UserService {
                        NotificationRepository notificationRepository,
                        RefreshTokenRepository refreshTokenRepository,
                        PasswordResetTokenRepository passwordResetTokenRepository,
-                       VerificationOtpRepository verificationOtpRepository) {
+                       VerificationOtpRepository verificationOtpRepository,
+                       AccountIdentityService accountIdentityService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.cloudinaryImageService = cloudinaryImageService;
@@ -59,14 +61,15 @@ public class UserService {
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.verificationOtpRepository = verificationOtpRepository;
+        this.accountIdentityService = accountIdentityService;
     }
 
     public User register(User user) {
         if (user == null) {
             throw new IllegalArgumentException("User details are required");
         }
-        if (isBlank(user.getUsername()) || isBlank(user.getEmail()) || isBlank(user.getPassword())) {
-            throw new IllegalArgumentException("Name, email, and password are required");
+        if ((isBlank(user.getUsername()) && !user.hasDisplayName()) || isBlank(user.getEmail()) || isBlank(user.getPassword())) {
+            throw new IllegalArgumentException("Display name, email, and password are required");
         }
         String email = user.getEmail().trim().toLowerCase();
         if (!EMAIL_PATTERN.matcher(email).matches()) {
@@ -78,8 +81,14 @@ public class UserService {
         if (userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("An account with this email already exists. Please sign in instead.");
         }
-        String username = cleanUsername(user.getUsername());
-        ensureUsernameAvailable(username, null);
+        boolean legacySingleName = !user.hasDisplayName();
+        if (legacySingleName) {
+            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getUsername()));
+        } else {
+            user.setDisplayName(accountIdentityService.cleanDisplayName(user.getDisplayName()));
+        }
+        String requestedUsername = legacySingleName && !accountIdentityService.isValidUsername(user.getUsername()) ? null : user.getUsername();
+        String username = accountIdentityService.usernameForRegistration(requestedUsername, user.getDisplayName(), email);
         user.setUsername(username);
         user.setEmail(email);
         if (user.getRoles().isEmpty()) {
@@ -96,11 +105,11 @@ public class UserService {
         if (isBlank(id)) {
             return Optional.empty();
         }
-        return userRepository.findById(id);
+        return userRepository.findById(id).map(this::ensureIdentitySaved);
     }
 
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        return userRepository.findAll().stream().map(this::ensureIdentitySaved).toList();
     }
 
     public Optional<User> loginUser(String email, String password) {
@@ -110,6 +119,7 @@ public class UserService {
         return userRepository.findByEmail(email.trim().toLowerCase())
                 .filter(user -> matchesPassword(user, password))
                 .map(user -> {
+                    accountIdentityService.ensureIdentity(user);
                     user.setLastLogin(Instant.now());
                     return userRepository.save(user);
                 });
@@ -130,11 +140,15 @@ public class UserService {
     public User updateOwnProfile(String userId, UserDtos.ProfileUpdateRequest request) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        String requestedUsername = !isBlank(request.getUsername()) ? request.getUsername() : request.getName();
-        if (!isBlank(requestedUsername)) {
-            String username = cleanUsername(requestedUsername);
-            ensureUsernameAvailable(username, user.getId());
+        accountIdentityService.ensureIdentity(user);
+        if (request.getUsername() != null && !request.getUsername().isBlank()) {
+            String username = accountIdentityService.normalizeUsername(request.getUsername());
+            accountIdentityService.ensureUsernameAvailable(username, user.getId());
             user.setUsername(username);
+        }
+        String displayName = !isBlank(request.getDisplayName()) ? request.getDisplayName() : request.getName();
+        if (!isBlank(displayName)) {
+            user.setDisplayName(accountIdentityService.cleanDisplayName(displayName));
         }
         if (request.getAvatarUrl() != null) {
             user.setAvatarUrl(trimToNull(request.getAvatarUrl()));
@@ -158,6 +172,10 @@ public class UserService {
             user.setAvailability(cleanList(request.getAvailability()));
         }
         return userRepository.save(user);
+    }
+
+    public boolean isUsernameAvailable(String username, String currentUserId) {
+        return accountIdentityService.isUsernameAvailable(username, currentUserId);
     }
 
     public User addOwnRole(String userId, UserDtos.AddRoleRequest request) {
@@ -234,34 +252,6 @@ public class UserService {
         return value == null || value.isBlank();
     }
 
-    private void ensureUsernameAvailable(String username, String currentUserId) {
-        String key = usernameKey(username);
-        if (key == null) {
-            throw new IllegalArgumentException("Username is required");
-        }
-        Optional<User> keyedMatch = userRepository.findByUsernameKey(key);
-        if (keyedMatch.isPresent() && !keyedMatch.get().getId().equals(currentUserId)) {
-            throw new IllegalArgumentException("Username already taken");
-        }
-        Optional<User> legacyMatch = userRepository.findFirstByUsernamePattern("^" + Pattern.quote(username) + "$");
-        if (legacyMatch.isPresent() && !legacyMatch.get().getId().equals(currentUserId)) {
-            throw new IllegalArgumentException("Username already taken");
-        }
-    }
-
-    private String cleanUsername(String value) {
-        String username = trimToNull(value);
-        if (username == null) {
-            throw new IllegalArgumentException("Username is required");
-        }
-        return username.replaceAll("\\s+", " ");
-    }
-
-    private String usernameKey(String value) {
-        String username = trimToNull(value);
-        return username == null ? null : username.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
-    }
-
     private String normalizeRole(String role) {
         if (role == null || role.isBlank()) {
             return null;
@@ -309,5 +299,12 @@ public class UserService {
                 .map(String::trim)
                 .distinct()
                 .toList();
+    }
+
+    private User ensureIdentitySaved(User user) {
+        if (accountIdentityService.ensureIdentity(user)) {
+            return userRepository.save(user);
+        }
+        return user;
     }
 }
