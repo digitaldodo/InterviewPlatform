@@ -86,6 +86,12 @@ If your backend runs somewhere else, update `frontend/js/env.js` locally or over
 | `MONGO_URI` | Yes | none | MongoDB connection URI. |
 | `MONGO_DATABASE` | No | `interview_platform` | MongoDB database name. |
 | `CORS_ALLOWED_ORIGIN_PATTERNS` | No | local dev origins + `https://*.onrender.com` | Comma-separated allowed frontend origins. |
+| `JWT_SECRET` | Yes in production | development fallback | HMAC signing secret, at least 32 characters. |
+| `JWT_ACCESS_TOKEN_MINUTES` | No | `45` | Access token lifetime. |
+| `JWT_REFRESH_TOKEN_DAYS` | No | `14` | Refresh token lifetime. |
+| `SENDGRID_API_KEY` | Yes for email | none | SendGrid API key used for OTP and reset emails. |
+| `SENDGRID_FROM_EMAIL` | Yes for email | `no-reply@interviewprep.local` | Verified SendGrid sender address. |
+| `FRONTEND_URL` | Yes for reset links | `http://localhost:5500` | Public frontend URL used in password reset emails. |
 | `JAVA_OPTS` | No | `-XX:MaxRAMPercentage=75.0` | JVM options used by the Docker container. |
 
 ### Frontend
@@ -111,7 +117,7 @@ It creates:
 2. In Render, choose **New +** then **Blueprint**.
 3. Connect the GitHub repository.
 4. Render will detect `render.yaml` and create both services.
-5. Set `MONGO_URI` on `interview-platform-api`.
+5. Set `MONGO_URI`, `JWT_SECRET`, and the SendGrid variables on `interview-platform-api`.
 6. Deploy the blueprint.
 7. After the first deployment, confirm:
    - Backend health: `https://<api-service>.onrender.com/api/health`
@@ -159,10 +165,26 @@ Use backslashes instead of backticks on macOS/Linux.
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Health check |
+| `POST` | `/api/auth/register` | Register, hash password, create JWT pair, send OTP |
+| `POST` | `/api/auth/login` | Login with JWT + refresh token response |
+| `POST` | `/api/auth/refresh` | Exchange refresh token for a new token pair |
+| `POST` | `/api/auth/logout` | Revoke refresh token |
+| `POST` | `/api/auth/send-otp` | Send verification OTP |
+| `POST` | `/api/auth/resend-otp` | Rate-limited OTP resend |
+| `POST` | `/api/auth/verify-otp` | Verify OTP and activate account |
+| `POST` | `/api/auth/forgot-password` | Send reset email if account exists |
+| `POST` | `/api/auth/reset-password` | Validate reset token and update password |
 | `POST` | `/api/users/register` | Register a user |
 | `POST` | `/api/users/login` | Login |
 | `GET` | `/api/users` | List users |
 | `GET` | `/api/users/interviewers?skill=` | Browse interviewers |
+| `GET` | `/api/interviewers/search` | Search/filter/sort/paginate interviewers |
+| `GET` | `/api/interviewers/{id}` | Interviewer profile |
+| `GET` | `/api/interviewers/{id}/availability` | Available slots with booked slots removed |
+| `GET` | `/api/interviewers/top-rated` | Top-rated interviewers |
+| `GET` | `/api/interviewers/recommended` | Recommended interviewers |
+| `POST` | `/api/interviewers/{id}/favorite` | Toggle saved interviewer |
+| `POST` | `/api/bookings` | Multi-step booking endpoint that creates a session and meeting link |
 | `POST` | `/api/sessions` | Create a session |
 | `GET` | `/api/sessions/interviewer/{id}` | Interviewer sessions |
 | `GET` | `/api/sessions/interviewee/{id}` | Interviewee sessions |
@@ -171,3 +193,21 @@ Use backslashes instead of backticks on macOS/Linux.
 | `PATCH` | `/api/sessions/{id}/cancel` | Cancel a session |
 | `POST` | `/api/feedback` | Submit feedback |
 | `GET` | `/api/feedback` | List feedback |
+| `GET` | `/api/notifications?userId=` | Notification dropdown data |
+| `PATCH` | `/api/notifications/{id}/read` | Mark notification as read |
+
+## MongoDB Collections
+
+`users` now stores profile/discovery fields (`company`, `currentRole`, `bio`, `avatarUrl`, `language`, `yearsExperience`, `averageRating`, `reviewCount`, `completedInterviews`, `priceCents`, `availability`, `favoriteInterviewerIds`, `isVerified`, `createdAt`, `lastLogin`) and `passwordHash` instead of plain passwords.
+
+`sessions` now includes booking fields (`interviewType`, `durationMinutes`, `meetingLink`, `meetingStatus`, `status`, `createdAt`, `updatedAt`) and indexed interviewer/time/status lookups to prevent double booking.
+
+New collections: `refresh_tokens`, `verification_otps`, `password_reset_tokens`, and `notifications`. OTP/reset/token collections use TTL indexes through `expiresAt`.
+
+## Frontend Architecture
+
+The frontend remains vanilla HTML/CSS/JavaScript. `index.html` is the public SaaS landing page plus auth, OTP, and reset flows. `pages/dashboard.html` is a role-aware workspace. `js/dashboard.js` owns API access, token refresh, discovery search, booking state, session actions, feedback submission, notifications, and mobile navigation. `css/style.css` contains shared design tokens and responsive layouts.
+
+## SendGrid Setup
+
+Create a SendGrid API key with Mail Send permission, verify the sender used by `SENDGRID_FROM_EMAIL`, then set `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, and `FRONTEND_URL` in Render. When SendGrid is not configured, the backend logs skipped emails instead of failing local development.

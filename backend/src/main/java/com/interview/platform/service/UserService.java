@@ -2,8 +2,10 @@ package com.interview.platform.service;
 
 import com.interview.platform.model.User;
 import com.interview.platform.repository.UserRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -14,9 +16,11 @@ public class UserService {
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public User register(User user) {
@@ -41,9 +45,13 @@ public class UserService {
         if (isBlank(user.getRole())) {
             user.setRole("INTERVIEWEE");
         }
-        if (!"INTERVIEWER".equals(user.getRole()) && !"INTERVIEWEE".equals(user.getRole())) {
-            throw new IllegalArgumentException("Role must be INTERVIEWER or INTERVIEWEE");
+        if (!"ADMIN".equals(user.getRole()) && !"INTERVIEWER".equals(user.getRole()) && !"INTERVIEWEE".equals(user.getRole())) {
+            throw new IllegalArgumentException("Role must be ADMIN, INTERVIEWER, or INTERVIEWEE");
         }
+        user.setPasswordHash(passwordEncoder.encode(user.getPassword()));
+        user.setPassword(null);
+        user.setCreatedAt(Instant.now());
+        user.setIsVerified(true);
         return userRepository.save(user);
     }
 
@@ -63,7 +71,11 @@ public class UserService {
             return Optional.empty();
         }
         return userRepository.findByEmail(email.trim().toLowerCase())
-                .filter(user -> password.equals(user.getPassword()));
+                .filter(user -> matchesPassword(user, password))
+                .map(user -> {
+                    user.setLastLogin(Instant.now());
+                    return userRepository.save(user);
+                });
     }
 
     public List<User> getInterviewers(String skill) {
@@ -80,5 +92,18 @@ public class UserService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private boolean matchesPassword(User user, String rawPassword) {
+        if (!isBlank(user.getPasswordHash()) && passwordEncoder.matches(rawPassword, user.getPasswordHash())) {
+            return true;
+        }
+        if (!isBlank(user.getPassword()) && rawPassword.equals(user.getPassword())) {
+            user.setPasswordHash(passwordEncoder.encode(rawPassword));
+            user.setPassword(null);
+            userRepository.save(user);
+            return true;
+        }
+        return false;
     }
 }

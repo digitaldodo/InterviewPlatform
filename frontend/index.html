@@ -3,622 +3,258 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>InterviewPrep – Practice Mock Interviews</title>
-  <meta name="description" content="Connect with experienced interviewers for structured mock interview sessions." />
+  <title>InterviewPrep - Mock Interview Practice</title>
+  <meta name="description" content="Book focused mock interviews with experienced engineers, product leaders, and hiring managers." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" />
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg: #0d0d0f;
-      --surface: #141417;
-      --surface2: #1a1a1f;
-      --border: rgba(255,255,255,0.07);
-      --border-hover: rgba(255,255,255,0.14);
-      --gold: #c8a96e;
-      --gold-dim: rgba(200,169,110,0.15);
-      --gold-glow: rgba(200,169,110,0.08);
-      --cream: #f0ead8;
-      --cream-muted: rgba(240,234,216,0.55);
-      --cream-dim: rgba(240,234,216,0.28);
-      --text: #e8e2d4;
-      --text-muted: rgba(232,226,212,0.5);
-      --radius: 14px;
-      --radius-sm: 8px;
-      --sans: 'DM Sans', sans-serif;
-      --serif: 'Cormorant Garamond', serif;
-    }
-
-    html, body { height: 100%; }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: var(--sans);
-      font-weight: 300;
-      min-height: 100vh;
-      display: flex;
-      align-items: stretch;
-      overflow-x: hidden;
-    }
-
-    /* ── Ambient bg ── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background:
-        radial-gradient(ellipse 70% 60% at 20% 50%, rgba(200,169,110,0.06) 0%, transparent 70%),
-        radial-gradient(ellipse 50% 80% at 80% 20%, rgba(120,100,160,0.05) 0%, transparent 60%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    /* ── Layout ── */
-    .wrapper {
-      display: flex;
-      width: 100%;
-      min-height: 100vh;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* ── Left panel ── */
-    .hero {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding: 5rem 5rem 5rem 6rem;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .hero::after {
-      content: '';
-      position: absolute;
-      right: 0; top: 10%; bottom: 10%;
-      width: 1px;
-      background: linear-gradient(to bottom, transparent, var(--border) 30%, var(--border) 70%, transparent);
-    }
-
-    .hero-eyebrow {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 2.5rem;
-      animation: fadeUp 0.7s ease both;
-    }
-
-    .hero-eyebrow-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--gold);
-    }
-
-    .hero-eyebrow span {
-      font-size: 0.72rem;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: var(--gold);
-      font-weight: 400;
-    }
-
-    .hero-headline {
-      font-family: var(--serif);
-      font-size: clamp(3rem, 4.5vw, 4.8rem);
-      font-weight: 300;
-      line-height: 1.08;
-      color: var(--cream);
-      margin-bottom: 1.8rem;
-      animation: fadeUp 0.7s 0.1s ease both;
-    }
-
-    .hero-headline em {
-      font-style: italic;
-      color: var(--gold);
-    }
-
-    .hero-sub {
-      font-size: 1rem;
-      line-height: 1.75;
-      color: var(--cream-muted);
-      max-width: 400px;
-      margin-bottom: 3.5rem;
-      animation: fadeUp 0.7s 0.2s ease both;
-    }
-
-    .features {
-      display: flex;
-      flex-direction: column;
-      gap: 1.1rem;
-      animation: fadeUp 0.7s 0.3s ease both;
-    }
-
-    .feature-item {
-      display: flex;
-      align-items: flex-start;
-      gap: 14px;
-    }
-
-    .feature-icon {
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      background: var(--gold-dim);
-      border: 1px solid rgba(200,169,110,0.25);
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-
-    .feature-icon svg { width: 12px; height: 12px; }
-
-    .feature-item span {
-      font-size: 0.9rem;
-      color: var(--cream-muted);
-      line-height: 1.5;
-      padding-top: 4px;
-    }
-
-    .hero-numbers {
-      display: flex;
-      gap: 2.5rem;
-      margin-top: 4rem;
-      padding-top: 2.5rem;
-      border-top: 1px solid var(--border);
-      animation: fadeUp 0.7s 0.4s ease both;
-    }
-
-    .stat-num {
-      font-family: var(--serif);
-      font-size: 2rem;
-      font-weight: 600;
-      color: var(--cream);
-      display: block;
-      line-height: 1;
-      margin-bottom: 4px;
-    }
-
-    .stat-label {
-      font-size: 0.72rem;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-
-    /* ── Right panel ── */
-    .auth-panel {
-      width: 480px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 3rem 3.5rem;
-      flex-shrink: 0;
-    }
-
-    .auth-card {
-      width: 100%;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 2.5rem;
-      position: relative;
-      animation: fadeUp 0.7s 0.15s ease both;
-    }
-
-    .auth-card::before {
-      content: '';
-      position: absolute;
-      inset: -1px;
-      border-radius: 21px;
-      background: linear-gradient(145deg, rgba(200,169,110,0.12), transparent 40%);
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .auth-card > * { position: relative; z-index: 1; }
-
-    .auth-logo {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 1.8rem;
-    }
-
-    .auth-logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, var(--gold) 0%, #a8843e 100%);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-    }
-
-    .auth-logo-icon svg { width: 16px; height: 16px; }
-
-    .auth-logo-text {
-      font-family: var(--serif);
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: var(--cream);
-      letter-spacing: 0.02em;
-    }
-
-    .auth-title {
-      font-family: var(--serif);
-      font-size: 1.75rem;
-      font-weight: 300;
-      color: var(--cream);
-      margin-bottom: 0.4rem;
-    }
-
-    .auth-sub {
-      font-size: 0.83rem;
-      color: var(--text-muted);
-      margin-bottom: 1.8rem;
-    }
-
-    /* Tabs */
-    .tab-bar {
-      display: flex;
-      background: var(--surface2);
-      border-radius: 10px;
-      padding: 4px;
-      margin-bottom: 1.8rem;
-      position: relative;
-    }
-
-    .tab-btn {
-      flex: 1;
-      padding: 0.55rem;
-      font-family: var(--sans);
-      font-size: 0.85rem;
-      font-weight: 400;
-      color: var(--text-muted);
-      background: none;
-      border: none;
-      border-radius: 7px;
-      cursor: pointer;
-      transition: color 0.25s;
-      position: relative;
-      z-index: 1;
-    }
-
-    .tab-btn.active { color: var(--cream); }
-
-    .tab-slider {
-      position: absolute;
-      top: 4px; bottom: 4px;
-      width: calc(50% - 4px);
-      left: 4px;
-      background: var(--surface);
-      border: 1px solid var(--border-hover);
-      border-radius: 7px;
-      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .tab-slider.on-register { transform: translateX(100%); }
-
-    /* Forms */
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-
-    .form-group { margin-bottom: 1.1rem; }
-
-    label {
-      display: block;
-      font-size: 0.78rem;
-      font-weight: 400;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-      text-transform: uppercase;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 0.7rem 1rem;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--cream);
-      font-family: var(--sans);
-      font-size: 0.9rem;
-      font-weight: 300;
-      outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
-      -webkit-appearance: none;
-    }
-
-    input::placeholder { color: var(--text-muted); }
-
-    input:hover, select:hover { border-color: var(--border-hover); }
-
-    input:focus, select:focus {
-      border-color: rgba(200,169,110,0.5);
-      box-shadow: 0 0 0 3px rgba(200,169,110,0.08);
-    }
-
-    select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      padding-right: 2.5rem;
-      cursor: pointer;
-    }
-
-    select option { background: #1a1a1f; }
-
-    .btn-submit {
-      width: 100%;
-      padding: 0.85rem;
-      margin-top: 0.5rem;
-      background: linear-gradient(135deg, var(--gold) 0%, #a8843e 100%);
-      color: #1a1100;
-      font-family: var(--sans);
-      font-size: 0.9rem;
-      font-weight: 500;
-      border: none;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.15s;
-      letter-spacing: 0.04em;
-    }
-
-    .btn-submit:hover { opacity: 0.88; transform: translateY(-1px); }
-    .btn-submit:active { transform: translateY(0); opacity: 1; }
-
-    .form-footer {
-      text-align: center;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      margin-top: 1.2rem;
-    }
-
-    .form-footer a {
-      color: var(--gold);
-      text-decoration: none;
-      transition: opacity 0.2s;
-    }
-    .form-footer a:hover { opacity: 0.75; }
-
-    /* Alert */
-    .alert {
-      display: none;
-      padding: 0.65rem 1rem;
-      border-radius: var(--radius-sm);
-      font-size: 0.82rem;
-      margin-bottom: 1rem;
-      border: 1px solid;
-    }
-    .alert.error { background: rgba(226,75,74,0.1); border-color: rgba(226,75,74,0.3); color: #f09595; display: block; }
-    .alert.success { background: rgba(99,153,34,0.1); border-color: rgba(99,153,34,0.3); color: #97c459; display: block; }
-
-    /* ── Floating orb decoration ── */
-    .orb {
-      position: absolute;
-      border-radius: 50%;
-      filter: blur(80px);
-      pointer-events: none;
-    }
-
-    .orb-1 {
-      width: 350px; height: 350px;
-      background: rgba(200,169,110,0.07);
-      top: -80px; left: -100px;
-      animation: drift 12s ease-in-out infinite alternate;
-    }
-
-    .orb-2 {
-      width: 250px; height: 250px;
-      background: rgba(120,100,180,0.06);
-      bottom: -60px; right: 200px;
-      animation: drift 16s ease-in-out infinite alternate-reverse;
-    }
-
-    @keyframes drift {
-      from { transform: translate(0, 0); }
-      to { transform: translate(30px, 20px); }
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(18px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── Responsive ── */
-    @media (max-width: 900px) {
-      .wrapper { flex-direction: column; }
-      .hero { padding: 4rem 2rem 3rem; }
-      .hero::after { display: none; }
-      .auth-panel { width: 100%; padding: 2rem; }
-      .hero-numbers { display: none; }
-    }
-  </style>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="css/style.css" />
 </head>
-<body>
+<body class="public-shell">
+  <header class="public-nav">
+    <a class="brand" href="#top" aria-label="InterviewPrep home">
+      <span class="brand-mark">IP</span>
+      <span>InterviewPrep</span>
+    </a>
+    <nav class="public-links" aria-label="Primary">
+      <a href="#interviewers">Interviewers</a>
+      <a href="#how">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-outline btn-sm" href="#auth">Sign in</a>
+  </header>
 
-<div class="wrapper">
-  <div class="orb orb-1"></div>
-  <div class="orb orb-2"></div>
-
-  <!-- ── Hero ── -->
-  <div class="hero">
-    <div class="hero-eyebrow">
-      <div class="hero-eyebrow-dot"></div>
-      <span>Mock Interview Platform</span>
-    </div>
-
-    <h2 class="hero-headline">
-      Practice until<br />it feels <em>natural</em>.
-    </h2>
-
-    <p class="hero-sub">
-      Connect with verified interviewers for realistic, structured sessions — and walk into every real interview with confidence.
-    </p>
-
-    <div class="features">
-      <div class="feature-item">
-        <div class="feature-icon">
-          <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="6" cy="4" r="2.5" stroke="#c8a96e" stroke-width="1.2"/>
-            <path d="M1.5 10.5c0-2.485 2.015-4.5 4.5-4.5s4.5 2.015 4.5 4.5" stroke="#c8a96e" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
+  <main id="top">
+    <section class="public-hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Mock interviews with real operators</div>
+        <h1>InterviewPrep</h1>
+        <p>Find the right interviewer, book a focused session, join instantly, and leave with feedback you can actually practice from.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#auth" onclick="switchTab('register')">Start practicing</a>
+          <a class="btn btn-ghost" href="#interviewers">Browse interviewers</a>
         </div>
-        <span>Browse verified interviewers by skill & domain</span>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">
-          <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="1.5" y="1.5" width="9" height="9" rx="2" stroke="#c8a96e" stroke-width="1.2"/>
-            <path d="M4 1.5v2M8 1.5v2M1.5 5.5h9" stroke="#c8a96e" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
+        <div class="hero-metrics">
+          <span><strong>2.4k+</strong> mentors</span>
+          <span><strong>50k+</strong> sessions</span>
+          <span><strong>4.8/5</strong> rating</span>
         </div>
-        <span>Schedule sessions at your convenience, anytime</span>
       </div>
-      <div class="feature-item">
-        <div class="feature-icon">
-          <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 9l2.5-2.5 2 2L10 4" stroke="#c8a96e" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+      <div class="hero-product" aria-label="Product preview">
+        <div class="preview-toolbar">
+          <span></span><span></span><span></span>
+          <strong>Booking workflow</strong>
         </div>
-        <span>Get detailed, actionable feedback after every session</span>
-      </div>
-      <div class="feature-item">
-        <div class="feature-icon">
-          <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 9.5V7m2.667 2.5V5M7.333 9.5V3M10 9.5V5.5" stroke="#c8a96e" stroke-width="1.2" stroke-linecap="round"/>
-          </svg>
+        <div class="preview-grid">
+          <div class="preview-profile">
+            <div class="avatar">AK</div>
+            <div>
+              <h3>Aarav Kapoor</h3>
+              <p>Staff Engineer at Stripe</p>
+            </div>
+          </div>
+          <div class="preview-tags"><span>System Design</span><span>Backend</span><span>Java</span></div>
+          <div class="preview-slots">
+            <button>10:30 AM</button><button class="active">2:00 PM</button><button>5:30 PM</button>
+          </div>
+          <div class="preview-summary">
+            <span>Confirmed meeting link</span>
+            <strong>Jitsi room ready</strong>
+          </div>
         </div>
-        <span>Track your improvement over time with analytics</span>
       </div>
-    </div>
+    </section>
 
-    <div class="hero-numbers">
-      <div>
-        <span class="stat-num">2,400+</span>
-        <span class="stat-label">Verified Interviewers</span>
+    <section class="public-band" id="interviewers">
+      <div class="section-heading">
+        <span class="eyebrow">Discover</span>
+        <h2>Book interviewers by domain, company, language, and availability.</h2>
       </div>
-      <div>
-        <span class="stat-num">98%</span>
-        <span class="stat-label">Satisfaction Rate</span>
+      <div class="featured-grid">
+        <article class="featured-card">
+          <div class="avatar">MS</div>
+          <h3>Maya Singh</h3>
+          <p>Frontend Lead at Atlassian</p>
+          <div class="preview-tags"><span>Frontend</span><span>React</span><span>Behavioral</span></div>
+        </article>
+        <article class="featured-card">
+          <div class="avatar">DR</div>
+          <h3>Dev Rao</h3>
+          <p>Engineering Manager at Google</p>
+          <div class="preview-tags"><span>Leadership</span><span>System Design</span><span>HR</span></div>
+        </article>
+        <article class="featured-card">
+          <div class="avatar">NL</div>
+          <h3>Nina Lee</h3>
+          <p>Senior SDE at Amazon</p>
+          <div class="preview-tags"><span>DSA</span><span>Backend</span><span>Java</span></div>
+        </article>
       </div>
-      <div>
-        <span class="stat-num">50k+</span>
-        <span class="stat-label">Sessions Completed</span>
-      </div>
-    </div>
-  </div>
+    </section>
 
-  <!-- ── Auth Panel ── -->
-  <div class="auth-panel">
-    <div class="auth-card">
+    <section class="public-band split-band" id="how">
+      <div class="section-heading">
+        <span class="eyebrow">Workflow</span>
+        <h2>From search to feedback in four clean steps.</h2>
+      </div>
+      <div class="steps-grid">
+        <div><strong>1</strong><h3>Choose interviewer</h3><p>Search, filter, compare profiles, and save favorites.</p></div>
+        <div><strong>2</strong><h3>Pick interview type</h3><p>DSA, System Design, HR, Frontend, Backend, Behavioral, or Resume Review.</p></div>
+        <div><strong>3</strong><h3>Select a slot</h3><p>Only available slots are shown and double booking is blocked.</p></div>
+        <div><strong>4</strong><h3>Join and improve</h3><p>Meeting links, notifications, and structured feedback are attached to the session.</p></div>
+      </div>
+    </section>
 
-      <div class="auth-logo">
-        <div class="auth-logo-icon">
-          <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M8 2L10 6H14L11 9L12 13L8 10.5L4 13L5 9L2 6H6L8 2Z" fill="#1a1100" stroke="#1a1100" stroke-width="0.5" stroke-linejoin="round"/>
-          </svg>
+    <section class="public-band" id="pricing">
+      <div class="section-heading">
+        <span class="eyebrow">Pricing</span>
+        <h2>Start free, then pay only for premium interviewer sessions.</h2>
+      </div>
+      <div class="pricing-row">
+        <div><strong>Free</strong><span>Community interviewers and progress tracking</span></div>
+        <div><strong>Pro</strong><span>Premium experts, priority booking, and deeper analytics</span></div>
+      </div>
+    </section>
+
+    <section class="auth-section" id="auth">
+      <div class="auth-copy">
+        <span class="eyebrow">Account</span>
+        <h2>Sign in or create your workspace.</h2>
+        <p>Email verification, refresh tokens, and password reset flows are built in for production deployment.</p>
+      </div>
+      <div class="auth-card">
+        <div class="tab-bar" role="tablist">
+          <button id="tab-login" class="tab-btn active" role="tab" onclick="switchTab('login')">Login</button>
+          <button id="tab-register" class="tab-btn" role="tab" onclick="switchTab('register')">Register</button>
         </div>
-        <span class="auth-logo-text">InterviewPrep</span>
+
+        <div id="panel-login" class="tab-panel active" role="tabpanel">
+          <div id="login-alert" class="alert"></div>
+          <form id="login-form" novalidate>
+            <div class="form-group">
+              <label for="login-email">Email address</label>
+              <input id="login-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+            </div>
+            <div class="form-group">
+              <label for="login-password">Password</label>
+              <input id="login-password" type="password" name="password" placeholder="Enter your password" required autocomplete="current-password" />
+            </div>
+            <button id="login-submit" type="submit" class="btn btn-primary btn-full">Sign in</button>
+          </form>
+          <p class="form-footer"><a href="#" onclick="openResetPanel(); return false;">Forgot password?</a></p>
+        </div>
+
+        <div id="panel-register" class="tab-panel" role="tabpanel">
+          <div id="register-alert" class="alert"></div>
+          <form id="register-form" novalidate>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="reg-name">Full name</label>
+                <input id="reg-name" type="text" name="name" placeholder="Jane Doe" required autocomplete="name" />
+              </div>
+              <div class="form-group">
+                <label for="reg-role">Role</label>
+                <select id="reg-role" name="role" required>
+                  <option value="">Select role</option>
+                  <option value="interviewee">Interviewee</option>
+                  <option value="interviewer">Interviewer</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="reg-email">Email address</label>
+              <input id="reg-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
+            </div>
+            <div class="form-group">
+              <label for="reg-password">Password</label>
+              <input id="reg-password" type="password" name="password" placeholder="Min. 6 characters" required autocomplete="new-password" />
+            </div>
+            <div id="interviewer-fields">
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="reg-company">Company</label>
+                  <input id="reg-company" type="text" placeholder="Google" />
+                </div>
+                <div class="form-group">
+                  <label for="reg-current-role">Current role</label>
+                  <input id="reg-current-role" type="text" placeholder="Senior Engineer" />
+                </div>
+              </div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="reg-years">Years experience</label>
+                  <input id="reg-years" type="number" min="0" max="50" placeholder="6" />
+                </div>
+                <div class="form-group">
+                  <label for="reg-language">Language</label>
+                  <input id="reg-language" type="text" placeholder="English" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="reg-skills">Expertise</label>
+                <input id="reg-skills" type="text" name="skills" placeholder="Java, System Design, DSA" autocomplete="off" />
+              </div>
+            </div>
+            <button id="register-submit" type="submit" class="btn btn-primary btn-full">Create account</button>
+          </form>
+        </div>
+
+        <div id="panel-verify" class="tab-panel" role="tabpanel">
+          <div id="otp-alert" class="alert"></div>
+          <form id="otp-form" novalidate>
+            <div class="form-group">
+              <label for="otp-email">Email address</label>
+              <input id="otp-email" type="email" required />
+            </div>
+            <div class="form-group">
+              <label for="otp-code">Verification code</label>
+              <input id="otp-code" type="text" inputmode="numeric" maxlength="6" required />
+            </div>
+            <button id="otp-submit" type="submit" class="btn btn-primary btn-full">Verify email</button>
+            <button type="button" class="btn btn-ghost btn-full" onclick="resendOtp()">Resend code</button>
+          </form>
+        </div>
+
+        <div id="panel-reset" class="tab-panel" role="tabpanel">
+          <div id="reset-alert" class="alert"></div>
+          <form id="reset-form" novalidate>
+            <div class="form-group" id="forgot-email-group">
+              <label for="forgot-email">Email address</label>
+              <input id="forgot-email" type="email" placeholder="you@example.com" />
+            </div>
+            <div class="form-group" id="reset-token-group">
+              <label for="reset-token">Reset token</label>
+              <input id="reset-token" type="text" />
+            </div>
+            <div class="form-group" id="reset-password-group">
+              <label for="reset-password">New password</label>
+              <input id="reset-password" type="password" placeholder="Min. 6 characters" />
+            </div>
+            <button id="reset-submit" type="submit" class="btn btn-primary btn-full">Continue</button>
+          </form>
+        </div>
       </div>
+    </section>
 
-      <h1 class="auth-title">Welcome back</h1>
-      <p class="auth-sub">Sign in or create a new account to continue.</p>
-
-      <!-- Tab Toggle -->
-      <div class="tab-bar" role="tablist">
-        <div class="tab-slider" id="tab-slider"></div>
-        <button id="tab-login" class="tab-btn active" role="tab" onclick="switchTab('login')">Login</button>
-        <button id="tab-register" class="tab-btn" role="tab" onclick="switchTab('register')">Register</button>
+    <section class="public-band faq-band" id="faq">
+      <div class="section-heading">
+        <span class="eyebrow">FAQ</span>
+        <h2>Built for focused interview preparation.</h2>
       </div>
+      <details open><summary>Do sessions include meeting links?</summary><p>Yes. Each booking creates a Jitsi meeting link automatically.</p></details>
+      <details><summary>Can interviewers approve requests?</summary><p>Yes. Interviewers can confirm, complete, or cancel incoming session requests.</p></details>
+      <details><summary>Can I track feedback over time?</summary><p>The dashboard includes recent feedback, progress stats, session history, and skill tracking placeholders.</p></details>
+    </section>
+  </main>
 
-      <!-- Login Form -->
-      <div id="panel-login" class="tab-panel active" role="tabpanel">
-        <div id="login-alert" class="alert"></div>
-        <form id="login-form" novalidate>
-          <div class="form-group">
-            <label for="login-email">Email address</label>
-            <input id="login-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
-          </div>
-          <div class="form-group">
-            <label for="login-password">Password</label>
-            <input id="login-password" type="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
-          </div>
-          <div class="form-group">
-            <button id="login-submit" type="submit" class="btn-submit">Sign In</button>
-          </div>
-        </form>
-        <p class="form-footer">
-          No account yet? <a href="#" onclick="switchTab('register'); return false;">Create one here →</a>
-        </p>
-      </div>
+  <footer class="public-footer">
+    <span>InterviewPrep</span>
+    <span>Mock interviews, cleaner workflows, better outcomes.</span>
+  </footer>
 
-      <!-- Register Form -->
-      <div id="panel-register" class="tab-panel" role="tabpanel">
-        <div id="register-alert" class="alert"></div>
-        <form id="register-form" novalidate>
-          <div class="form-group">
-            <label for="reg-name">Full name</label>
-            <input id="reg-name" type="text" name="name" placeholder="Jane Doe" required autocomplete="name" />
-          </div>
-          <div class="form-group">
-            <label for="reg-email">Email address</label>
-            <input id="reg-email" type="email" name="email" placeholder="you@example.com" required autocomplete="email" />
-          </div>
-          <div class="form-group">
-            <label for="reg-password">Password</label>
-            <input id="reg-password" type="password" name="password" placeholder="Min. 6 characters" required autocomplete="new-password" />
-          </div>
-          <div class="form-group">
-            <label for="reg-role">I am a…</label>
-            <select id="reg-role" name="role" required>
-              <option value="">Select your role</option>
-              <option value="interviewee">Interviewee — seeking practice</option>
-              <option value="interviewer">Interviewer — offering sessions</option>
-            </select>
-          </div>
-          <div class="form-group" id="skills-group">
-            <label for="reg-skills">Skills / Expertise <small style="opacity:0.6; text-transform:none; letter-spacing:0;">(comma-separated)</small></label>
-            <input id="reg-skills" type="text" name="skills" placeholder="e.g. Java, System Design, DSA" autocomplete="off" />
-          </div>
-          <div class="form-group">
-            <button id="register-submit" type="submit" class="btn-submit">Create Account</button>
-          </div>
-        </form>
-        <p class="form-footer">
-          Already have an account? <a href="#" onclick="switchTab('login'); return false;">Sign in →</a>
-        </p>
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<script src="js/env.js"></script>
-<script src="js/app.js"></script>
-<script>
-  function switchTab(tab) {
-    const slider = document.getElementById('tab-slider');
-    const loginBtn = document.getElementById('tab-login');
-    const regBtn = document.getElementById('tab-register');
-    const loginPanel = document.getElementById('panel-login');
-    const regPanel = document.getElementById('panel-register');
-
-    if (tab === 'login') {
-      loginBtn.classList.add('active');
-      regBtn.classList.remove('active');
-      loginPanel.classList.add('active');
-      regPanel.classList.remove('active');
-      slider.classList.remove('on-register');
-    } else {
-      regBtn.classList.add('active');
-      loginBtn.classList.remove('active');
-      regPanel.classList.add('active');
-      loginPanel.classList.remove('active');
-      slider.classList.add('on-register');
-    }
-  }
-</script>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <script src="js/env.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

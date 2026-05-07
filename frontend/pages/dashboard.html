@@ -3,232 +3,187 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard – InterviewPrep</title>
-  <meta name="description" content="Manage your mock interview sessions, browse interviewers, and track feedback." />
+  <title>Workspace - InterviewPrep</title>
+  <meta name="description" content="Browse interviewers, book sessions, manage meetings, and review feedback." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
   <link rel="stylesheet" href="../css/style.css" />
 </head>
-<body>
-
-<div class="dashboard-wrapper">
-
-  <!-- ── Sidebar ── -->
+<body class="app-shell">
+  <button class="mobile-menu-btn" onclick="toggleSidebar()" aria-label="Open navigation">☰</button>
   <aside class="sidebar" id="sidebar">
-    <div class="logo">Interview<span>Prep</span></div>
-
-    <ul class="nav-menu" role="navigation" aria-label="Dashboard navigation">
-      <li>
-        <button class="nav-link active" id="nav-overview" onclick="showSection('overview')" aria-current="page">
-          📊 Overview
-        </button>
-      </li>
-      <li>
-        <button class="nav-link" id="nav-interviewers" onclick="showSection('interviewers')">
-          👥 Users
-        </button>
-      </li>
-      <li>
-        <button class="nav-link" id="nav-schedule" onclick="showSection('schedule')">
-          📅 Schedule Session
-        </button>
-      </li>
-      <li>
-        <button class="nav-link" id="nav-sessions" onclick="showSection('sessions')">
-          🗂️ My Sessions
-        </button>
-      </li>
-      <li>
-        <button class="nav-link" id="nav-feedback" onclick="showSection('feedback')">
-          📝 Feedback
-        </button>
-      </li>
-    </ul>
-
+    <div class="brand side-brand"><span class="brand-mark">IP</span><span>InterviewPrep</span></div>
+    <nav class="nav-menu" aria-label="Dashboard navigation">
+      <button class="nav-link active" data-section="overview" onclick="showSection('overview')">Home</button>
+      <button class="nav-link" data-section="discover" onclick="showSection('discover')">Search</button>
+      <button class="nav-link" data-section="booking" onclick="showSection('booking')">Booking</button>
+      <button class="nav-link" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
+      <button class="nav-link" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
+      <button class="nav-link interviewer-only" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
+    </nav>
     <div class="sidebar-bottom">
-      <div class="sidebar-user-info" id="sidebar-user-info">Not logged in</div>
-      <button class="btn btn-outline btn-sm btn-full" id="logout-btn" onclick="logout()">Logout</button>
+      <div class="sidebar-user-info" id="sidebar-user-info"></div>
+      <button class="btn btn-outline btn-full" onclick="logout()">Logout</button>
     </div>
   </aside>
 
-  <!-- ── Main Content ── -->
-  <main class="dashboard-main" id="main-content">
+  <main class="dashboard-main">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow" id="role-eyebrow">Workspace</p>
+        <h1 id="welcome-heading">Welcome back</h1>
+      </div>
+      <div class="topbar-actions">
+        <button class="icon-btn" onclick="toggleNotifications()" aria-label="Notifications">🔔<span id="unread-badge"></span></button>
+        <button class="btn btn-primary" onclick="showSection('discover')">Book session</button>
+      </div>
+      <div class="notification-panel" id="notification-panel"></div>
+    </header>
 
-    <!-- ════ OVERVIEW SECTION ════ -->
     <section id="section-overview" class="dashboard-section">
-      <div class="dashboard-header">
-        <h1 id="welcome-heading">Welcome back!</h1>
-        <p id="welcome-sub">Here's your activity at a glance.</p>
+      <div class="stats-grid">
+        <div class="stat-card"><span id="stat-upcoming">0</span><p>Upcoming</p></div>
+        <div class="stat-card"><span id="stat-completed">0</span><p>Completed</p></div>
+        <div class="stat-card"><span id="stat-rating">0.0</span><p>Average rating</p></div>
+        <div class="stat-card"><span id="stat-streak">0</span><p>Practice streak</p></div>
       </div>
 
-      <div class="grid-3 mb-3" id="stats-grid">
-        <div class="stat-card">
-          <div class="stat-number" id="stat-sessions">–</div>
-          <div class="stat-label">Total Sessions</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" id="stat-confirmed">–</div>
-          <div class="stat-label">Confirmed</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-number" id="stat-completed">–</div>
-          <div class="stat-label">Completed</div>
-        </div>
+      <div class="content-grid">
+        <section class="panel">
+          <div class="panel-head"><h2>Recommended interviewers</h2><button class="btn btn-ghost btn-sm" onclick="showSection('discover')">View all</button></div>
+          <div class="interviewer-row" id="recommended-list"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Upcoming interviews</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Manage</button></div>
+          <div id="upcoming-list"></div>
+        </section>
       </div>
 
-      <div class="card">
-        <div class="card-title">Recent Sessions</div>
-        <div id="overview-sessions-list">
-          <div class="empty-state"><div class="icon">📭</div><p>No sessions yet.</p></div>
+      <div class="content-grid">
+        <section class="panel">
+          <div class="panel-head"><h2>Skill progress</h2></div>
+          <div class="progress-list" id="skill-progress"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Recent feedback</h2></div>
+          <div id="recent-feedback"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="section-discover" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Discovery</p><h1>Find your next interviewer</h1></div>
+      </div>
+      <div class="filter-panel">
+        <input id="search-q" type="search" placeholder="Search by skill, company, role, or name" />
+        <select id="filter-sort">
+          <option value="top-rated">Top rated</option>
+          <option value="most-experienced">Most experienced</option>
+          <option value="most-active">Most active</option>
+          <option value="newest">Newest</option>
+        </select>
+        <input id="filter-expertise" type="text" placeholder="Expertise" />
+        <input id="filter-company" type="text" placeholder="Company" />
+        <input id="filter-language" type="text" placeholder="Language" />
+        <select id="filter-rating">
+          <option value="">Any rating</option>
+          <option value="4">4+ stars</option>
+          <option value="4.5">4.5+ stars</option>
+        </select>
+        <label class="check-row"><input id="filter-available" type="checkbox" /> Available</label>
+        <label class="check-row"><input id="filter-free" type="checkbox" /> Free</label>
+      </div>
+      <div id="interviewer-grid" class="interviewer-grid skeleton-grid"></div>
+      <div class="pagination-row">
+        <button class="btn btn-outline btn-sm" onclick="changePage(-1)">Previous</button>
+        <span id="page-label">Page 1</span>
+        <button class="btn btn-outline btn-sm" onclick="changePage(1)">Next</button>
+      </div>
+    </section>
+
+    <section id="section-booking" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Booking</p><h1>Book a mock interview</h1></div>
+      </div>
+      <div class="booking-layout">
+        <div class="booking-steps">
+          <button class="step active" data-step="1">1<span>Interviewer</span></button>
+          <button class="step" data-step="2">2<span>Type</span></button>
+          <button class="step" data-step="3">3<span>Slot</span></button>
+          <button class="step" data-step="4">4<span>Confirm</span></button>
+        </div>
+        <div class="panel booking-panel">
+          <div id="booking-step-content"></div>
         </div>
       </div>
     </section>
 
-    <!-- ════ INTERVIEWERS SECTION ════ -->
-    <section id="section-interviewers" class="dashboard-section" style="display:none;">
-      <div class="dashboard-header">
-        <h1>Browse Users</h1>
-        <p>View registered users and find interviewers by skill.</p>
+    <section id="section-sessions" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Sessions</p><h1>Upcoming and history</h1></div>
+        <button class="btn btn-outline" onclick="loadSessions()">Refresh</button>
       </div>
-
-      <div class="card mb-3">
-        <div style="display:flex; gap:0.75rem; align-items:center;">
-          <input id="skill-filter" type="text" placeholder="Filter by skill (e.g. Java, DSA)" style="flex:1;" oninput="filterInterviewers(this.value)" />
-          <button class="btn btn-outline" onclick="loadUsers()">All Users</button>
-          <button class="btn btn-primary" onclick="loadInterviewers()">Interviewers</button>
-        </div>
+      <div class="session-tabs">
+        <button class="chip active" onclick="renderSessions('upcoming')">Upcoming</button>
+        <button class="chip" onclick="renderSessions('history')">History</button>
       </div>
-
-      <div id="interviewers-alert" class="alert"></div>
-      <div id="interviewers-grid" style="display:flex; flex-direction:column; gap:0.75rem;">
-        <div class="empty-state"><div class="icon">⏳</div><p>Loading users...</p></div>
-      </div>
+      <div id="sessions-list" class="session-grid"></div>
     </section>
 
-    <!-- ════ SCHEDULE SESSION SECTION ════ -->
-    <section id="section-schedule" class="dashboard-section" style="display:none;">
-      <div class="dashboard-header">
-        <h1>Schedule a Session</h1>
-        <p>Request a mock interview with an interviewer.</p>
+    <section id="section-feedback" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Feedback</p><h1>Structured review</h1></div>
       </div>
-
-      <div class="card" style="max-width:560px;">
-        <div class="card-title">New Session Request</div>
-        <div id="schedule-alert" class="alert"></div>
-        <form id="session-form" novalidate>
-          <div class="form-group">
-            <label for="ses-interviewer">Interviewer ID</label>
-            <input id="ses-interviewer" type="text" name="interviewerId" placeholder="Paste interviewer's ID" required />
-            <small>You can copy the ID from the Interviewers list.</small>
-          </div>
-          <div class="form-group">
-            <label for="ses-topic">Topic / Focus Area</label>
-            <input id="ses-topic" type="text" name="topic" placeholder="e.g. System Design, Java, Behavioural" required />
-          </div>
-          <div class="form-group">
-            <label for="ses-date">Preferred Date &amp; Time</label>
-            <input id="ses-date" type="datetime-local" name="scheduledAt" required />
-          </div>
-          <div class="form-group">
-            <label for="ses-notes">Additional Notes <small>(optional)</small></label>
-            <textarea id="ses-notes" name="notes" placeholder="Anything specific you want to cover…"></textarea>
-          </div>
-          <button id="session-submit" type="submit" class="btn btn-primary btn-full">Request Session</button>
-        </form>
-      </div>
-    </section>
-
-    <!-- ════ MY SESSIONS SECTION ════ -->
-    <section id="section-sessions" class="dashboard-section" style="display:none;">
-      <div class="dashboard-header">
-        <h1>My Sessions</h1>
-        <p>View and manage all your interview sessions.</p>
-      </div>
-
-      <div id="sessions-alert" class="alert"></div>
-
-      <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-          <span class="card-title" style="margin:0; border:none; padding:0;">All Sessions</span>
-          <button class="btn btn-outline btn-sm" onclick="loadMySessions()">↻ Refresh</button>
-        </div>
-        <div id="sessions-table-wrapper">
-          <div class="empty-state"><div class="icon">⏳</div><p>Loading sessions…</p></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ════ FEEDBACK SECTION ════ -->
-    <section id="section-feedback" class="dashboard-section" style="display:none;">
-      <div class="dashboard-header">
-        <h1>Feedback</h1>
-        <p>Submit and review interview feedback.</p>
-      </div>
-
-      <div class="grid-2">
-        <div class="card">
-          <div class="card-title">Submit Feedback</div>
+      <div class="content-grid">
+        <form class="panel" id="feedback-form">
+          <h2>Submit feedback</h2>
           <div id="feedback-alert" class="alert"></div>
-          <form id="feedback-form" novalidate>
-            <div class="form-group">
-              <label for="fb-session">Session ID</label>
-              <input id="fb-session" type="text" required placeholder="Paste session ID" />
-            </div>
-            <div class="form-group">
-              <label for="fb-rating">Rating</label>
-              <select id="fb-rating" required>
-                <option value="">Select rating</option>
-                <option value="5">5 - Excellent</option>
-                <option value="4">4 - Good</option>
-                <option value="3">3 - Average</option>
-                <option value="2">2 - Needs work</option>
-                <option value="1">1 - Poor</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label for="fb-comments">Comments</label>
-              <textarea id="fb-comments" required placeholder="Share clear, actionable feedback"></textarea>
-            </div>
-            <div class="form-group">
-              <label for="fb-strengths">Strengths <small>(optional)</small></label>
-              <input id="fb-strengths" type="text" placeholder="What went well" />
-            </div>
-            <div class="form-group">
-              <label for="fb-weaknesses">Areas to Improve <small>(optional)</small></label>
-              <input id="fb-weaknesses" type="text" placeholder="What to practice next" />
-            </div>
-            <button id="feedback-submit" type="submit" class="btn btn-primary btn-full">Submit Feedback</button>
-          </form>
-        </div>
-
-        <div class="card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-            <span class="card-title" style="margin:0; border:none; padding:0;">Recent Feedback</span>
-            <button class="btn btn-outline btn-sm" onclick="loadFeedback()">↻ Refresh</button>
+          <div class="form-group">
+            <label for="fb-session">Session</label>
+            <select id="fb-session" required></select>
           </div>
-          <div id="feedback-list">
-            <div class="empty-state"><div class="icon">📭</div><p>No feedback yet.</p></div>
+          <div class="form-grid">
+            <div class="form-group"><label for="fb-rating">Overall</label><select id="fb-rating" required><option value="">Rating</option><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
+            <div class="form-group"><label for="fb-communication">Communication</label><select id="fb-communication"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
+            <div class="form-group"><label for="fb-technical">Technical</label><select id="fb-technical"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
           </div>
-        </div>
+          <div class="form-group"><label for="fb-comments">Comments</label><textarea id="fb-comments" required placeholder="Share clear, actionable feedback"></textarea></div>
+          <div class="form-group"><label for="fb-strengths">Strengths</label><input id="fb-strengths" placeholder="What went well" /></div>
+          <div class="form-group"><label for="fb-weaknesses">Areas to improve</label><input id="fb-weaknesses" placeholder="What to practice next" /></div>
+          <div class="form-group"><label for="fb-recommendations">Recommendations</label><textarea id="fb-recommendations" placeholder="Practice plan or resources"></textarea></div>
+          <button class="btn btn-primary btn-full" id="feedback-submit">Submit feedback</button>
+        </form>
+        <section class="panel">
+          <div class="panel-head"><h2>Recent feedback</h2><button class="btn btn-ghost btn-sm" onclick="loadFeedback()">Refresh</button></div>
+          <div id="feedback-list"></div>
+        </section>
       </div>
     </section>
 
-  </main><!-- /.dashboard-main -->
-</div><!-- /.dashboard-wrapper -->
+    <section id="section-interviewer" class="dashboard-section" hidden>
+      <div class="section-title">
+        <div><p class="eyebrow">Interviewer</p><h1>Requests, calendar, and ratings</h1></div>
+      </div>
+      <div class="content-grid">
+        <section class="panel"><h2>Incoming requests</h2><div id="incoming-requests"></div></section>
+        <section class="panel"><h2>Calendar view</h2><div id="calendar-view" class="calendar-view"></div></section>
+      </div>
+    </section>
+  </main>
 
-<!-- ── Session Action Modal (simple inline) ── -->
-<div id="action-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; align-items:center; justify-content:center;">
-  <div class="card" style="max-width:380px; width:90%;">
-    <div class="card-title" id="action-modal-title">Session Action</div>
-    <p id="action-modal-body" style="margin-bottom:1rem;"></p>
-    <div style="display:flex; gap:0.75rem; justify-content:flex-end;">
-      <button class="btn btn-outline btn-sm" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="action-confirm-btn">Confirm</button>
-    </div>
-  </div>
-</div>
+  <nav class="bottom-nav" aria-label="Mobile navigation">
+    <button onclick="showSection('overview')">Home</button>
+    <button onclick="showSection('sessions')">Sessions</button>
+    <button onclick="showSection('discover')">Search</button>
+    <button onclick="showSection('feedback')">Feedback</button>
+    <button onclick="showSection('overview')">Profile</button>
+  </nav>
 
-<script src="../js/env.js"></script>
-<script src="../js/dashboard.js"></script>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <script src="../js/env.js"></script>
+  <script src="../js/dashboard.js"></script>
 </body>
 </html>

@@ -1,18 +1,27 @@
 package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+
+import java.time.Instant;
 
 @Document(collection = "feedback")
 public class Feedback {
     @Id
     private String id;
+    @Indexed
     private String sessionId;
+    @Indexed
     private String reviewerId;
     private String comments;
     private int rating;
     private String strengths;
     private String weaknesses;
+    private Integer communication = 0;
+    private Integer technicalSkills = 0;
+    private String recommendations;
+    private Instant createdAt;
 
     public Feedback() {}
 
@@ -37,4 +46,12 @@ public class Feedback {
     public void setStrengths(String strengths) { this.strengths = strengths; }
     public String getWeaknesses() { return weaknesses; }
     public void setWeaknesses(String weaknesses) { this.weaknesses = weaknesses; }
+    public Integer getCommunication() { return communication; }
+    public void setCommunication(Integer communication) { this.communication = communication == null ? 0 : communication; }
+    public Integer getTechnicalSkills() { return technicalSkills; }
+    public void setTechnicalSkills(Integer technicalSkills) { this.technicalSkills = technicalSkills == null ? 0 : technicalSkills; }
+    public String getRecommendations() { return recommendations; }
+    public void setRecommendations(String recommendations) { this.recommendations = recommendations; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

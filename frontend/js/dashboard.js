@@ -1,592 +1,545 @@
-/* ============================================================
-   dashboard.js – Dashboard logic & API integration
-   API base comes from window.INTERVIEW_API_BASE when deployed separately.
-   ============================================================ */
+const API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
 
-const API_BASE = window.INTERVIEW_API_BASE;
+let currentUser = null;
+let sessions = [];
+let feedbackItems = [];
+let interviewers = [];
+let interviewerPage = 0;
+let interviewerTotalPages = 1;
+let selectedInterviewer = null;
+let bookingStep = 1;
+let bookingState = { interviewer: null, interviewType: '', startTime: '' };
+let searchTimer = null;
 
-let currentUser  = null;
-let displayedUsers = [];  // cache for client-side filter
-
-/* ============================================================
-   INIT – guard auth, bootstrap UI
-   ============================================================ */
-window.addEventListener('DOMContentLoaded', () => {
-  currentUser = getStoredUser();
-
-  if (!currentUser || !currentUser.id) {
-    // Not logged in – redirect to landing
+window.addEventListener('DOMContentLoaded', async () => {
+  currentUser = readJson('ip_user');
+  if (!currentUser?.id) {
     window.location.href = '../index.html';
     return;
   }
-
-  initUI();
+  initUi();
+  bindFilters();
+  bindFeedbackForm();
+  await Promise.all([loadSessions(), loadInterviewers(), loadRecommended(), loadFeedback(), loadNotifications()]);
   showSection('overview');
-  loadOverview();
 });
 
-function getStoredUser() {
-  try { return JSON.parse(localStorage.getItem('ip_user')); }
-  catch { return null; }
+function readJson(key) {
+  try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
 }
 
 function logout() {
   localStorage.removeItem('ip_user');
+  localStorage.removeItem('ip_access_token');
+  localStorage.removeItem('ip_refresh_token');
   window.location.href = '../index.html';
 }
 
-/* ── Initialise static UI bits ── */
-function initUI() {
-  document.getElementById('welcome-heading').textContent =
-    `Welcome back, ${currentUser.name || currentUser.email}!`;
-  const role = (currentUser.role || '').toLowerCase();
-
-  document.getElementById('welcome-sub').textContent =
-    role === 'interviewer'
-      ? 'Manage your upcoming interview sessions.'
-      : 'Find interviewers and schedule practice sessions.';
-
-  document.getElementById('sidebar-user-info').innerHTML =
-    `<strong>${currentUser.name || '—'}</strong><br/>${currentUser.email}<br/>
-     <span class="badge badge-purple" style="margin-top:0.3rem;">${role || 'user'}</span>`;
-
-  // Pre-fill interviewee ID in schedule form
-  if (document.getElementById('ses-interviewer')) {
-    // noop – interviewer ID is entered manually or via button
-  }
-
-  // Set datetime min to now
-  const dtInput = document.getElementById('ses-date');
-  if (dtInput) {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    dtInput.min = now.toISOString().slice(0, 16);
-  }
+function initUi() {
+  const role = (currentUser.role || 'INTERVIEWEE').toLowerCase();
+  document.getElementById('welcome-heading').textContent = `Welcome back, ${currentUser.name || currentUser.username || currentUser.email}`;
+  document.getElementById('role-eyebrow').textContent = role === 'interviewer' ? 'Interviewer workspace' : 'Interviewee workspace';
+  document.getElementById('sidebar-user-info').innerHTML = `<strong>${esc(currentUser.name || currentUser.username || 'User')}</strong><span>${esc(currentUser.email || '')}</span><span class="badge badge-purple">${esc(role)}</span>`;
+  document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = role === 'interviewer' ? 'flex' : 'none');
+  renderBookingStep();
 }
 
-/* ============================================================
-   SECTION NAVIGATION
-   ============================================================ */
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+}
+
 function showSection(name) {
-  // Hide all sections
-  document.querySelectorAll('.dashboard-section').forEach(s => s.style.display = 'none');
-  // Deactivate all nav links
-  document.querySelectorAll('.nav-link').forEach(b => {
-    b.classList.remove('active');
-    b.removeAttribute('aria-current');
+  document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
+  document.getElementById(`section-${name}`).hidden = false;
+  document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === name));
+  if (name === 'booking') renderBookingStep();
+  if (name === 'feedback') populateFeedbackSessions();
+  if (name === 'sessions') renderSessions('upcoming');
+  if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
+}
+
+async function api(path, options = {}, retry = true) {
+  const token = localStorage.getItem('ip_access_token');
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
   });
-
-  // Show target
-  const sec = document.getElementById(`section-${name}`);
-  if (sec) sec.style.display = 'block';
-
-  const navBtn = document.getElementById(`nav-${name}`);
-  if (navBtn) { navBtn.classList.add('active'); navBtn.setAttribute('aria-current', 'page'); }
-
-  // Lazy-load section data
-  if (name === 'interviewers') loadInterviewers();
-  if (name === 'sessions')     loadMySessions();
-  if (name === 'feedback')     loadFeedback();
-}
-
-/* ============================================================
-   ALERT helpers
-   ============================================================ */
-function showAlert(id, message, type = 'error') {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.textContent = message;
-  el.className = `alert alert-${type} show`;
-  if (type !== 'error') setTimeout(() => el.classList.remove('show'), 4000);
-}
-
-function hideAlert(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.remove('show');
-}
-
-function setLoading(btn, loading, label = 'Please wait...') {
-  if (!btn) return;
-  if (loading) {
-    btn.disabled = true;
-    btn.dataset.originalText = btn.textContent;
-    btn.innerHTML = `<span class="spinner"></span> ${label}`;
-  } else {
-    btn.disabled = false;
-    btn.textContent = btn.dataset.originalText;
+  const payload = await readPayload(res);
+  if (res.status === 401 && retry && localStorage.getItem('ip_refresh_token')) {
+    await refreshToken();
+    return api(path, options, false);
   }
+  if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
+  return payload?.data ?? payload;
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
+async function refreshToken() {
+  const data = await api('/api/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: localStorage.getItem('ip_refresh_token') }),
+  }, false);
+  localStorage.setItem('ip_access_token', data.accessToken);
+  localStorage.setItem('ip_refresh_token', data.refreshToken);
 }
 
-/* ============================================================
-   STATUS BADGE helper
-   ============================================================ */
-function statusBadge(status) {
-  const map = {
-    pending:   'badge-yellow',
-    confirmed: 'badge-purple',
-    completed: 'badge-green',
-    cancelled: 'badge-red',
-  };
-  const cls = map[(status || '').toLowerCase()] || 'badge-gray';
-  return `<span class="badge ${cls}">${status || 'unknown'}</span>`;
+async function readPayload(res) {
+  const text = await res.text();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return { message: text }; }
 }
 
-/* ============================================================
-   FORMAT DATE
-   ============================================================ */
-function fmtDate(str) {
-  if (!str) return '—';
-  try {
-    return new Date(str).toLocaleString(undefined, {
-      dateStyle: 'medium', timeStyle: 'short'
+function bindFilters() {
+  ['search-q', 'filter-expertise', 'filter-company', 'filter-language', 'filter-rating', 'filter-available', 'filter-free', 'filter-sort']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', () => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          interviewerPage = 0;
+          loadInterviewers();
+        }, 280);
+      });
     });
-  } catch { return str; }
 }
 
-/* ============================================================
-   OVERVIEW
-   Load stats + recent sessions for the logged-in user
-   ============================================================ */
-async function loadOverview() {
+async function loadInterviewers() {
+  const grid = document.getElementById('interviewer-grid');
+  grid.innerHTML = skeletonCards(6);
   try {
-    const sessions = await fetchMySessions();
-    const total     = sessions.length;
-    const confirmed = sessions.filter(s => (s.status || '').toLowerCase() === 'confirmed').length;
-    const completed = sessions.filter(s => (s.status || '').toLowerCase() === 'completed').length;
-
-    document.getElementById('stat-sessions').textContent  = total;
-    document.getElementById('stat-confirmed').textContent = confirmed;
-    document.getElementById('stat-completed').textContent = completed;
-
-    const recent = sessions.slice(0, 5);
-    const container = document.getElementById('overview-sessions-list');
-
-    if (recent.length === 0) {
-      container.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No sessions yet. <a href="#" onclick="showSection('schedule'); return false;">Schedule one!</a></p></div>`;
-      return;
-    }
-
-    container.innerHTML = buildSessionTable(recent, { compact: true });
+    const params = new URLSearchParams({
+      q: val('search-q'),
+      expertise: val('filter-expertise'),
+      company: val('filter-company'),
+      language: val('filter-language'),
+      sort: val('filter-sort'),
+      page: interviewerPage,
+      size: 9,
+    });
+    if (val('filter-rating')) params.set('minRating', val('filter-rating'));
+    if (document.getElementById('filter-available').checked) params.set('available', 'true');
+    if (document.getElementById('filter-free').checked) params.set('free', 'true');
+    const page = await api(`/api/interviewers/search?${params.toString()}`);
+    interviewers = page.items || [];
+    interviewerTotalPages = Math.max(1, page.totalPages || 1);
+    renderInterviewerGrid(interviewers);
+    document.getElementById('page-label').textContent = `Page ${interviewerPage + 1} of ${interviewerTotalPages}`;
   } catch (err) {
-    console.error('Overview load error:', err);
+    grid.innerHTML = emptyState('Could not load interviewers.');
+    toast(err.message, 'error');
   }
 }
 
-/* ============================================================
-   USERS / INTERVIEWERS
-   GET /api/users/interviewers?skill=
-   ============================================================ */
-async function loadUsers() {
-  const grid  = document.getElementById('interviewers-grid');
-  const alert = 'interviewers-alert';
-  hideAlert(alert);
-  grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
-
+async function loadRecommended() {
+  const list = document.getElementById('recommended-list');
+  list.innerHTML = skeletonCards(3);
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/users`);
-    if (!res.ok) throw new Error(`Server responded with ${res.status}`);
-
-    displayedUsers = unwrapApiResponse(await res.json());
-    renderUsers(displayedUsers);
-  } catch (err) {
-    grid.innerHTML = '';
-    showAlert(alert, 'Could not load users. Is the backend running?');
-    console.error(err);
+    const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
+    list.innerHTML = (data || []).slice(0, 4).map(renderCompactInterviewer).join('') || emptyState('No recommendations yet.');
+  } catch {
+    list.innerHTML = emptyState('Recommendations will appear here.');
   }
 }
 
-async function loadInterviewers(skill = '') {
-  const grid  = document.getElementById('interviewers-grid');
-  const alert = 'interviewers-alert';
-  hideAlert(alert);
-  grid.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading...</p></div>`;
-
-  try {
-    const url = skill
-      ? `${API_BASE}/api/users/interviewers?skill=${encodeURIComponent(skill)}`
-      : `${API_BASE}/api/users/interviewers`;
-
-    const res = await fetchWithTimeout(url);
-
-    if (!res.ok) throw new Error(`Server responded with ${res.status}`);
-
-    displayedUsers = unwrapApiResponse(await res.json());
-    renderUsers(displayedUsers);
-  } catch (err) {
-    grid.innerHTML = '';
-    showAlert(alert, 'Could not load interviewers. Is the backend running?');
-    console.error(err);
-  }
-}
-
-function filterInterviewers(query) {
-  if (!query.trim()) {
-    renderUsers(displayedUsers);
+function renderInterviewerGrid(list) {
+  const grid = document.getElementById('interviewer-grid');
+  if (!list.length) {
+    grid.innerHTML = emptyState('No interviewers match those filters.');
     return;
   }
-  const q = query.toLowerCase();
-  const filtered = displayedUsers.filter(u =>
-    (u.name  || '').toLowerCase().includes(q) ||
-    (u.username || '').toLowerCase().includes(q) ||
-    (u.role || '').toLowerCase().includes(q) ||
-    (u.email || '').toLowerCase().includes(q) ||
-    (u.skills || []).some(s => s.toLowerCase().includes(q))
-  );
-  renderUsers(filtered);
-}
-
-function renderUsers(list) {
-  const grid = document.getElementById('interviewers-grid');
-
-  if (!list || list.length === 0) {
-    grid.innerHTML = `<div class="empty-state"><div class="icon">🔍</div><p>No users found.</p></div>`;
-    return;
-  }
-
-  grid.innerHTML = list.map(u => `
-    <div class="user-card">
-      <div class="user-card-info">
-        <div class="name">${escHtml(u.name || u.username || '-')}</div>
-        <div class="email">${escHtml(u.email || '—')}</div>
-        <div class="email">${escHtml((u.role || 'USER').toLowerCase())}</div>
-        ${u.skills && u.skills.length
-          ? `<div class="skills">${u.skills.map(s => escHtml(s)).join(' · ')}</div>`
-          : ''}
+  grid.classList.remove('skeleton-grid');
+  grid.innerHTML = list.map(interviewer => `
+    <article class="interviewer-card">
+      <div class="card-top">
+        <div class="avatar">${initials(interviewer)}</div>
+        <button class="icon-btn" title="Save favorite" onclick="favoriteInterviewer('${interviewer.id}')">♡</button>
       </div>
-      <div style="display:flex; flex-direction:column; gap:0.4rem; align-items:flex-end;">
-        <small style="color:var(--text-muted); font-size:0.72rem; word-break:break-all;">ID: ${escHtml(u.id || u._id || '?')}</small>
-        ${(u.role || '').toLowerCase() === 'interviewer'
-          ? `<button class="btn btn-primary btn-sm" onclick="prefillSchedule('${escHtml(u.id || u._id || '')}')">Book Session</button>`
-          : ''}
+      <h3>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h3>
+      <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
+      <div class="rating-row"><strong>${Number(interviewer.averageRating || 0).toFixed(1)}</strong><span>${interviewer.reviewCount || 0} reviews</span><span>${interviewer.completedInterviews || 0} sessions</span></div>
+      <div class="tag-row">${(interviewer.skills || []).slice(0, 4).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
+      <p class="bio">${esc(interviewer.bio || 'Experienced interviewer available for focused mock interview preparation.')}</p>
+      <div class="card-actions">
+        <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
+        <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
       </div>
-    </div>
+    </article>
   `).join('');
 }
 
-/* ── Pre-fill schedule form with interviewer ID ── */
-function prefillSchedule(interviewerId) {
-  document.getElementById('ses-interviewer').value = interviewerId;
-  showSection('schedule');
-}
-
-/* ============================================================
-   CREATE SESSION
-   POST /api/sessions
-   Body: { interviewerId, intervieweeId, topic, scheduledAt, notes }
-   ============================================================ */
-document.getElementById('session-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
-
-  const interviewerId = document.getElementById('ses-interviewer').value.trim();
-  const topic         = document.getElementById('ses-topic').value.trim();
-  const scheduledAt   = document.getElementById('ses-date').value;
-  const notes         = document.getElementById('ses-notes').value.trim();
-  const btn           = document.getElementById('session-submit');
-
-  hideAlert('schedule-alert');
-
-  if (!interviewerId || !topic || !scheduledAt) {
-    showAlert('schedule-alert', 'Please fill in all required fields.');
-    return;
-  }
-
-  const payload = {
-    interviewerId,
-    intervieweeId: currentUser.id,
-    title: topic,
-    topic,
-    startTime: scheduledAt,
-    scheduledAt,
-    notes,
-  };
-
-  setLoading(btn, true, 'Requesting…');
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/sessions`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      showAlert('schedule-alert', 'Session request sent! Check "My Sessions" for updates.', 'success');
-      document.getElementById('session-form').reset();
-    } else {
-      showAlert('schedule-alert', await readApiError(res, 'Failed to create session. Please try again.'));
-    }
-  } catch (err) {
-    showAlert('schedule-alert', 'Could not connect to the server. Is the backend running?');
-    console.error(err);
-  } finally {
-    setLoading(btn, false);
-  }
-});
-
-/* ============================================================
-   MY SESSIONS
-   GET /api/sessions/interviewee/{id}  or  /api/sessions/interviewer/{id}
-   ============================================================ */
-async function fetchMySessions() {
-  const role     = (currentUser.role || '').toLowerCase();
-  const endpoint = role === 'interviewer'
-    ? `${API_BASE}/api/sessions/interviewer/${currentUser.id}`
-    : `${API_BASE}/api/sessions/interviewee/${currentUser.id}`;
-
-  const res = await fetchWithTimeout(endpoint);
-  if (!res.ok) throw new Error(`Server error ${res.status}`);
-  return unwrapApiResponse(await res.json());
-}
-
-async function loadMySessions() {
-  const wrapper = document.getElementById('sessions-table-wrapper');
-  hideAlert('sessions-alert');
-  wrapper.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading…</p></div>`;
-
-  try {
-    const sessions = await fetchMySessions();
-    if (sessions.length === 0) {
-      wrapper.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No sessions yet.</p></div>`;
-      return;
-    }
-    wrapper.innerHTML = buildSessionTable(sessions, { compact: false });
-  } catch (err) {
-    wrapper.innerHTML = '';
-    showAlert('sessions-alert', 'Could not load sessions. Is the backend running?');
-    console.error(err);
-  }
-}
-
-/* ── Build sessions HTML table ── */
-function buildSessionTable(sessions, { compact = false } = {}) {
-  const isInterviewer = (currentUser.role || '').toLowerCase() === 'interviewer';
-
-  const rows = sessions.map(s => {
-    const id     = s.id || s._id || '—';
-    const other  = isInterviewer
-      ? (s.intervieweeName || s.intervieweeId || s.candidateId || '-')
-      : (s.interviewerName || s.interviewerId || '-');
-    const label  = isInterviewer ? 'Interviewee' : 'Interviewer';
-
-    let actions = '';
-    if (!compact) {
-      const st = (s.status || '').toLowerCase();
-      if (st === 'pending' && isInterviewer) {
-        actions = `
-          <button class="btn btn-success btn-sm" onclick="sessionAction('${id}','confirm')">Confirm</button>
-          <button class="btn btn-danger btn-sm" style="margin-left:0.4rem" onclick="sessionAction('${id}','cancel')">Cancel</button>
-        `;
-      } else if (st === 'confirmed') {
-        actions = `<button class="btn btn-primary btn-sm" onclick="sessionAction('${id}','complete')">Complete</button>`;
-        if (isInterviewer) actions += `<button class="btn btn-danger btn-sm" style="margin-left:0.4rem" onclick="sessionAction('${id}','cancel')">Cancel</button>`;
-      }
-    }
-
-    return `
-      <tr>
-        <td><small style="color:var(--text-muted); font-size:0.72rem;">${escHtml(String(id))}</small></td>
-        <td>${escHtml(String(other))}</td>
-        <td>${escHtml(s.topic || s.title || '-')}</td>
-        <td>${fmtDate(s.scheduledAt || s.startTime)}</td>
-        <td>${statusBadge(s.status)}</td>
-        ${!compact ? `<td>${actions || '-'}</td>` : ''}
-      </tr>
-    `;
-  }).join('');
-
-  const isInterviewerLabel = isInterviewer ? 'Interviewee' : 'Interviewer';
-
+function renderCompactInterviewer(interviewer) {
   return `
-    <div style="overflow-x:auto;">
-      <table>
-        <thead>
-          <tr>
-            <th>Session ID</th>
-            <th>${isInterviewerLabel}</th>
-            <th>Topic</th>
-            <th>Scheduled</th>
-            <th>Status</th>
-            ${!compact ? '<th>Actions</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
+    <button class="mini-interviewer" onclick="selectInterviewer('${interviewer.id}')">
+      <span class="avatar">${initials(interviewer)}</span>
+      <span><strong>${esc(interviewer.name || interviewer.username || 'Interviewer')}</strong><small>${esc(interviewer.currentRole || 'Interview coach')}</small></span>
+    </button>
   `;
 }
 
-/* ============================================================
-   SESSION ACTIONS
-   PATCH /api/sessions/{id}/confirm|complete|cancel
-   ============================================================ */
-let pendingAction = null;
+function changePage(delta) {
+  interviewerPage = Math.min(Math.max(0, interviewerPage + delta), interviewerTotalPages - 1);
+  loadInterviewers();
+}
 
-function sessionAction(sessionId, action) {
-  pendingAction = { sessionId, action };
+async function openProfile(id) {
+  try {
+    const interviewer = await api(`/api/interviewers/${id}`);
+    modal(`
+      <div class="profile-modal">
+        <div class="avatar large">${initials(interviewer)}</div>
+        <h2>${esc(interviewer.name || interviewer.username || 'Interviewer')}</h2>
+        <p>${esc(interviewer.currentRole || 'Interview coach')} ${interviewer.company ? `at ${esc(interviewer.company)}` : ''}</p>
+        <div class="tag-row">${(interviewer.skills || []).map(skill => `<span>${esc(skill)}</span>`).join('')}</div>
+        <p>${esc(interviewer.bio || 'No bio yet.')}</p>
+        <div class="stats-inline"><span>${interviewer.yearsExperience || 0}+ years</span><span>${Number(interviewer.averageRating || 0).toFixed(1)} rating</span><span>${interviewer.completedInterviews || 0} completed</span></div>
+        <button class="btn btn-primary btn-full" onclick="closeModal(); selectInterviewer('${interviewer.id}')">Book this interviewer</button>
+      </div>
+    `);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
-  const labels = { confirm: 'Confirm', complete: 'Complete', cancel: 'Cancel' };
-  document.getElementById('action-modal-title').textContent = `${labels[action]} Session`;
-  document.getElementById('action-modal-body').textContent  =
-    `Are you sure you want to ${action} this session?`;
+async function favoriteInterviewer(id) {
+  try {
+    const user = await api(`/api/interviewers/${id}/favorite`, {
+      method: 'POST',
+      body: JSON.stringify({ userId: currentUser.id }),
+    });
+    currentUser = user;
+    localStorage.setItem('ip_user', JSON.stringify(user));
+    toast('Saved interviewers updated.', 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
 
-  const confirmBtn = document.getElementById('action-confirm-btn');
-  confirmBtn.className = action === 'cancel'
-    ? 'btn btn-danger btn-sm'
-    : action === 'complete' ? 'btn btn-success btn-sm' : 'btn btn-primary btn-sm';
-  confirmBtn.textContent = labels[action];
+function selectInterviewer(id) {
+  selectedInterviewer = interviewers.find(item => item.id === id) || null;
+  bookingState.interviewer = selectedInterviewer || { id };
+  bookingStep = 2;
+  showSection('booking');
+}
 
-  const overlay = document.getElementById('action-overlay');
-  overlay.style.display = 'flex';
+function renderBookingStep() {
+  document.querySelectorAll('.step').forEach(step => step.classList.toggle('active', Number(step.dataset.step) === bookingStep));
+  const host = document.getElementById('booking-step-content');
+  if (bookingStep === 1) {
+    host.innerHTML = `<h2>Choose interviewer</h2><div class="interviewer-grid compact">${interviewers.slice(0, 6).map(item => `
+      <article class="mini-card"><div class="avatar">${initials(item)}</div><strong>${esc(item.name || item.username || 'Interviewer')}</strong><small>${esc(item.currentRole || '')}</small><button class="btn btn-primary btn-sm" onclick="selectInterviewer('${item.id}')">Choose</button></article>
+    `).join('') || emptyState('Search for interviewers first.')}</div>`;
+  }
+  if (bookingStep === 2) {
+    const types = ['DSA', 'System Design', 'HR', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
+    host.innerHTML = `<h2>Choose interview type</h2><div class="type-grid">${types.map(type => `<button class="type-card" onclick="chooseType('${type}')">${type}</button>`).join('')}</div>`;
+  }
+  if (bookingStep === 3) renderSlotStep();
+  if (bookingStep === 4) {
+    host.innerHTML = `
+      <h2>Confirm booking</h2>
+      <div class="confirm-box">
+        <p><strong>Interviewer</strong><span>${esc(bookingState.interviewer?.name || bookingState.interviewer?.username || 'Selected interviewer')}</span></p>
+        <p><strong>Type</strong><span>${esc(bookingState.interviewType)}</span></p>
+        <p><strong>Slot</strong><span>${fmtDate(bookingState.startTime)}</span></p>
+      </div>
+      <textarea id="booking-notes" placeholder="Optional goals or context"></textarea>
+      <button class="btn btn-primary btn-full sticky-action" onclick="confirmBooking()">Confirm booking</button>
+    `;
+  }
+}
+
+function chooseType(type) {
+  bookingState.interviewType = type;
+  bookingStep = 3;
+  renderBookingStep();
+}
+
+async function renderSlotStep() {
+  const host = document.getElementById('booking-step-content');
+  host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${skeletonCards(4)}</div>`;
+  try {
+    const slots = await api(`/api/interviewers/${bookingState.interviewer.id}/availability`);
+    const fallback = defaultSlots();
+    const options = slots.length ? slots : fallback;
+    host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot('${slot}')">${fmtDate(slot)}</button>`).join('')}</div>`;
+  } catch {
+    const options = defaultSlots();
+    host.innerHTML = `<h2>Choose a slot</h2><div class="slot-grid">${options.map(slot => `<button onclick="chooseSlot('${slot}')">${fmtDate(slot)}</button>`).join('')}</div>`;
+  }
+}
+
+function chooseSlot(slot) {
+  bookingState.startTime = slot;
+  bookingStep = 4;
+  renderBookingStep();
+}
+
+async function confirmBooking() {
+  try {
+    const session = await api('/api/bookings', {
+      method: 'POST',
+      body: JSON.stringify({
+        interviewerId: bookingState.interviewer.id,
+        intervieweeId: currentUser.id,
+        interviewType: bookingState.interviewType,
+        startTime: bookingState.startTime,
+        notes: document.getElementById('booking-notes').value.trim(),
+      }),
+    });
+    toast('Booking requested. Meeting link is ready.', 'success');
+    sessions.unshift(session);
+    bookingStep = 1;
+    bookingState = { interviewer: null, interviewType: '', startTime: '' };
+    await loadSessions();
+    showSection('sessions');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function loadSessions() {
+  try {
+    const role = (currentUser.role || '').toLowerCase();
+    const endpoint = role === 'interviewer' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
+    sessions = await api(endpoint);
+    renderOverview();
+    renderSessions('upcoming');
+    renderInterviewerPanel();
+    populateFeedbackSessions();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function renderOverview() {
+  const upcoming = sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()));
+  const completed = sessions.filter(item => (item.status || '').toUpperCase() === 'COMPLETED');
+  document.getElementById('stat-upcoming').textContent = upcoming.length;
+  document.getElementById('stat-completed').textContent = completed.length;
+  document.getElementById('stat-rating').textContent = Number(currentUser.averageRating || 0).toFixed(1);
+  document.getElementById('stat-streak').textContent = Math.min(7, completed.length);
+  document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState('No upcoming sessions.');
+  renderSkillProgress();
+}
+
+function renderSessions(mode = 'upcoming') {
+  document.querySelectorAll('.session-tabs .chip').forEach((chip, index) => chip.classList.toggle('active', (mode === 'upcoming') === (index === 0)));
+  const list = mode === 'upcoming'
+    ? sessions.filter(item => ['PENDING', 'CONFIRMED'].includes((item.status || '').toUpperCase()))
+    : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase()));
+  document.getElementById('sessions-list').innerHTML = list.map(renderSessionCard).join('') || emptyState('No sessions here yet.');
+}
+
+function renderSessionCard(session) {
+  const status = (session.status || 'PENDING').toUpperCase();
+  const isInterviewer = (currentUser.role || '').toLowerCase() === 'interviewer';
+  const canConfirm = isInterviewer && status === 'PENDING';
+  const canComplete = status === 'CONFIRMED';
+  return `
+    <article class="session-card">
+      <div class="session-card-head"><span class="badge badge-${statusClass(status)}">${status}</span><span>${countdown(session.startTime || session.scheduledAt)}</span></div>
+      <h3>${esc(session.interviewType || session.title || session.topic || 'Interview')}</h3>
+      <p>${fmtDate(session.startTime || session.scheduledAt)}</p>
+      <p class="muted">Meeting status: ${esc(session.meetingStatus || 'ready')}</p>
+      <div class="session-actions">
+        ${session.meetingLink ? `<a class="btn btn-primary btn-sm" href="${esc(session.meetingLink)}" target="_blank" rel="noreferrer">Join Meeting</a>` : ''}
+        ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
+        ${canComplete ? `<button class="btn btn-outline btn-sm" onclick="updateSession('${session.id}','complete')">Complete</button>` : ''}
+        ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-danger btn-sm" onclick="updateSession('${session.id}','cancel')">Cancel</button>` : ''}
+      </div>
+    </article>
+  `;
+}
+
+async function updateSession(id, action) {
+  try {
+    await api(`/api/sessions/${id}/${action}`, { method: 'PATCH' });
+    toast(`Session ${action}ed.`, 'success');
+    await loadSessions();
+    await loadNotifications();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function loadFeedback() {
+  try {
+    feedbackItems = await api('/api/feedback');
+    const html = feedbackItems.slice(0, 6).map(renderFeedback).join('') || emptyState('No feedback yet.');
+    document.getElementById('feedback-list').innerHTML = html;
+    document.getElementById('recent-feedback').innerHTML = html;
+  } catch {
+    document.getElementById('feedback-list').innerHTML = emptyState('Feedback will appear here.');
+    document.getElementById('recent-feedback').innerHTML = emptyState('Feedback will appear here.');
+  }
+}
+
+function bindFeedbackForm() {
+  document.getElementById('feedback-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const btn = document.getElementById('feedback-submit');
+    btn.disabled = true;
+    try {
+      await api('/api/feedback', {
+        method: 'POST',
+        body: JSON.stringify({
+          sessionId: val('fb-session'),
+          reviewerId: currentUser.id,
+          rating: Number(val('fb-rating')),
+          communication: Number(val('fb-communication')),
+          technicalSkills: Number(val('fb-technical')),
+          comments: val('fb-comments'),
+          strengths: val('fb-strengths'),
+          weaknesses: val('fb-weaknesses'),
+          recommendations: val('fb-recommendations'),
+        }),
+      });
+      document.getElementById('feedback-form').reset();
+      toast('Feedback submitted.', 'success');
+      await loadFeedback();
+    } catch (err) {
+      showAlert('feedback-alert', err.message);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+function populateFeedbackSessions() {
+  const select = document.getElementById('fb-session');
+  const eligible = sessions.filter(item => ['CONFIRMED', 'COMPLETED'].includes((item.status || '').toUpperCase()));
+  select.innerHTML = eligible.map(item => `<option value="${esc(item.id)}">${esc(item.interviewType || item.title || 'Interview')} - ${fmtDate(item.startTime)}</option>`).join('') || '<option value="">No eligible sessions</option>';
+}
+
+function renderFeedback(item) {
+  return `
+    <article class="feedback-item">
+      <strong>${esc(String(item.rating || '-'))}/5</strong>
+      <span>${esc(item.comments || '')}</span>
+      ${item.recommendations ? `<small>${esc(item.recommendations)}</small>` : ''}
+    </article>
+  `;
+}
+
+function renderInterviewerPanel() {
+  const incoming = sessions.filter(item => (item.status || '').toUpperCase() === 'PENDING');
+  const incomingHost = document.getElementById('incoming-requests');
+  if (incomingHost) incomingHost.innerHTML = incoming.map(renderSessionCard).join('') || emptyState('No pending requests.');
+  const calendar = document.getElementById('calendar-view');
+  if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${new Date(item.startTime).toLocaleDateString()}</strong><span>${esc(item.interviewType || item.title || 'Interview')}</span></div>`).join('') || emptyState('Your calendar is clear.');
+}
+
+async function loadNotifications() {
+  try {
+    const data = await api(`/api/notifications?userId=${currentUser.id}`);
+    document.getElementById('unread-badge').textContent = data.unread ? String(data.unread) : '';
+    renderNotifications(data.items || []);
+  } catch {
+    renderNotifications([]);
+  }
+}
+
+function renderNotifications(items) {
+  const panel = document.getElementById('notification-panel');
+  panel.innerHTML = items.map(item => `
+    <button class="notification-item ${item.read ? '' : 'unread'}" onclick="markNotificationRead('${item.id}')">
+      <strong>${esc(item.title || 'Notification')}</strong>
+      <span>${esc(item.message || '')}</span>
+    </button>
+  `).join('') || emptyState('No notifications.');
+}
+
+function toggleNotifications() {
+  document.getElementById('notification-panel').classList.toggle('open');
+}
+
+async function markNotificationRead(id) {
+  await api(`/api/notifications/${id}/read`, { method: 'PATCH' });
+  await loadNotifications();
+}
+
+function renderSkillProgress() {
+  const skills = ['DSA', 'System Design', 'Communication', 'Backend'];
+  document.getElementById('skill-progress').innerHTML = skills.map((skill, index) => {
+    const value = Math.min(95, 36 + sessions.length * 8 + index * 9);
+    return `<div><span>${skill}</span><div class="progress-track"><i style="width:${value}%"></i></div><strong>${value}%</strong></div>`;
+  }).join('');
+}
+
+function defaultSlots() {
+  const slots = [];
+  for (let i = 1; i <= 6; i++) {
+    const date = new Date();
+    date.setDate(date.getDate() + i);
+    date.setHours(i % 2 ? 10 : 17, i % 2 ? 30 : 0, 0, 0);
+    slots.push(date.toISOString());
+  }
+  return slots;
+}
+
+function modal(html) {
+  document.getElementById('modal-root').innerHTML = `<div class="modal-overlay" onclick="if(event.target === this) closeModal()"><div class="modal-card"><button class="icon-btn modal-close" onclick="closeModal()">×</button>${html}</div></div>`;
 }
 
 function closeModal() {
-  document.getElementById('action-overlay').style.display = 'none';
-  pendingAction = null;
+  document.getElementById('modal-root').innerHTML = '';
 }
 
-document.getElementById('action-confirm-btn').addEventListener('click', async () => {
-  if (!pendingAction) return;
-  const { sessionId, action } = pendingAction;
-  closeModal();
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/sessions/${sessionId}/${action}`, {
-      method: 'PATCH',
-    });
-
-    if (res.ok) {
-      showAlert('sessions-alert', `Session ${action}ed successfully.`, 'success');
-      loadMySessions();
-      loadOverview();
-    } else {
-      showAlert('sessions-alert', await readApiError(res, `Failed to ${action} session.`));
-    }
-  } catch (err) {
-    showAlert('sessions-alert', 'Could not connect to the server.');
-    console.error(err);
-  }
-});
-
-// Close modal on overlay click
-document.getElementById('action-overlay').addEventListener('click', function (e) {
-  if (e.target === this) closeModal();
-});
-
-/* ============================================================
-   FEEDBACK
-   POST /api/feedback, GET /api/feedback
-   ============================================================ */
-document.getElementById('feedback-form')?.addEventListener('submit', async function (e) {
-  e.preventDefault();
-
-  const sessionId = document.getElementById('fb-session').value.trim();
-  const rating = Number(document.getElementById('fb-rating').value);
-  const comments = document.getElementById('fb-comments').value.trim();
-  const strengths = document.getElementById('fb-strengths').value.trim();
-  const weaknesses = document.getElementById('fb-weaknesses').value.trim();
-  const btn = document.getElementById('feedback-submit');
-
-  hideAlert('feedback-alert');
-
-  if (!sessionId || !rating || !comments) {
-    showAlert('feedback-alert', 'Session ID, rating, and comments are required.');
-    return;
-  }
-
-  setLoading(btn, true, 'Submitting...');
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/feedback`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionId,
-        reviewerId: currentUser.id,
-        rating,
-        comments,
-        strengths,
-        weaknesses,
-      }),
-    });
-
-    if (!res.ok) {
-      throw new Error(await readApiError(res, 'Feedback submission failed.'));
-    }
-
-    showAlert('feedback-alert', 'Feedback submitted successfully.', 'success');
-    document.getElementById('feedback-form').reset();
-    loadFeedback();
-  } catch (err) {
-    showAlert('feedback-alert', err.message || 'Could not submit feedback.');
-    console.error(err);
-  } finally {
-    setLoading(btn, false);
-  }
-});
-
-async function loadFeedback() {
-  const wrapper = document.getElementById('feedback-list');
-  if (!wrapper) return;
-
-  wrapper.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>Loading feedback...</p></div>`;
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/feedback`);
-    if (!res.ok) throw new Error(`Server error ${res.status}`);
-    const feedback = unwrapApiResponse(await res.json());
-
-    if (!feedback.length) {
-      wrapper.innerHTML = `<div class="empty-state"><div class="icon">📭</div><p>No feedback yet.</p></div>`;
-      return;
-    }
-
-    wrapper.innerHTML = feedback.map(item => `
-      <div class="user-card">
-        <div class="user-card-info">
-          <div class="name">Session ${escHtml(item.sessionId || '-')} · ${escHtml(String(item.rating || '-'))}/5</div>
-          <div class="email">Reviewer: ${escHtml(item.reviewerId || '-')}</div>
-          <div class="skills">${escHtml(item.comments || '')}</div>
-          ${item.strengths ? `<small>Strengths: ${escHtml(item.strengths)}</small>` : ''}
-          ${item.weaknesses ? `<small>Needs work: ${escHtml(item.weaknesses)}</small>` : ''}
-        </div>
-      </div>
-    `).join('');
-  } catch (err) {
-    wrapper.innerHTML = '';
-    showAlert('feedback-alert', 'Could not load feedback.');
-    console.error(err);
-  }
+function toast(message, type = 'info') {
+  const root = document.getElementById('toast-root');
+  const item = document.createElement('div');
+  item.className = `toast toast-${type}`;
+  item.textContent = message;
+  root.appendChild(item);
+  setTimeout(() => item.remove(), 4200);
 }
 
-/* ============================================================
-   UTILITIES
-   ============================================================ */
-function escHtml(str) {
+function showAlert(id, message, type = 'error') {
+  const el = document.getElementById(id);
+  el.textContent = message;
+  el.className = `alert alert-${type} show`;
+}
+
+function val(id) {
+  return document.getElementById(id)?.value?.trim() || '';
+}
+
+function initials(user) {
+  const name = user.name || user.username || user.email || 'IP';
+  return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function fmtDate(value) {
+  if (!value) return 'Flexible';
+  try { return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch { return value; }
+}
+
+function countdown(value) {
+  if (!value) return 'No time set';
+  const diff = new Date(value).getTime() - Date.now();
+  if (diff <= 0) return 'Now';
+  const hours = Math.floor(diff / 36e5);
+  const days = Math.floor(hours / 24);
+  return days > 0 ? `${days}d left` : `${Math.max(1, hours)}h left`;
+}
+
+function statusClass(status) {
+  return { PENDING: 'yellow', CONFIRMED: 'purple', COMPLETED: 'green', CANCELLED: 'red' }[status] || 'gray';
+}
+
+function skeletonCards(count) {
+  return Array.from({ length: count }, () => '<div class="skeleton-card"></div>').join('');
+}
+
+function emptyState(text) {
+  return `<div class="empty-state"><p>${esc(text)}</p></div>`;
+}
+
+function esc(value) {
   const div = document.createElement('div');
-  div.textContent = str;
+  div.textContent = value == null ? '' : String(value);
   return div.innerHTML;
-}
-
-function unwrapApiResponse(payload) {
-  return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
-}
-
-async function readApiError(res, fallback) {
-  try {
-    const payload = await res.json();
-    return payload.message || fallback;
-  } catch {
-    const text = await res.text();
-    return text || fallback;
-  }
 }

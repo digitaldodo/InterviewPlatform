@@ -1,10 +1,14 @@
 package com.interview.platform.service;
 
 import com.interview.platform.model.Feedback;
+import com.interview.platform.model.Session;
+import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.SessionRepository;
+import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -12,10 +16,15 @@ public class FeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final SessionRepository sessionRepository;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, SessionRepository sessionRepository) {
+    public FeedbackService(FeedbackRepository feedbackRepository, SessionRepository sessionRepository,
+                           UserRepository userRepository, NotificationService notificationService) {
         this.feedbackRepository = feedbackRepository;
         this.sessionRepository = sessionRepository;
+        this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     public Feedback submitFeedback(Feedback feedback) {
@@ -35,7 +44,13 @@ public class FeedbackService {
             throw new IllegalArgumentException("Invalid or non-existent session ID");
         }
         feedback.setComments(feedback.getComments().trim());
-        return feedbackRepository.save(feedback);
+        feedback.setCreatedAt(Instant.now());
+        Feedback saved = feedbackRepository.save(feedback);
+        updateInterviewerRating(feedback.getSessionId());
+        sessionRepository.findById(feedback.getSessionId()).ifPresent(session ->
+                notificationService.create(session.getCandidateId(), "FEEDBACK_SUBMITTED", "Feedback received",
+                        "New feedback is available for " + session.getTitle() + "."));
+        return saved;
     }
 
     public List<Feedback> getAllFeedback() {
@@ -44,5 +59,25 @@ public class FeedbackService {
 
     public List<Feedback> getFeedbackForSession(String sessionId) {
         return feedbackRepository.findBySessionId(sessionId);
+    }
+
+    private void updateInterviewerRating(String sessionId) {
+        Session session = sessionRepository.findById(sessionId).orElse(null);
+        if (session == null || session.getInterviewerId() == null) return;
+        List<Session> sessions = sessionRepository.findByInterviewerId(session.getInterviewerId());
+        List<String> ids = sessions.stream().map(Session::getId).toList();
+        List<Feedback> all = feedbackRepository.findAll().stream()
+                .filter(item -> ids.contains(item.getSessionId()))
+                .toList();
+        if (all.isEmpty()) return;
+        double avg = all.stream().mapToInt(Feedback::getRating).average().orElse(0.0);
+        User interviewer = userRepository.findById(session.getInterviewerId()).orElse(null);
+        if (interviewer == null) return;
+        interviewer.setAverageRating(Math.round(avg * 10.0) / 10.0);
+        interviewer.setReviewCount(all.size());
+        interviewer.setCompletedInterviews((int) sessions.stream()
+                .filter(s -> "COMPLETED".equalsIgnoreCase(s.getStatus()))
+                .count());
+        userRepository.save(interviewer);
     }
 }

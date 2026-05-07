@@ -7,6 +7,7 @@ import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -22,10 +23,15 @@ public class SessionService {
 
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
+    private final EmailService emailService;
 
-    public SessionService(SessionRepository sessionRepository, UserRepository userRepository) {
+    public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
+                          NotificationService notificationService, EmailService emailService) {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
+        this.emailService = emailService;
     }
 
     public Session createSession(Session session) {
@@ -72,7 +78,21 @@ public class SessionService {
             throw new IllegalArgumentException("Interviewee does not exist");
         }
 
-        return sessionRepository.save(session);
+        if (session.getStartTime() == null || session.getStartTime().isBlank()) {
+            throw new IllegalArgumentException("Start time is required");
+        }
+        preventDoubleBooking(session.getInterviewerId(), session.getStartTime());
+        session.setMeetingStatus("ready");
+        session.setCreatedAt(Instant.now());
+        session.setUpdatedAt(Instant.now());
+
+        Session saved = sessionRepository.save(session);
+        if (saved.getMeetingLink() == null || saved.getMeetingLink().isBlank()) {
+            saved.setMeetingLink(generateMeetingLink(saved.getId()));
+            saved = sessionRepository.save(saved);
+        }
+        notifyCreated(saved);
+        return saved;
     }
 
     public List<Session> getAllSessions() {
@@ -98,7 +118,10 @@ public class SessionService {
         Session session = sessionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Session not found"));
         session.setStatus(normalizeStatus(status));
-        return sessionRepository.save(session);
+        session.setUpdatedAt(Instant.now());
+        Session saved = sessionRepository.save(session);
+        notifyStatusChanged(saved);
+        return saved;
     }
 
     private String normalizeStatus(String status) {
@@ -110,6 +133,34 @@ public class SessionService {
             throw new IllegalArgumentException("Status must be PENDING, CONFIRMED, COMPLETED, or CANCELLED");
         }
         return normalized;
+    }
+
+    private void preventDoubleBooking(String interviewerId, String startTime) {
+        if (sessionRepository.existsByInterviewerIdAndStartTimeAndStatusIn(
+                interviewerId, startTime, List.of("PENDING", "CONFIRMED"))) {
+            throw new IllegalArgumentException("That slot is no longer available");
+        }
+    }
+
+    private String generateMeetingLink(String id) {
+        return "https://meet.jit.si/interviewprep-" + id.replaceAll("[^A-Za-z0-9]", "");
+    }
+
+    private void notifyCreated(Session session) {
+        notificationService.create(session.getCandidateId(), "SESSION_SCHEDULED", "Booking requested",
+                "Your " + session.getTitle() + " session request was sent.");
+        notificationService.create(session.getInterviewerId(), "SESSION_REQUESTED", "New interview request",
+                "You have a new " + session.getTitle() + " interview request.");
+        userRepository.findById(session.getCandidateId()).ifPresent(user ->
+                emailService.sendBookingConfirmation(user.getEmail(), session.getTitle(), session.getStartTime(), session.getMeetingLink()));
+    }
+
+    private void notifyStatusChanged(Session session) {
+        String title = "Session " + session.getStatus().toLowerCase();
+        notificationService.create(session.getCandidateId(), "SESSION_" + session.getStatus(), title,
+                "Your " + session.getTitle() + " session is now " + session.getStatus().toLowerCase() + ".");
+        notificationService.create(session.getInterviewerId(), "SESSION_" + session.getStatus(), title,
+                "The " + session.getTitle() + " session is now " + session.getStatus().toLowerCase() + ".");
     }
 }
 

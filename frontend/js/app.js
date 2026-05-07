@@ -1,192 +1,204 @@
-/* ============================================================
-   app.js – Landing page logic (Login + Register)
-   Backend base URL comes from window.INTERVIEW_API_BASE when deployed separately.
-   ============================================================ */
+const API_BASE = window.INTERVIEW_API_BASE || 'http://localhost:8080';
 
-const API_BASE = window.INTERVIEW_API_BASE;
+const authStore = {
+  set(session) {
+    if (session.user) localStorage.setItem('ip_user', JSON.stringify(session.user));
+    if (session.accessToken) localStorage.setItem('ip_access_token', session.accessToken);
+    if (session.refreshToken) localStorage.setItem('ip_refresh_token', session.refreshToken);
+  },
+  user() {
+    try { return JSON.parse(localStorage.getItem('ip_user')); } catch { return null; }
+  },
+};
 
-/* ── Tab switching ── */
+window.addEventListener('DOMContentLoaded', () => {
+  if (authStore.user()?.id) window.location.href = 'pages/dashboard.html';
+  document.getElementById('interviewer-fields').style.display = 'none';
+  document.getElementById('reset-token-group').style.display = 'none';
+  document.getElementById('reset-password-group').style.display = 'none';
+  const resetToken = new URLSearchParams(window.location.search).get('resetToken');
+  if (resetToken) openResetPanel(resetToken);
+});
+
+document.getElementById('reg-role').addEventListener('change', function () {
+  document.getElementById('interviewer-fields').style.display = this.value === 'interviewer' ? 'block' : 'none';
+});
+
 function switchTab(tab) {
-  ['login', 'register'].forEach(t => {
-    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
-    document.getElementById(`tab-${t}`).setAttribute('aria-selected', t === tab);
-    document.getElementById(`panel-${t}`).classList.toggle('active', t === tab);
+  ['login', 'register', 'verify', 'reset'].forEach(name => {
+    document.getElementById(`tab-${name}`)?.classList.toggle('active', name === tab);
+    document.getElementById(`panel-${name}`)?.classList.toggle('active', name === tab);
   });
 }
 
-/* ── Show / hide role-dependent fields ── */
-document.getElementById('reg-role').addEventListener('change', function () {
-  document.getElementById('skills-group').style.display =
-    this.value === 'interviewer' ? 'flex' : 'none';
-});
-
-// Hide skills group initially until role is chosen
-document.getElementById('skills-group').style.display = 'none';
-
-/* ── Alert helper ── */
 function showAlert(id, message, type = 'error') {
   const el = document.getElementById(id);
+  if (!el) return;
   el.textContent = message;
   el.className = `alert alert-${type} show`;
-  setTimeout(() => el.classList.remove('show'), 5000);
 }
 
-/* ── Loading state helpers ── */
-function setLoading(btn, loading) {
+function toast(message, type = 'info') {
+  const root = document.getElementById('toast-root');
+  if (!root) return;
+  const item = document.createElement('div');
+  item.className = `toast toast-${type}`;
+  item.textContent = message;
+  root.appendChild(item);
+  setTimeout(() => item.remove(), 4200);
+}
+
+function setLoading(btn, loading, label = 'Please wait') {
+  if (!btn) return;
   if (loading) {
     btn.disabled = true;
     btn.dataset.originalText = btn.textContent;
-    btn.innerHTML = '<span class="spinner"></span> Please wait…';
+    btn.innerHTML = `<span class="spinner"></span> ${label}`;
   } else {
     btn.disabled = false;
-    btn.textContent = btn.dataset.originalText;
+    btn.textContent = btn.dataset.originalText || btn.textContent;
   }
 }
 
-/* ── Redirect to dashboard ── */
-function goToDashboard() {
-  window.location.href = 'pages/dashboard.html';
+async function api(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+  });
+  const payload = await readPayload(res);
+  if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
+  return payload?.data ?? payload;
 }
 
-/* ── Check if already logged in ── */
-window.addEventListener('DOMContentLoaded', () => {
-  const user = getStoredUser();
-  if (user && user.id) {
-    goToDashboard();
-  }
-});
-
-/* ── LocalStorage helpers ── */
-function storeUser(user) {
-  localStorage.setItem('ip_user', JSON.stringify(user));
+async function readPayload(res) {
+  const text = await res.text();
+  if (!text) return null;
+  try { return JSON.parse(text); } catch { return { message: text }; }
 }
 
-function getStoredUser() {
+document.getElementById('login-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const btn = document.getElementById('login-submit');
+  setLoading(btn, true, 'Signing in');
   try {
-    return JSON.parse(localStorage.getItem('ip_user'));
-  } catch {
-    return null;
-  }
-}
-
-function unwrapApiResponse(payload) {
-  return payload && Object.prototype.hasOwnProperty.call(payload, 'data') ? payload.data : payload;
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 45000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...options, signal: controller.signal });
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-async function readApiError(res, fallback) {
-  try {
-    const payload = await res.json();
-    return payload.message || fallback;
-  } catch {
-    const text = await res.text();
-    return text || fallback;
-  }
-}
-
-/* ============================================================
-   LOGIN
-   POST /api/users/login  { email, password }
-   Response: user object { id, name, email, role, skills, ... }
-   ============================================================ */
-document.getElementById('login-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
-
-  const email    = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  const btn      = document.getElementById('login-submit');
-
-  if (!email || !password) {
-    showAlert('login-alert', 'Please enter your email and password.');
-    return;
-  }
-
-  setLoading(btn, true);
-
-  try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/users/login`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email, password }),
+    const session = await api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('login-email').value.trim(),
+        password: document.getElementById('login-password').value,
+      }),
     });
-
-    if (res.ok) {
-      const user = unwrapApiResponse(await res.json());
-      storeUser(user);
-      showAlert('login-alert', 'Login successful! Redirecting...', 'success');
-      setTimeout(goToDashboard, 800);
-    } else {
-      showAlert('login-alert', await readApiError(res, 'Invalid credentials. Please try again.'));
-    }
+    authStore.set(session);
+    toast('Welcome back.', 'success');
+    window.location.href = 'pages/dashboard.html';
   } catch (err) {
-    showAlert('login-alert', 'Could not connect to the server. Is the backend running?');
-    console.error('Login error:', err);
+    showAlert('login-alert', err.message);
   } finally {
     setLoading(btn, false);
   }
 });
 
-/* ============================================================
-   REGISTER
-   POST /api/users/register  { name, email, password, role, skills[] }
-   Response: created user object
-   ============================================================ */
-document.getElementById('register-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
-
-  const name     = document.getElementById('reg-name').value.trim();
-  const email    = document.getElementById('reg-email').value.trim();
-  const password = document.getElementById('reg-password').value;
-  const role     = document.getElementById('reg-role').value;
+document.getElementById('register-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const btn = document.getElementById('register-submit');
+  const role = document.getElementById('reg-role').value;
   const skillsRaw = document.getElementById('reg-skills').value;
-  const btn      = document.getElementById('register-submit');
-
-  // Basic validation
-  if (!name || !email || !password || !role) {
-    showAlert('register-alert', 'Please fill in all required fields.');
-    return;
-  }
-  if (password.length < 6) {
-    showAlert('register-alert', 'Password must be at least 6 characters.');
-    return;
-  }
-
-  const skills = skillsRaw
-    ? skillsRaw.split(',').map(s => s.trim()).filter(Boolean)
-    : [];
-
-  const payload = { name, username: name, email, password, role, skills };
-
-  setLoading(btn, true);
-
+  setLoading(btn, true, 'Creating account');
   try {
-    const res = await fetchWithTimeout(`${API_BASE}/api/users/register`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
+    const session = await api('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: document.getElementById('reg-name').value.trim(),
+        email: document.getElementById('reg-email').value.trim(),
+        password: document.getElementById('reg-password').value,
+        role,
+        company: document.getElementById('reg-company').value.trim(),
+        currentRole: document.getElementById('reg-current-role').value.trim(),
+        yearsExperience: Number(document.getElementById('reg-years').value || 0),
+        language: document.getElementById('reg-language').value.trim(),
+        skills: skillsRaw.split(',').map(item => item.trim()).filter(Boolean),
+      }),
     });
-
-    if (res.ok) {
-      const user = unwrapApiResponse(await res.json());
-      storeUser(user);
-      showAlert('register-alert', 'Account created! Redirecting...', 'success');
-      setTimeout(goToDashboard, 800);
-    } else {
-      showAlert('register-alert', await readApiError(res, 'Registration failed. Please try again.'));
-    }
+    authStore.set(session);
+    document.getElementById('otp-email').value = document.getElementById('reg-email').value.trim();
+    switchTab('verify');
+    showAlert('otp-alert', 'Account created. Check your email for the OTP.', 'success');
   } catch (err) {
-    showAlert('register-alert', 'Could not connect to the backend. Check that the API service is deployed and MONGO_URI is set.');
-    console.error('Register error:', err);
+    showAlert('register-alert', err.message);
   } finally {
     setLoading(btn, false);
+  }
+});
+
+document.getElementById('otp-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const btn = document.getElementById('otp-submit');
+  setLoading(btn, true, 'Verifying');
+  try {
+    await api('/api/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: document.getElementById('otp-email').value.trim(),
+        otp: document.getElementById('otp-code').value.trim(),
+      }),
+    });
+    const user = authStore.user();
+    if (user) {
+      user.isVerified = true;
+      localStorage.setItem('ip_user', JSON.stringify(user));
+    }
+    window.location.href = 'pages/dashboard.html';
+  } catch (err) {
+    showAlert('otp-alert', err.message);
+  } finally {
+    setLoading(btn, false);
+  }
+});
+
+async function resendOtp() {
+  try {
+    await api('/api/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email: document.getElementById('otp-email').value.trim() }),
+    });
+    showAlert('otp-alert', 'A fresh OTP has been sent.', 'success');
+  } catch (err) {
+    showAlert('otp-alert', err.message);
+  }
+}
+
+function openResetPanel(token = '') {
+  switchTab('reset');
+  const hasToken = Boolean(token);
+  document.getElementById('reset-token').value = token;
+  document.getElementById('forgot-email-group').style.display = hasToken ? 'none' : 'flex';
+  document.getElementById('reset-token-group').style.display = hasToken ? 'flex' : 'none';
+  document.getElementById('reset-password-group').style.display = hasToken ? 'flex' : 'none';
+  document.getElementById('reset-submit').textContent = hasToken ? 'Reset password' : 'Send reset link';
+}
+
+document.getElementById('reset-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const token = document.getElementById('reset-token').value.trim();
+  try {
+    if (!token) {
+      await api('/api/auth/forgot-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: document.getElementById('forgot-email').value.trim() }),
+      });
+      showAlert('reset-alert', 'If that email exists, a reset link has been sent.', 'success');
+      return;
+    }
+    await api('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        token,
+        newPassword: document.getElementById('reset-password').value,
+      }),
+    });
+    showAlert('reset-alert', 'Password updated. You can sign in now.', 'success');
+    setTimeout(() => switchTab('login'), 1000);
+  } catch (err) {
+    showAlert('reset-alert', err.message);
   }
 });
