@@ -13,5 +13,6 @@ public interface InterviewerAvailabilityRepository extends MongoRepository<Inter
     List<InterviewerAvailability> findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(String interviewerId);
     List<InterviewerAvailability> findByInterviewerIdAndDayOfWeekOrderByStartTimeAsc(String interviewerId, DayOfWeek dayOfWeek);
     Optional<InterviewerAvailability> findByIdAndInterviewerId(String id, String interviewerId);
+    boolean existsByInterviewerId(String interviewerId);
     void deleteByInterviewerId(String interviewerId);
 }

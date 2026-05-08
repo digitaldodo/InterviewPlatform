@@ -87,9 +87,9 @@ async function loadMarketplaceSummary() {
     marketplaceState.summary = {
       interviewerCount: Number(page.totalItems || visible.length || 0),
       verifiedCount: visible.filter(item => item.interviewerVerified).length,
-      availableCount: visible.filter(item => item.acceptingBookings !== false).length,
+      availableCount: visible.filter(isBookable).length,
       reviewCount: visible.reduce((sum, item) => sum + Number(item.reviewCount || 0), 0),
-      availableTodayCount: visible.filter(item => item.acceptingBookings !== false).length,
+      availableTodayCount: visible.filter(isBookable).length,
       featuredInterviewers: visible.slice(0, 4),
     };
     const summary = marketplaceState.summary;
@@ -251,7 +251,7 @@ function renderMarketplaceCard(interviewer) {
       </div>
       <p class="bio interviewer-bio">${esc(bioPreview(interviewer.bio, 156))}</p>
       <div class="interviewer-card-footer">
-        <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
+        <span class="availability-pill ${isBookable(interviewer) ? '' : 'is-muted'}">${esc(availabilityLabel(interviewer))}</span>
         <span class="availability-pill">${esc(formatDurationList(interviewer.sessionDurations))}</span>
         <div class="card-actions">
           <a class="btn btn-outline btn-sm" href="${esc(profileUrl(interviewer.username))}">Public profile</a>

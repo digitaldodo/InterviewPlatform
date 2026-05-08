@@ -106,8 +106,16 @@ function formatDurationList(values) {
 }
 
 function availabilityLabel(interviewer) {
+  if (interviewer?.hasAvailability === false) return 'Availability not added yet';
   if (interviewer?.acceptingBookings === false) return 'Not accepting bookings';
-  return 'Accepting new bookings';
+  return 'Available for booking';
+}
+
+function isBookable(interviewer) {
+  if (!interviewer || interviewer.acceptingBookings === false) return false;
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'bookable')) return Boolean(interviewer.bookable);
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'hasAvailability')) return Boolean(interviewer.hasAvailability);
+  return true;
 }
 
 function setMetaTag(attribute, key, content) {

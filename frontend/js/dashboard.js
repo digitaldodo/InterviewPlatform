@@ -712,6 +712,7 @@ function renderInterviewerCard(interviewer) {
   const topics = Array.isArray(interviewer.interviewTopics) ? interviewer.interviewTopics.slice(0, 3) : [];
   const durations = Array.isArray(interviewer.sessionDurations) ? interviewer.sessionDurations.slice(0, 3) : [];
   const reliability = Number(interviewer.reliabilityScore || 0);
+  const bookable = isInterviewerBookable(interviewer);
   return `
     <article class="interviewer-card">
       <div class="interviewer-card-main">
@@ -740,12 +741,12 @@ function renderInterviewerCard(interviewer) {
       </div>
       <p class="bio interviewer-bio">${esc(bioPreview(interviewer.bio))}</p>
       <div class="interviewer-card-footer">
-        <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
+        <span class="availability-pill ${bookable ? '' : 'is-muted'}">${esc(availabilityLabel(interviewer))}</span>
         <span class="availability-pill">${esc(interviewer.timeZone || 'Timezone flexible')}</span>
         ${durations.length ? `<span class="availability-pill">${esc(durations.join(' / '))} min</span>` : ''}
         <div class="card-actions">
           <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
-          <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Book</button>
+          <button class="btn ${bookable ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="selectInterviewer('${interviewer.id}')">${bookable ? 'Book' : 'View status'}</button>
         </div>
       </div>
     </article>
@@ -755,7 +756,8 @@ function renderInterviewerCard(interviewer) {
 function renderCompactInterviewer(interviewer, index = 0) {
   const score = recommendationScore(interviewer);
   const rankLabel = recommendationRankLabel(score, index);
-  const availability = interviewer?.acceptingBookings === false ? 'Unavailable now' : 'Available';
+  const availability = recommendationAvailabilityLabel(interviewer);
+  const bookable = isInterviewerBookable(interviewer);
   return `
     <button class="mini-interviewer recommendation-card" onclick="selectInterviewer('${interviewer.id}')">
       ${avatarMarkup(interviewer, 'avatar avatar-compact')}
@@ -764,7 +766,7 @@ function renderCompactInterviewer(interviewer, index = 0) {
         <small>${esc(interviewerRole(interviewer))}</small>
         <small class="recommendation-meta">
           <span class="recommendation-rank">${esc(rankLabel)}</span>
-          <span class="recommendation-availability ${interviewer?.acceptingBookings === false ? 'is-muted' : ''}">${esc(availability)}</span>
+          <span class="recommendation-availability ${bookable ? '' : 'is-muted'}">${esc(availability)}</span>
           ${interviewer?.interviewerVerified ? '<span class="recommendation-verified">Verified</span>' : ''}
         </small>
       </span>
@@ -774,7 +776,7 @@ function renderCompactInterviewer(interviewer, index = 0) {
 
 function recommendationScore(interviewer) {
   const verifiedBoost = interviewer?.interviewerVerified ? 200 : 0;
-  const availabilityBoost = interviewer?.acceptingBookings === false ? 0 : 120;
+  const availabilityBoost = isInterviewerBookable(interviewer) ? 120 : 0;
   const ratingBoost = Math.round(Number(interviewer?.averageRating || 0) * 20);
   const reviewBoost = Math.min(80, Number(interviewer?.reviewCount || 0));
   const sessionsBoost = Math.min(100, Number(interviewer?.completedInterviews || 0));
@@ -900,6 +902,7 @@ function renderBookingInterviewerStep() {
 
 function renderBookingInterviewerCard(interviewer) {
   const skills = Array.isArray(interviewer.skills) ? interviewer.skills.slice(0, 3) : [];
+  const bookable = isInterviewerBookable(interviewer);
   return `
     <article class="mini-card booking-interviewer-card">
       <div class="booking-card-profile">
@@ -917,8 +920,8 @@ function renderBookingInterviewerCard(interviewer) {
       <div class="tag-row">${skills.map(skill => `<span>${esc(skill)}</span>`).join('') || '<span>Interview coaching</span>'}</div>
       <p class="bio">${esc(bioPreview(interviewer.bio, 118))}</p>
       <div class="booking-card-actions">
-        <span class="availability-pill ${interviewer.acceptingBookings === false ? 'is-muted' : ''}">${esc(availabilityLabel(interviewer))}</span>
-        <button class="btn btn-primary btn-sm" onclick="selectInterviewer('${interviewer.id}')">Select</button>
+        <span class="availability-pill ${bookable ? '' : 'is-muted'}">${esc(availabilityLabel(interviewer))}</span>
+        <button class="btn ${bookable ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="selectInterviewer('${interviewer.id}')">${bookable ? 'Select' : 'View status'}</button>
       </div>
     </article>
   `;
@@ -934,17 +937,23 @@ async function renderBookingDateStep() {
   if (!host) return;
   const interviewer = bookingState.interviewer || {};
   const dayGroups = groupedBookingSlots();
+  const needsAvailability = interviewerHasNoAvailability(interviewer);
+  const dateStepNote = needsAvailability
+    ? 'Availability must be added before candidates can book.'
+    : `${accountDisplayName(interviewer)} has real generated slots for the next two weeks.`;
   host.innerHTML = `
     <div class="booking-stage">
       <div class="booking-stage-head">
         <div>
           <h2>Select date</h2>
-          <p class="availability-muted">${esc(accountDisplayName(interviewer))} has real generated slots for the next two weeks.</p>
+          <p class="availability-muted">${esc(dateStepNote)}</p>
         </div>
         <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(1)">Change interviewer</button>
       </div>
       ${renderBookingSelectionBanner()}
-      ${bookingState.slotLoading
+      ${needsAvailability
+        ? bookingAvailabilityEmptyState()
+        : bookingState.slotLoading
         ? `<div class="booking-date-grid">${skeletonCards(4)}</div>`
         : bookingState.slotError
           ? `${emptyState(bookingState.slotError)}<div class="booking-flow-actions"><button class="btn btn-outline btn-sm" type="button" onclick="refreshBookingAvailability(true)">Retry</button></div>`
@@ -959,7 +968,7 @@ async function renderBookingDateStep() {
             : slotEmptyState(emptyBookingMessage())}
     </div>
   `;
-  if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
+  if (!needsAvailability && !bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
     ensureBookingSlotsLoaded();
   }
 }
@@ -981,6 +990,7 @@ async function renderBookingSlotStep() {
   if (!host) return;
   const interviewer = bookingState.interviewer || {};
   const selectedDay = groupedBookingSlots().find(group => group.key === bookingState.selectedDate);
+  const needsAvailability = interviewerHasNoAvailability(interviewer);
   host.innerHTML = `
     <div class="booking-stage">
       <div class="booking-stage-head">
@@ -991,7 +1001,9 @@ async function renderBookingSlotStep() {
         <button class="btn btn-outline btn-sm" type="button" onclick="goToBookingStep(2)">Change date</button>
       </div>
       ${renderBookingSelectionBanner()}
-      ${bookingState.slotLoading
+      ${needsAvailability
+        ? bookingAvailabilityEmptyState()
+        : bookingState.slotLoading
         ? `<div class="slot-grid">${skeletonCards(4)}</div>`
         : bookingState.slotError
           ? `${emptyState(bookingState.slotError)}<div class="booking-flow-actions"><button class="btn btn-outline btn-sm" type="button" onclick="refreshBookingAvailability(true)">Retry</button></div>`
@@ -1026,7 +1038,7 @@ async function renderBookingSlotStep() {
             : slotEmptyState('Choose a date to see available interview slots.')}
     </div>
   `;
-  if (!bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
+  if (!needsAvailability && !bookingState.slotLoading && !bookingState.slotOptions.length && !bookingState.slotError) {
     ensureBookingSlotsLoaded();
   }
 }
@@ -1175,6 +1187,14 @@ function selectedBookingSlot() {
 
 async function ensureBookingSlotsLoaded(force = false) {
   if (!bookingState.interviewer?.id || (bookingState.slotLoading && !force)) return;
+  if (interviewerHasNoAvailability(bookingState.interviewer)) {
+    bookingState.slotOptions = [];
+    bookingState.selectedDate = '';
+    bookingState.selectedSlotStart = '';
+    bookingState.slotError = '';
+    renderBookingStep();
+    return;
+  }
   if (!force && bookingState.slotOptions.length) return;
   bookingState.slotLoading = true;
   bookingState.slotError = '';
@@ -1282,10 +1302,27 @@ function renderBookingSelectionBanner() {
 }
 
 function emptyBookingMessage() {
+  if (interviewerHasNoAvailability(bookingState.interviewer)) {
+    return 'This interviewer has not added availability yet.';
+  }
   if (bookingState.interviewer && bookingState.interviewer.acceptingBookings === false) {
     return 'This interviewer is not accepting bookings right now.';
   }
   return 'No available interview slots have been published for this interviewer yet.';
+}
+
+function bookingAvailabilityEmptyState() {
+  return `
+    <div class="booking-availability-empty empty-state empty-state-rich">
+      <strong>This interviewer has not added availability yet.</strong>
+      <p>Check back later after they publish a weekly schedule.</p>
+      <div class="request-availability-card" aria-disabled="true">
+        <span class="badge badge-gray">Placeholder</span>
+        <strong>Request availability</strong>
+        <p>This reminder is not active yet, but it marks where candidates will be able to request new times.</p>
+      </div>
+    </div>
+  `;
 }
 
 function formatSlotTime(value) {
@@ -1320,6 +1357,12 @@ async function confirmBooking() {
   if (!bookingState.interviewer?.id || bookingState.interviewer.id === currentUser.id) {
     toast('You cannot book yourself as interviewer.', 'error');
     bookingStep = 1;
+    renderBookingStep();
+    return;
+  }
+  if (!isInterviewerBookable(bookingState.interviewer)) {
+    toast(emptyBookingMessage(), 'error');
+    bookingStep = 2;
     renderBookingStep();
     return;
   }
@@ -1440,8 +1483,10 @@ async function loadAvailabilityManagement(showErrors = false) {
 }
 
 function renderAvailabilityPanels() {
+  renderAvailabilityOnboardingBanner();
   renderInterviewerAvailabilityPanel();
   renderProfileAvailabilityPanel();
+  if (document.getElementById('notifications-list')) renderNotifications(notificationsCache);
 }
 
 function renderOverview() {
@@ -1460,6 +1505,7 @@ function renderOverview() {
     streakCard.hidden = !hasPracticeStreak;
     if (hasPracticeStreak) document.getElementById('stat-streak').textContent = String(Number(streakValue));
   }
+  renderAvailabilityOnboardingBanner();
   document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState('No upcoming sessions.');
   renderSkillProgress();
 }
@@ -1953,12 +1999,12 @@ function renderInterviewerAvailabilityPanel() {
     ? emptyState(availabilityError)
     : availabilitySchedules.length
       ? `<div class="availability-list">${availabilitySchedules.map(item => renderAvailabilityItem(item, true)).join('')}</div>`
-      : `<div class="availability-summary-empty">${emptyState('This interviewer has not added availability yet.')}</div>`;
+      : `<div class="availability-summary-empty">${availabilitySetupEmptyState()}</div>`;
   const slotsContent = availabilityError
     ? emptyState(availabilityError)
     : generatedAvailabilitySlots.length
       ? `<div class="availability-slot-list">${generatedAvailabilitySlots.slice(0, 8).map(renderGeneratedSlotItem).join('')}</div>`
-      : `<div class="availability-summary-empty">${emptyState(availabilitySchedules.length ? 'No upcoming generated slots are available yet.' : 'This interviewer has not added availability yet.')}</div>`;
+      : `<div class="availability-summary-empty">${availabilitySchedules.length ? emptyState('No upcoming generated slots are available yet.') : availabilitySetupEmptyState()}</div>`;
   host.innerHTML = `
     <div class="panel-head">
       <div>
@@ -2051,7 +2097,7 @@ function renderProfileAvailabilityPanel() {
     ? emptyState(availabilityError)
     : availabilitySchedules.length
       ? `<div class="availability-summary-stack">${availabilitySchedules.map(item => renderAvailabilityItem(item, false)).join('')}</div>`
-      : `<div class="availability-summary-empty">${emptyState('This interviewer has not added availability yet.')}</div>`;
+      : `<div class="availability-summary-empty">${availabilitySetupEmptyState()}</div>`;
   const nextSlots = availabilityError
     ? ''
     : generatedAvailabilitySlots.length
@@ -2074,6 +2120,38 @@ function renderProfileAvailabilityPanel() {
     </div>
     ${summaryContent}
     ${nextSlots}
+  `;
+}
+
+function renderAvailabilityOnboardingBanner() {
+  const host = document.getElementById('availability-onboarding-banner');
+  if (!host) return;
+  if (activeWorkspace !== 'INTERVIEWER' || !hasInterviewerRole() || availabilityLoading || availabilityError || availabilitySchedules.length) {
+    host.innerHTML = '';
+    return;
+  }
+  host.innerHTML = `
+    <section class="availability-onboarding-card" role="status">
+      <div>
+        <span class="badge badge-yellow">Availability missing</span>
+        <h2>Add your availability schedule to start receiving bookings.</h2>
+        <p>Availability is optional during signup, but candidates can only book after you publish real weekly hours.</p>
+      </div>
+      <div class="availability-onboarding-actions">
+        <button class="btn btn-primary" type="button" onclick="openAvailabilityManager()">Add availability</button>
+        <button class="btn btn-outline" type="button" onclick="showSection('profile')">Profile settings</button>
+      </div>
+    </section>
+  `;
+}
+
+function availabilitySetupEmptyState() {
+  return `
+    <div class="empty-state empty-state-rich availability-setup-empty">
+      <strong>This interviewer has not added availability yet.</strong>
+      <p>Add a weekly schedule to start receiving bookings. You can finish onboarding without adding availability.</p>
+      <button class="btn btn-primary btn-sm" type="button" onclick="openAvailabilityManager()">Add availability</button>
+    </div>
   `;
 }
 
@@ -2183,6 +2261,7 @@ async function loadNotifications() {
 function renderNotifications(items) {
   const panel = document.getElementById('notification-panel');
   const grouped = groupNotifications(items || []);
+  const onboardingReminder = availabilityOnboardingNotification();
   const head = `
     <div class="notification-head">
       <strong>Notifications</strong>
@@ -2200,10 +2279,29 @@ function renderNotifications(items) {
         </div>
       `).join('')
     : emptyState('No notifications.');
-  const html = `${head}<div class="notification-scroll">${body}</div>`;
+  const html = `${head}<div class="notification-scroll">${onboardingReminder}${body}</div>`;
   panel.innerHTML = html;
   const page = document.getElementById('notifications-list');
   if (page) page.innerHTML = html;
+}
+
+function availabilityOnboardingNotification() {
+  if (activeWorkspace !== 'INTERVIEWER' || !hasInterviewerRole() || availabilityLoading || availabilityError || availabilitySchedules.length) {
+    return '';
+  }
+  return `
+    <div class="notification-group">
+      <div class="notification-group-title">Onboarding</div>
+      <button class="notification-item unread" onclick="openAvailabilityManager()">
+        <span class="notification-glyph" aria-hidden="true">!</span>
+        <span class="notification-copy">
+          <strong>Add your availability schedule</strong>
+          <span>Publish weekly hours to start receiving real booking requests.</span>
+        </span>
+        <span class="notification-time">Now</span>
+      </button>
+    </div>
+  `;
 }
 
 function toggleNotifications(force) {
@@ -2410,6 +2508,7 @@ function renderProfile() {
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
   const showIntervieweePreferences = hasIntervieweeRole();
   const showInterviewerSetup = hasInterviewerRole();
+  const interviewerAvailabilityMissing = showInterviewerSetup && !availabilityLoading && !availabilityError && !availabilitySchedules.length;
   const availabilityPreference = intervieweeAvailabilityPreference();
   const availabilityNotes = intervieweeAvailabilityNotes();
   summary.innerHTML = `
@@ -2616,9 +2715,12 @@ function renderProfile() {
       ${showInterviewerSetup ? `
         <div class="availability-summary-card">
           <h3>Weekly availability</h3>
-          <p class="availability-summary-note">Manage recurring interviewer schedules from the interviewer workspace. Your generated slots update automatically there.</p>
+          <div class="profile-status-row">
+            <span class="badge ${interviewerAvailabilityMissing ? 'badge-yellow' : 'badge-green'}">${interviewerAvailabilityMissing ? 'Availability not added yet' : 'Available for booking'}</span>
+          </div>
+          <p class="availability-summary-note">${interviewerAvailabilityMissing ? 'Add a weekly schedule before candidates can book you. Signup can stay complete without it.' : 'Manage recurring interviewer schedules from the interviewer workspace. Your generated slots update automatically there.'}</p>
           <div class="availability-form-actions">
-            <button class="btn btn-outline btn-sm" type="button" onclick="openAvailabilityManager()">Open availability manager</button>
+            <button class="btn ${interviewerAvailabilityMissing ? 'btn-primary' : 'btn-outline'} btn-sm" type="button" onclick="openAvailabilityManager()">${interviewerAvailabilityMissing ? 'Add availability' : 'Open availability manager'}</button>
           </div>
         </div>
       ` : ''}
@@ -3721,7 +3823,27 @@ function interviewerMetaLine(interviewer) {
 }
 
 function availabilityLabel(interviewer) {
+  if (interviewerHasNoAvailability(interviewer)) return 'Availability not added yet';
   return interviewer?.acceptingBookings === false ? 'Not accepting bookings' : 'Available for booking';
+}
+
+function recommendationAvailabilityLabel(interviewer) {
+  if (interviewerHasNoAvailability(interviewer)) return 'Availability not added';
+  return interviewer?.acceptingBookings === false ? 'Unavailable now' : 'Available';
+}
+
+function isInterviewerBookable(interviewer) {
+  if (!interviewer || interviewer.acceptingBookings === false) return false;
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'bookable')) return Boolean(interviewer.bookable);
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'hasAvailability')) return Boolean(interviewer.hasAvailability);
+  return true;
+}
+
+function interviewerHasNoAvailability(interviewer) {
+  if (!interviewer) return false;
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'hasAvailability')) return !Boolean(interviewer.hasAvailability);
+  if (Object.prototype.hasOwnProperty.call(interviewer, 'bookable')) return !Boolean(interviewer.bookable) && interviewer.acceptingBookings !== false;
+  return false;
 }
 
 function bioPreview(value, limit = 150) {

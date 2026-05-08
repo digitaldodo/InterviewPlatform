@@ -2644,6 +2644,30 @@ textarea:focus-visible {
     rgba(255,255,255,0.03);
 }
 
+.booking-availability-empty {
+  justify-items: start;
+  align-items: start;
+  text-align: left;
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.03);
+}
+
+.request-availability-card {
+  display: grid;
+  gap: 0.35rem;
+  width: min(100%, 460px);
+  padding: 0.85rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.025);
+}
+
+.request-availability-card p {
+  color: var(--muted);
+}
+
 .booking-interviewer-card {
   display: grid;
   align-content: start;
@@ -3212,6 +3236,38 @@ textarea:focus-visible {
   gap: 0.6rem;
 }
 
+.availability-onboarding-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(255, 209, 102, 0.28);
+  border-radius: var(--radius);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.availability-onboarding-card h2 {
+  margin-top: 0.45rem;
+  font-size: 1.08rem;
+}
+
+.availability-onboarding-card p {
+  color: var(--muted);
+}
+
+.availability-onboarding-actions {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.availability-setup-empty {
+  min-height: 150px;
+}
+
 .marketplace-control-list {
   display: grid;
   gap: 0.7rem;
@@ -3693,8 +3749,13 @@ textarea:focus-visible {
   }
 
   .booking-selection-banner,
-  .booking-flow-actions {
+  .booking-flow-actions,
+  .availability-onboarding-card {
     grid-template-columns: 1fr;
+  }
+
+  .availability-onboarding-actions {
+    justify-content: flex-start;
   }
 
   .app-shell {

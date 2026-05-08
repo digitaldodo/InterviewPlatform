@@ -177,8 +177,8 @@ async function loadLandingSummary() {
   return {
     interviewerCount: Number(page.totalItems || visible.length || 0),
     verifiedCount: visible.filter(item => item.interviewerVerified).length,
-    availableCount: visible.filter(item => item.acceptingBookings !== false).length,
-    availableTodayCount: visible.filter(item => item.acceptingBookings !== false).length,
+    availableCount: visible.filter(isBookable).length,
+    availableTodayCount: visible.filter(isBookable).length,
     completedSessions: visible.reduce((sum, item) => sum + Number(item.completedSessions || item.completedInterviews || 0), 0),
     featuredInterviewers: visible.slice(0, 4),
   };

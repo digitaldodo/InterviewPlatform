@@ -4,7 +4,6 @@ import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.config.CacheConfig;
 import com.interview.platform.model.InterviewerAvailability;
 import com.interview.platform.model.Session;
-import com.interview.platform.model.User;
 import com.interview.platform.repository.InterviewerAvailabilityRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
@@ -80,36 +79,30 @@ public class AvailabilitySlotService {
 
     public BookingResolution resolveRequestedBooking(String interviewerId, String startTime, Integer requestedDurationMinutes) {
         List<InterviewerAvailability> schedules = availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(interviewerId);
-        if (!schedules.isEmpty()) {
-            OffsetDateTime requested = schedulingTimeService.parseStartTime(startTime);
-            if (!requested.toInstant().isAfter(schedulingTimeService.nowInstant())) {
-                throw new IllegalArgumentException("Past time slots cannot be booked");
-            }
-            GeneratedSlot slot = findStructuredSlot(interviewerId, requested)
-                    .orElseThrow(() -> new IllegalArgumentException("That slot is no longer available"));
-            boolean legacyDefaultFromOlderClients = requestedDurationMinutes != null && requestedDurationMinutes == LEGACY_DURATION_MINUTES;
-            if (requestedDurationMinutes != null && !legacyDefaultFromOlderClients && requestedDurationMinutes != slot.durationMinutes()) {
-                throw new IllegalArgumentException("Requested duration does not match interviewer availability");
-            }
-            return new BookingResolution(slot.startTime(), slot.durationMinutes());
+        if (schedules.isEmpty()) {
+            throw new IllegalArgumentException("This interviewer has not added availability yet");
         }
-
-        Optional<OffsetDateTime> parsed = schedulingTimeService.tryParseStartTime(startTime);
-        if (parsed.isPresent() && !parsed.get().toInstant().isAfter(schedulingTimeService.nowInstant())) {
+        OffsetDateTime requested = schedulingTimeService.parseStartTime(startTime);
+        if (!requested.toInstant().isAfter(schedulingTimeService.nowInstant())) {
             throw new IllegalArgumentException("Past time slots cannot be booked");
         }
-        int durationMinutes = requestedDurationMinutes == null ? LEGACY_DURATION_MINUTES : requestedDurationMinutes;
-        return new BookingResolution(startTime == null ? null : startTime.trim(), durationMinutes);
+        GeneratedSlot slot = findStructuredSlot(interviewerId, requested)
+                .orElseThrow(() -> new IllegalArgumentException("That slot is no longer available"));
+        boolean legacyDefaultFromOlderClients = requestedDurationMinutes != null && requestedDurationMinutes == LEGACY_DURATION_MINUTES;
+        if (requestedDurationMinutes != null && !legacyDefaultFromOlderClients && requestedDurationMinutes != slot.durationMinutes()) {
+            throw new IllegalArgumentException("Requested duration does not match interviewer availability");
+        }
+        return new BookingResolution(slot.startTime(), slot.durationMinutes());
     }
 
     public boolean hasStructuredAvailability(String interviewerId) {
-        return !availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(interviewerId).isEmpty();
+        return interviewerId != null && !interviewerId.isBlank() && availabilityRepository.existsByInterviewerId(interviewerId);
     }
 
     private List<GeneratedSlot> generatedSlots(String interviewerId, Integer days, boolean includeUnavailable) {
         List<InterviewerAvailability> schedules = availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc(interviewerId);
         if (schedules.isEmpty()) {
-            return legacySlots(interviewerId, includeUnavailable);
+            return List.of();
         }
 
         int horizonDays = days == null ? defaultHorizonDays : Math.max(1, days);
@@ -196,44 +189,6 @@ public class AvailabilitySlotService {
         } catch (IllegalArgumentException ex) {
             return false;
         }
-    }
-
-    private List<GeneratedSlot> legacySlots(String interviewerId, boolean includeUnavailable) {
-        Optional<User> interviewer = userRepository.findById(interviewerId);
-        if (interviewer.isEmpty() || interviewer.get().getAvailability() == null) {
-            return List.of();
-        }
-        List<Session> activeSessions = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, ACTIVE_SESSION_STATUSES);
-        List<GeneratedSlot> slots = new ArrayList<>();
-        for (String rawSlot : interviewer.get().getAvailability()) {
-            if (rawSlot == null || rawSlot.isBlank()) {
-                continue;
-            }
-            Optional<OffsetDateTime> parsed = schedulingTimeService.tryParseStartTime(rawSlot);
-            if (parsed.isPresent()) {
-                if (!parsed.get().toInstant().isAfter(schedulingTimeService.nowInstant())) {
-                    continue;
-                }
-                GeneratedSlot slot = new GeneratedSlot(
-                        null,
-                        parsed.get().toString(),
-                        parsed.get().plusMinutes(LEGACY_DURATION_MINUTES).toString(),
-                        LEGACY_DURATION_MINUTES,
-                        SLOT_AVAILABLE
-                );
-                boolean booked = activeSessions.stream().anyMatch(session -> conflicts(session, slot));
-                if (!booked || includeUnavailable) {
-                    slots.add(booked ? withStatus(slot, SLOT_BOOKED) : slot);
-                }
-                continue;
-            }
-            GeneratedSlot slot = new GeneratedSlot(null, rawSlot.trim(), rawSlot.trim(), LEGACY_DURATION_MINUTES, SLOT_AVAILABLE);
-            boolean booked = activeSessions.stream().anyMatch(session -> rawSlot.trim().equals(session.getStartTime()));
-            if (!booked || includeUnavailable) {
-                slots.add(booked ? withStatus(slot, SLOT_BOOKED) : slot);
-            }
-        }
-        return slots;
     }
 
     private int effectiveSessionDurationMinutes(Session session) {

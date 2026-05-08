@@ -39,6 +39,8 @@ public class MarketplaceDtos {
             Double reliabilityScore,
             Boolean interviewerVerified,
             Boolean acceptingBookings,
+            Boolean hasAvailability,
+            Boolean bookable,
             Boolean publicProfileVisible
     ) {}
 
@@ -77,6 +79,8 @@ public class MarketplaceDtos {
             Double reliabilityScore,
             Boolean interviewerVerified,
             Boolean acceptingBookings,
+            Boolean hasAvailability,
+            Boolean bookable,
             List<String> availabilityPreview,
             List<PublicReview> reviews
     ) {}

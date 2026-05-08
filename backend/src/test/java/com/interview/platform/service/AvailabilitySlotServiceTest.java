@@ -130,7 +130,30 @@ class AvailabilitySlotServiceTest {
         when(availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc("int-1"))
                 .thenReturn(List.of());
 
-        assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> slotService.resolveRequestedBooking("int-1", "2026-05-11T07:30:00Z", 60));
+        assertEquals("This interviewer has not added availability yet", ex.getMessage());
+    }
+
+    @Test
+    void generatedSlotsReturnEmptyWhenNoAvailabilityExists() {
+        SchedulingTimeService timeService = new SchedulingTimeService(
+                ZoneId.of("UTC"),
+                Clock.fixed(Instant.parse("2026-05-11T08:00:00Z"), ZoneOffset.UTC)
+        );
+        AvailabilitySlotService slotService = new AvailabilitySlotService(
+                availabilityRepository,
+                sessionRepository,
+                userRepository,
+                timeService,
+                14
+        );
+
+        when(availabilityRepository.findByInterviewerIdOrderByDayOfWeekAscStartTimeAsc("int-1"))
+                .thenReturn(List.of());
+
+        List<AvailabilityDtos.GeneratedSlotResponse> slots = slotService.generatedSlotResponses("int-1", 14, true);
+
+        assertEquals(List.of(), slots);
     }
 }

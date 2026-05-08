@@ -86,6 +86,7 @@ class SessionServiceTest {
         when(userRepository.existsById("cand-1")).thenReturn(true);
         when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(availabilitySlotService.hasStructuredAvailability("int-1")).thenReturn(true);
         when(availabilitySlotService.resolveRequestedBooking("int-1", "2026-05-11T10:00:00Z", 60))
                 .thenReturn(new AvailabilitySlotService.BookingResolution("2026-05-11T10:00:00Z", 60));
         when(sessionRepository.findByInterviewerIdAndStatusIn("int-1", List.of("PENDING", "CONFIRMED")))
@@ -119,6 +120,7 @@ class SessionServiceTest {
         when(userRepository.existsById("cand-1")).thenReturn(true);
         when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(availabilitySlotService.hasStructuredAvailability("int-1")).thenReturn(true);
         when(availabilitySlotService.resolveRequestedBooking("int-1", "2026-05-11T10:00:00Z", 60))
                 .thenReturn(new AvailabilitySlotService.BookingResolution("2026-05-11T10:00:00Z", 60));
         when(sessionRepository.findByInterviewerIdAndStatusIn("int-1", List.of("PENDING", "CONFIRMED")))
@@ -149,6 +151,31 @@ class SessionServiceTest {
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
 
         assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+        verify(availabilitySlotService, never()).resolveRequestedBooking(any(), any(), any());
+        verify(meetingProviderService, never()).provision(any(), any(), any());
+    }
+
+    @Test
+    void createSessionRejectsWhenInterviewerHasNoAvailability() {
+        Session request = new Session();
+        request.setCandidateId("cand-1");
+        request.setInterviewerId("int-1");
+        request.setTitle("Backend");
+        request.setInterviewType("Backend");
+        request.setStartTime("2026-05-11T10:00:00Z");
+
+        User interviewer = interviewer("int-1");
+        User candidate = candidate("cand-1");
+
+        when(userRepository.existsById("int-1")).thenReturn(true);
+        when(userRepository.existsById("cand-1")).thenReturn(true);
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(availabilitySlotService.hasStructuredAvailability("int-1")).thenReturn(false);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> sessionService.createSession(request));
+
+        assertEquals("This interviewer has not added availability yet", ex.getMessage());
         verify(availabilitySlotService, never()).resolveRequestedBooking(any(), any(), any());
         verify(meetingProviderService, never()).provision(any(), any(), any());
     }

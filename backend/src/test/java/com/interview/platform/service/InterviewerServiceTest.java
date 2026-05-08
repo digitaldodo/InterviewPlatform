@@ -93,6 +93,7 @@ class InterviewerServiceTest {
 
         when(userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true))
                 .thenReturn(List.of(hidden, visible));
+        when(availabilitySlotService.hasStructuredAvailability("visible")).thenReturn(true);
 
         List<String> ids = service.recommended(null).stream().map(item -> item.id()).toList();
 

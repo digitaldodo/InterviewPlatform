@@ -121,6 +121,9 @@ public class SessionService {
         if (!Boolean.TRUE.equals(interviewer.getAcceptingBookings())) {
             throw new IllegalArgumentException("This interviewer is not accepting bookings right now");
         }
+        if (!availabilitySlotService.hasStructuredAvailability(interviewer.getId())) {
+            throw new IllegalArgumentException("This interviewer has not added availability yet");
+        }
 
         if (session.getStartTime() == null || session.getStartTime().isBlank()) {
             throw new IllegalArgumentException("Start time is required");

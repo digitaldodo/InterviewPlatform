@@ -91,14 +91,14 @@ function renderPublicProfile(profile) {
         </div>
       </article>
       <article class="panel public-profile-detail-card">
-        <div class="panel-head"><h2>Availability preview</h2><span class="badge badge-gray">${availability.length ? `${availability.length} slots` : 'No slots listed'}</span></div>
+        <div class="panel-head"><h2>Availability preview</h2><span class="badge badge-gray">${availability.length ? `${availability.length} slots` : profile.hasAvailability === false ? 'Availability not added yet' : 'No slots listed'}</span></div>
         <div class="public-slot-list">
           ${availability.map(slot => `
             <div class="public-slot-card">
               <strong>${esc(formatDate(slot, { weekday: 'short', month: 'short', day: 'numeric' }))}</strong>
               <span>${esc(formatDate(slot, { hour: 'numeric', minute: '2-digit' }))}</span>
             </div>
-          `).join('') || '<div class="empty-state empty-state-rich"><strong>No upcoming availability</strong><p>This interviewer is public, but upcoming slots are not currently published.</p></div>'}
+          `).join('') || `<div class="empty-state empty-state-rich"><strong>${profile.hasAvailability === false ? 'This interviewer has not added availability yet.' : 'No upcoming availability'}</strong><p>${profile.hasAvailability === false ? 'Check back later after they publish a weekly schedule.' : 'This interviewer is public, but upcoming slots are not currently published.'}</p></div>`}
         </div>
         <a class="btn btn-outline btn-sm" href="${esc(authUrl())}">Sign in to request a slot</a>
       </article>
@@ -118,7 +118,7 @@ function renderPublicProfile(profile) {
           </div>
           <div class="trust-card">
             <strong>Session coverage</strong>
-            <p>${durations.length ? `${esc(durations.join(', '))} minute formats.` : 'Flexible session formats.'} ${profile.acceptingBookings === false ? 'Currently closed to new requests.' : 'Open to new booking requests.'}</p>
+            <p>${durations.length ? `${esc(durations.join(', '))} minute formats.` : 'Flexible session formats.'} ${isBookable(profile) ? 'Available for booking.' : availabilityLabel(profile)}</p>
           </div>
         </div>
       </article>
@@ -186,7 +186,7 @@ function profileHighlights(profile) {
     },
     {
       label: 'Booking status',
-      value: profile.acceptingBookings === false ? 'Currently closed to new booking requests.' : 'Open to new booking requests.',
+      value: isBookable(profile) ? 'Available for booking.' : availabilityLabel(profile),
     },
     {
       label: 'Language',

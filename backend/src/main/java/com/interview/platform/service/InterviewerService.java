@@ -94,7 +94,7 @@ public class InterviewerService {
         query.addCriteria(new Criteria().andOperator(criteria.toArray(new Criteria[0])));
 
         List<User> filtered = mongoTemplate.find(query, User.class).stream()
-                .filter(user -> matchesDynamicFilters(user, availableToday, sessionDuration))
+                .filter(user -> matchesDynamicFilters(user, available, availableToday, sessionDuration))
                 .sorted(sortComparator(sort, viewerTimezone))
                 .toList();
         int fromIndex = Math.min(safePage * safeSize, filtered.size());
@@ -136,6 +136,7 @@ public class InterviewerService {
         List<User> candidates = userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
                 .filter(this::isPubliclyVisible)
+                .filter(this::hasBookableAvailability)
                 .filter(user -> isBlank(intervieweeId) || !intervieweeId.equals(user.getId()))
                 .limit(SEARCH_WINDOW_SIZE)
                 .toList();
@@ -228,6 +229,8 @@ public class InterviewerService {
                 reliabilityScore(interviewer),
                 interviewer.getInterviewerVerified(),
                 interviewer.getAcceptingBookings(),
+                hasStructuredAvailability(interviewer),
+                isBookable(interviewer),
                 availabilityPreview,
                 reviews
         );
@@ -310,14 +313,7 @@ public class InterviewerService {
                 uniqueNormalized(interviewers.stream().map(User::getCompany).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getExperienceLevel).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getTimeZone).toList()),
-                uniqueNormalized(interviewers.stream()
-                        .flatMap(user -> {
-                            List<String> topics = new ArrayList<>();
-                            topics.addAll(splitOptions(user.getInterviewTopics()));
-                            topics.addAll(splitOptions(user.getSkills()));
-                            return topics.stream();
-                        })
-                        .toList()),
+                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getInterviewTopics()).stream()).toList()),
                 uniqueIntegers(interviewers.stream().flatMap(user -> user.getSessionDurations().stream()).toList())
         );
     }
@@ -327,9 +323,9 @@ public class InterviewerService {
         List<User> interviewers = mongoTemplate.find(new Query(interviewerCriteria(true)), User.class);
         long interviewerCount = interviewers.size();
         long verifiedCount = interviewers.stream().filter(user -> Boolean.TRUE.equals(user.getInterviewerVerified())).count();
-        long availableCount = interviewers.stream().filter(user -> Boolean.TRUE.equals(user.getAcceptingBookings())).count();
+        long availableCount = interviewers.stream().filter(this::isBookable).count();
         long availableTodayCount = interviewers.stream()
-                .filter(user -> Boolean.TRUE.equals(user.getAcceptingBookings()))
+                .filter(this::isBookable)
                 .filter(user -> hasMatchingSlot(user, 1, null))
                 .count();
         long reviewCount = interviewers.stream().mapToLong(user -> user.getReviewCount() == null ? 0 : user.getReviewCount()).sum();
@@ -460,7 +456,10 @@ public class InterviewerService {
                 .toList();
     }
 
-    private boolean matchesDynamicFilters(User user, Boolean availableToday, Integer sessionDuration) {
+    private boolean matchesDynamicFilters(User user, Boolean available, Boolean availableToday, Integer sessionDuration) {
+        if (Boolean.TRUE.equals(available) && !isBookable(user)) {
+            return false;
+        }
         if (Boolean.TRUE.equals(availableToday) && !hasMatchingSlot(user, 1, sessionDuration)) {
             return false;
         }
@@ -471,6 +470,9 @@ public class InterviewerService {
     }
 
     private boolean hasMatchingSlot(User user, int days, Integer sessionDuration) {
+        if (!isBookable(user)) {
+            return false;
+        }
         return availabilitySlotService.generatedSlotResponses(user.getId(), days, false).stream()
                 .anyMatch(slot -> sessionDuration == null || sessionDuration.equals(slot.getDurationMinutes()));
     }
@@ -618,6 +620,8 @@ public class InterviewerService {
     }
 
     private MarketplaceDtos.InterviewerCard toInterviewerCard(User user) {
+        boolean hasAvailability = hasStructuredAvailability(user);
+        boolean bookable = Boolean.TRUE.equals(user.getAcceptingBookings()) && hasAvailability;
         return new MarketplaceDtos.InterviewerCard(
                 user.getId(),
                 user.getUsername(),
@@ -642,6 +646,8 @@ public class InterviewerService {
                 reliabilityScore(user),
                 user.getInterviewerVerified(),
                 user.getAcceptingBookings(),
+                hasAvailability,
+                bookable,
                 user.getPublicProfileVisible()
         );
     }
@@ -679,10 +685,22 @@ public class InterviewerService {
     }
 
     private int bookingAvailabilityScore(User user, Map<String, Integer> cache) {
-        if (!Boolean.TRUE.equals(user.getAcceptingBookings())) {
+        if (!isBookable(user)) {
             return 0;
         }
         return cache.computeIfAbsent(user.getId(), ignored -> hasMatchingSlot(user, 7, null) ? 2 : 1);
+    }
+
+    private boolean isBookable(User user) {
+        return Boolean.TRUE.equals(user.getAcceptingBookings()) && hasStructuredAvailability(user);
+    }
+
+    private boolean hasBookableAvailability(User user) {
+        return hasStructuredAvailability(user);
+    }
+
+    private boolean hasStructuredAvailability(User user) {
+        return user != null && availabilitySlotService.hasStructuredAvailability(user.getId());
     }
 
     private String normalizeOption(String value) {
