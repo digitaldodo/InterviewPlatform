@@ -44,18 +44,19 @@ public class InterviewerController {
             @RequestParam(required = false) Boolean availableToday,
             @RequestParam(required = false) Integer sessionDuration,
             @RequestParam(required = false) String viewerTimezone,
+            @RequestParam(required = false) Boolean publicOnly,
             @RequestParam(required = false) String excludeUserId,
             @RequestParam(defaultValue = "top-rated") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "9") int size
     ) {
         return ResponseEntity.ok(ApiResponse.success("Interviewers fetched",
-                interviewerService.search(q, expertise, company, role, minExperience, maxExperience, minRating, available, free, language, experienceLevel, verified, timezone, topic, availableToday, sessionDuration, viewerTimezone, excludeUserId, sort, page, size)));
+                interviewerService.search(q, expertise, company, role, minExperience, maxExperience, minRating, available, free, language, experienceLevel, verified, timezone, topic, availableToday, sessionDuration, viewerTimezone, publicOnly, excludeUserId, sort, page, size)));
     }
 
     @GetMapping("/filter-options")
-    public ResponseEntity<ApiResponse<InterviewerFilterOptions>> filterOptions() {
-        return ResponseEntity.ok(ApiResponse.success("Interviewer filter options fetched", interviewerService.filterOptions()));
+    public ResponseEntity<ApiResponse<InterviewerFilterOptions>> filterOptions(@RequestParam(required = false) Boolean publicOnly) {
+        return ResponseEntity.ok(ApiResponse.success("Interviewer filter options fetched", interviewerService.filterOptions(publicOnly)));
     }
 
     @GetMapping("/{id}")
@@ -77,8 +78,9 @@ public class InterviewerController {
     }
 
     @GetMapping("/top-rated")
-    public ResponseEntity<ApiResponse<List<MarketplaceDtos.InterviewerCard>>> topRated(@RequestParam(required = false) String excludeUserId) {
-        return ResponseEntity.ok(ApiResponse.success("Top-rated interviewers fetched", interviewerService.topRated(excludeUserId)));
+    public ResponseEntity<ApiResponse<List<MarketplaceDtos.InterviewerCard>>> topRated(@RequestParam(required = false) String excludeUserId,
+                                                                                       @RequestParam(required = false) Boolean publicOnly) {
+        return ResponseEntity.ok(ApiResponse.success("Top-rated interviewers fetched", interviewerService.topRated(excludeUserId, publicOnly)));
     }
 
     @GetMapping("/recommended")
@@ -94,6 +96,11 @@ public class InterviewerController {
     @GetMapping("/public/{username}")
     public ResponseEntity<ApiResponse<MarketplaceDtos.PublicInterviewerProfile>> publicProfile(@PathVariable String username) {
         return ResponseEntity.ok(ApiResponse.success("Public interviewer profile fetched", interviewerService.publicProfile(username)));
+    }
+
+    @GetMapping("/public-summary")
+    public ResponseEntity<ApiResponse<MarketplaceDtos.PublicMarketplaceSummary>> publicSummary() {
+        return ResponseEntity.ok(ApiResponse.success("Public marketplace summary fetched", interviewerService.publicMarketplaceSummary()));
     }
 
     @PostMapping("/{id}/favorite")

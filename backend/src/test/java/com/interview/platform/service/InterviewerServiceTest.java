@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -57,12 +58,33 @@ class InterviewerServiceTest {
         assertEquals(List.of(30, 45, 60), options.getSessionDurations());
     }
 
+    @Test
+    void topRatedPublicOnlyExcludesHiddenProfiles() {
+        InterviewerService service = new InterviewerService(mongoTemplate, userRepository, sessionRepository, feedbackRepository, availabilitySlotService);
+        User visible = interviewer(List.of("Java"), "English", "OpenAI");
+        visible.setId("visible");
+        visible.setAverageRating(4.9);
+        visible.setPublicProfileVisible(true);
+        User hidden = interviewer(List.of("React"), "English", "Meta");
+        hidden.setId("hidden");
+        hidden.setAverageRating(5.0);
+        hidden.setPublicProfileVisible(false);
+
+        when(userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER")).thenReturn(List.of(hidden, visible));
+
+        List<String> ids = service.topRated(null, true).stream().map(item -> item.id()).toList();
+
+        assertEquals(List.of("visible"), ids);
+        assertFalse(ids.contains("hidden"));
+    }
+
     private User interviewer(List<String> skills, String language, String company) {
         User user = new User();
         user.setRole("INTERVIEWER");
         user.setSkills(skills);
         user.setLanguage(language);
         user.setCompany(company);
+        user.setAccountEnabled(true);
         return user;
     }
 }

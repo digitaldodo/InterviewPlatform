@@ -3,126 +3,117 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>InterviewPrep - Mock Interview Practice</title>
-  <meta name="description" content="Book focused mock interviews with experienced engineers, product leaders, and hiring managers." />
+  <title>InterviewPrep | Public Mock Interview Marketplace</title>
+  <meta name="description" content="Browse verified interviewers, compare public profiles, and book focused mock interviews with real operators." />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="InterviewPrep | Public Mock Interview Marketplace" />
+  <meta property="og:description" content="Browse verified interviewers, compare public profiles, and book focused mock interviews with real operators." />
+  <meta property="og:image" content="assets/brand/interviewprep-logo.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="InterviewPrep | Public Mock Interview Marketplace" />
+  <meta name="twitter:description" content="Browse verified interviewers, compare public profiles, and book focused mock interviews with real operators." />
+  <meta name="twitter:image" content="assets/brand/interviewprep-logo.png" />
+  <link rel="canonical" href="https://interview-platform-frontend.onrender.com/" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/favicon-32.png" />
   <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
-<body class="public-shell">
+<body class="public-shell landing-page">
   <header class="public-nav">
     <a class="brand" href="#top" aria-label="InterviewPrep home">
       <img class="brand-logo brand-logo-nav" src="assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1503" height="236" />
     </a>
     <nav class="public-links" aria-label="Primary">
-      <a href="#interviewers">Interviewers</a>
+      <a href="marketplace.html">Marketplace</a>
+      <a href="#featured">Featured</a>
+      <a href="#reviews">Reviews</a>
       <a href="#how">How it works</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
     </nav>
     <a class="btn btn-outline btn-sm" href="#auth">Sign in</a>
   </header>
 
   <main id="top">
-    <section class="public-hero">
+    <section class="public-hero landing-hero">
       <div class="hero-copy">
-        <div class="eyebrow">Mock interviews with real operators</div>
-        <h1>InterviewPrep</h1>
-        <p>Find the right interviewer, book a focused session, join instantly, and leave with feedback you can actually practice from.</p>
+        <div class="eyebrow">Public interview marketplace</div>
+        <h1>Practice with real interviewers, not generic prep content.</h1>
+        <p>InterviewPrep helps candidates discover public interviewer profiles, compare trust signals, review live availability, and start focused mock interview practice with confidence.</p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#auth" onclick="switchTab('register')">Start practicing</a>
-          <a class="btn btn-ghost" href="#interviewers">Browse interviewers</a>
+          <a class="btn btn-primary" href="marketplace.html">Browse marketplace</a>
+          <a class="btn btn-ghost" href="#auth" onclick="switchTab('register')">Create account</a>
         </div>
-        <div class="hero-metrics">
-          <span><strong>Verified</strong> profiles</span>
-          <span><strong>Live</strong> availability</span>
-          <span><strong>Structured</strong> feedback</span>
+        <div class="hero-metrics landing-stat-row">
+          <span><strong id="stat-public-count">0</strong> <span data-label="stat-public-count">public interviewers</span></span>
+          <span><strong id="stat-verified-count">0</strong> <span data-label="stat-verified-count">verified experts</span></span>
+          <span><strong id="stat-available-count">0</strong> <span data-label="stat-available-count">available today</span></span>
+          <span><strong id="stat-session-count">0</strong> <span data-label="stat-session-count">completed sessions</span></span>
         </div>
       </div>
-      <div class="hero-product" aria-label="Product preview">
+      <div class="hero-product landing-product-shell" aria-label="Marketplace preview">
         <div class="preview-toolbar">
           <span></span><span></span><span></span>
-          <strong>Booking workflow</strong>
+          <strong>Discovery preview</strong>
         </div>
-        <div class="preview-grid">
-          <div class="preview-profile">
-            <div class="avatar">IP</div>
-            <div>
-              <h3>Interviewer profile</h3>
-              <p>Role and company from profile</p>
-            </div>
+        <div class="preview-grid landing-preview-grid">
+          <div class="marketplace-search-preview">
+            <span class="eyebrow">Search</span>
+            <h3>System Design interviewer</h3>
+            <p id="hero-market-note">Loading live marketplace availability and trust signals.</p>
           </div>
-          <div class="preview-tags"><span>System Design</span><span>Backend</span><span>Java</span></div>
-          <div class="preview-slots">
-            <button>10:30 AM</button><button class="active">2:00 PM</button><button>5:30 PM</button>
-          </div>
-          <div class="preview-summary">
-            <span>Confirmed meeting link</span>
-            <strong>Jitsi room ready</strong>
-          </div>
+          <div id="hero-discovery-preview" class="preview-person-list"></div>
         </div>
       </div>
     </section>
 
-    <section class="public-band" id="interviewers">
+    <section class="public-band proof-band">
       <div class="section-heading">
-        <span class="eyebrow">Discover</span>
-        <h2>Book interviewers by domain, company, language, and availability.</h2>
+        <span class="eyebrow">Trust</span>
+        <h2>Public marketplace signals that make choosing an interviewer feel safe and clear.</h2>
       </div>
-      <div class="featured-grid">
-        <article class="featured-card">
-          <div class="avatar">SF</div>
-          <h3>Search and filter</h3>
-          <p>Browse real interviewer profiles with role, company, skill, and language filters.</p>
-          <div class="preview-tags"><span>Frontend</span><span>React</span><span>Behavioral</span></div>
-        </article>
-        <article class="featured-card">
-          <div class="avatar">LS</div>
-          <h3>Live scheduling</h3>
-          <p>Book only real availability windows generated from interviewer schedules and active bookings.</p>
-          <div class="preview-tags"><span>Leadership</span><span>System Design</span><span>HR</span></div>
-        </article>
-        <article class="featured-card">
-          <div class="avatar">FB</div>
-          <h3>Focused feedback</h3>
-          <p>Every confirmed interview keeps the session context, meeting details, and practice feedback together.</p>
-          <div class="preview-tags"><span>DSA</span><span>Backend</span><span>Java</span></div>
-        </article>
+      <div class="public-proof-grid" id="trust-signal-grid"></div>
+    </section>
+
+    <section class="public-band" id="featured">
+      <div class="section-heading split-heading">
+        <div>
+          <span class="eyebrow">Featured interviewers</span>
+          <h2>High-signal public profiles candidates can evaluate before they ever sign in.</h2>
+        </div>
+        <a class="btn btn-outline btn-sm" href="marketplace.html">Open marketplace</a>
       </div>
+      <div class="featured-market-grid" id="featured-interviewers-grid"></div>
+    </section>
+
+    <section class="public-band" id="reviews">
+      <div class="section-heading">
+        <span class="eyebrow">Public reviews</span>
+        <h2>Real feedback, rendered with context instead of one-line star counts.</h2>
+      </div>
+      <div class="testimonial-grid" id="testimonial-grid"></div>
     </section>
 
     <section class="public-band split-band" id="how">
       <div class="section-heading">
         <span class="eyebrow">Workflow</span>
-        <h2>From search to feedback in four clean steps.</h2>
+        <h2>From public discovery to focused practice in four simple steps.</h2>
       </div>
-      <div class="steps-grid">
-        <div><strong>1</strong><h3>Choose interviewer</h3><p>Search, filter, compare profiles, and save favorites.</p></div>
-        <div><strong>2</strong><h3>Pick interview topics</h3><p>Combine Java, DSA, Spring Boot, System Design, React, SQL, and more in one session.</p></div>
-        <div><strong>3</strong><h3>Select a slot</h3><p>Only available slots are shown and double booking is blocked.</p></div>
-        <div><strong>4</strong><h3>Join and improve</h3><p>Meeting links, notifications, and structured feedback are attached to the session.</p></div>
-      </div>
-    </section>
-
-    <section class="public-band" id="pricing">
-      <div class="section-heading">
-        <span class="eyebrow">Pricing</span>
-        <h2>Start free, then pay only for premium interviewer sessions.</h2>
-      </div>
-      <div class="pricing-row">
-        <div><strong>Free</strong><span>Community interviewers and session history</span></div>
-        <div><strong>Pro</strong><span>Premium experts and priority booking</span></div>
+      <div class="steps-grid workflow-grid">
+        <div><strong>1</strong><h3>Browse public profiles</h3><p>Compare specialties, trust indicators, and public reviews without creating friction first.</p></div>
+        <div><strong>2</strong><h3>Review availability</h3><p>See whether an interviewer is taking bookings and preview upcoming time slots.</p></div>
+        <div><strong>3</strong><h3>Sign in to request</h3><p>Create your workspace only when you are ready to book, save, or manage sessions.</p></div>
+        <div><strong>4</strong><h3>Join and improve</h3><p>Every confirmed session keeps meeting details and structured feedback connected to practice history.</p></div>
       </div>
     </section>
 
     <section class="auth-section" id="auth">
       <div class="auth-copy">
         <span class="eyebrow">Account</span>
-        <h2>Sign in or create your workspace.</h2>
-        <p>Email verification, refresh tokens, and password reset flows are built in for production deployment.</p>
+        <h2>Sign in or create your InterviewPrep workspace.</h2>
+        <p>Authentication, verification, password reset, and secure sessions stay exactly where they belong: behind a clean public SaaS front door.</p>
       </div>
       <div class="auth-card">
         <div class="auth-brand">
@@ -169,7 +160,7 @@
             <div class="form-group">
               <label for="reg-username">Username</label>
               <input id="reg-username" type="text" name="username" placeholder="jane.doe" required autocomplete="username" minlength="3" maxlength="24" />
-              <small class="field-hint">Used for login and profile identity</small>
+              <small class="field-hint">Used for login and public profile identity</small>
               <small id="reg-username-status" class="field-validation"></small>
             </div>
             <div class="form-group">
@@ -251,22 +242,24 @@
     <section class="public-band faq-band" id="faq">
       <div class="section-heading">
         <span class="eyebrow">FAQ</span>
-        <h2>Built for focused interview preparation.</h2>
+        <h2>Built for focused interview preparation and public discovery.</h2>
       </div>
-      <details open><summary>Do sessions include meeting links?</summary><p>Yes. Each booking creates a Jitsi meeting link automatically.</p></details>
-      <details><summary>Can interviewers approve requests?</summary><p>Yes. Interviewers can confirm, complete, or cancel incoming session requests.</p></details>
-      <details><summary>Can I track feedback over time?</summary><p>The dashboard includes recent feedback and session history. Progress analytics appear only when real user data is available.</p></details>
+      <details open><summary>Do public profiles show real availability?</summary><p>Yes. Public interviewer pages can show live upcoming slots pulled from availability and booking data.</p></details>
+      <details><summary>Can I compare interviewers before signing in?</summary><p>Yes. The marketplace and public profiles are designed so candidates can compare trust indicators before creating friction.</p></details>
+      <details><summary>What happens after I sign in?</summary><p>You can save interviewers, book sessions, join meetings, and manage structured feedback inside the workspace.</p></details>
     </section>
   </main>
 
   <footer class="public-footer">
     <span>InterviewPrep</span>
-    <span>Mock interviews, cleaner workflows, better outcomes.</span>
+    <span>Public marketplace, trusted interviewer profiles, and cleaner mock interview workflows.</span>
   </footer>
 
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
   <script src="js/env.js"></script>
+  <script src="js/public-common.js"></script>
   <script src="js/formControls.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/public-home.js"></script>
 </body>
 </html>

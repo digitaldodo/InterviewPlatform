@@ -51,7 +51,7 @@ public class InterviewerService {
     public PageResponse<MarketplaceDtos.InterviewerCard> search(String q, String expertise, String company, String role, Integer minExperience,
                                                                 Integer maxExperience, Double minRating, Boolean available, Boolean free, String language,
                                                                 String experienceLevel, Boolean verified, String timezone, String topic,
-                                                                Boolean availableToday, Integer sessionDuration, String viewerTimezone, String excludeUserId,
+                                                                Boolean availableToday, Integer sessionDuration, String viewerTimezone, Boolean publicOnly, String excludeUserId,
                                                                 String sort, int page, int size) {
         int safePage = Math.max(0, page);
         int safeSize = Math.max(1, Math.min(size, 24));
@@ -59,6 +59,7 @@ public class InterviewerService {
         List<Criteria> criteria = new ArrayList<>();
         criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
         criteria.add(Criteria.where("accountEnabled").ne(false));
+        if (Boolean.TRUE.equals(publicOnly)) criteria.add(Criteria.where("publicProfileVisible").ne(false));
         if (!isBlank(excludeUserId)) criteria.add(Criteria.where("id").ne(excludeUserId.trim()));
         if (!isBlank(q)) {
             Pattern pattern = Pattern.compile(Pattern.quote(q.trim()), Pattern.CASE_INSENSITIVE);
@@ -117,8 +118,13 @@ public class InterviewerService {
     }
 
     public List<MarketplaceDtos.InterviewerCard> topRated(String excludeUserId) {
+        return topRated(excludeUserId, false);
+    }
+
+    public List<MarketplaceDtos.InterviewerCard> topRated(String excludeUserId, Boolean publicOnly) {
         return userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER").stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .filter(user -> !Boolean.TRUE.equals(publicOnly) || !Boolean.FALSE.equals(user.getPublicProfileVisible()))
                 .filter(user -> isBlank(excludeUserId) || !excludeUserId.equals(user.getId()))
                 .limit(6)
                 .map(this::toInterviewerCard)
@@ -274,7 +280,11 @@ public class InterviewerService {
     }
 
     public InterviewerFilterOptions filterOptions() {
-        Query query = new Query(interviewerCriteria());
+        return filterOptions(false);
+    }
+
+    public InterviewerFilterOptions filterOptions(Boolean publicOnly) {
+        Query query = new Query(interviewerCriteria(publicOnly));
         query.fields()
                 .include("skills")
                 .include("language")
@@ -292,6 +302,34 @@ public class InterviewerService {
                 uniqueNormalized(interviewers.stream().map(User::getTimeZone).toList()),
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getInterviewTopics()).stream()).toList()),
                 uniqueIntegers(interviewers.stream().flatMap(user -> user.getSessionDurations().stream()).toList())
+        );
+    }
+
+    public MarketplaceDtos.PublicMarketplaceSummary publicMarketplaceSummary() {
+        List<User> interviewers = mongoTemplate.find(new Query(interviewerCriteria(true)), User.class);
+        long interviewerCount = interviewers.size();
+        long verifiedCount = interviewers.stream().filter(user -> Boolean.TRUE.equals(user.getInterviewerVerified())).count();
+        long availableCount = interviewers.stream().filter(user -> Boolean.TRUE.equals(user.getAcceptingBookings())).count();
+        long availableTodayCount = interviewers.stream()
+                .filter(user -> Boolean.TRUE.equals(user.getAcceptingBookings()))
+                .filter(user -> hasMatchingSlot(user, 1, null))
+                .count();
+        long reviewCount = interviewers.stream().mapToLong(user -> user.getReviewCount() == null ? 0 : user.getReviewCount()).sum();
+        long completedSessions = interviewers.stream().mapToLong(user -> user.getCompletedSessions() == null ? 0 : user.getCompletedSessions()).sum();
+        List<MarketplaceDtos.InterviewerCard> featured = interviewers.stream()
+                .sorted(defaultMarketplaceComparator(""))
+                .sorted(Comparator.comparing(User::getAverageRating, Comparator.nullsLast(Comparator.reverseOrder())))
+                .limit(4)
+                .map(this::toInterviewerCard)
+                .toList();
+        return new MarketplaceDtos.PublicMarketplaceSummary(
+                interviewerCount,
+                verifiedCount,
+                availableCount,
+                availableTodayCount,
+                reviewCount,
+                completedSessions,
+                featured
         );
     }
 
@@ -335,11 +373,18 @@ public class InterviewerService {
                 .thenComparing(User::getReviewCount, Comparator.nullsLast(Comparator.reverseOrder()));
     }
 
+    private Criteria interviewerCriteria(Boolean publicOnly) {
+        List<Criteria> criteria = new ArrayList<>();
+        criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
+        criteria.add(Criteria.where("accountEnabled").ne(false));
+        if (Boolean.TRUE.equals(publicOnly)) {
+            criteria.add(Criteria.where("publicProfileVisible").ne(false));
+        }
+        return new Criteria().andOperator(criteria.toArray(new Criteria[0]));
+    }
+
     private Criteria interviewerCriteria() {
-        return new Criteria().andOperator(
-                new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")),
-                Criteria.where("accountEnabled").ne(false)
-        );
+        return interviewerCriteria(false);
     }
 
     private List<String> splitOptions(List<String> values) {

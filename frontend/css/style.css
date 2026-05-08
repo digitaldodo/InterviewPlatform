@@ -3989,3 +3989,381 @@ textarea:focus-visible {
     border-radius: var(--radius) var(--radius) 0 0;
   }
 }
+
+/* Public marketplace polish */
+body.public-shell {
+  background:
+    radial-gradient(circle at top left, rgba(110, 231, 200, 0.16), transparent 32rem),
+    radial-gradient(circle at top right, rgba(138, 167, 255, 0.2), transparent 26rem),
+    linear-gradient(180deg, rgba(255,255,255,0.03), transparent 22rem),
+    #091018;
+  font-family: Manrope, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.public-shell h1,
+.public-shell h2,
+.public-shell h3,
+.public-shell summary,
+.public-shell .btn,
+.public-shell .badge,
+.public-shell .eyebrow {
+  font-family: "Space Grotesk", Manrope, Inter, sans-serif;
+}
+
+.public-shell h1 {
+  letter-spacing: -0.04em;
+}
+
+.public-shell h2 {
+  letter-spacing: -0.03em;
+}
+
+.landing-hero,
+.marketplace-hero {
+  padding-top: 4.5rem;
+}
+
+.landing-product-shell,
+.marketplace-filter-shell,
+.featured-market-card,
+.testimonial-card,
+.proof-card,
+.preview-person-card {
+  border-radius: 20px;
+}
+
+.landing-preview-grid {
+  gap: 1.1rem;
+}
+
+.marketplace-search-preview {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+}
+
+.preview-person-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.preview-person-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  transition: transform var(--transition-base), border-color var(--transition-base), background var(--transition-base);
+}
+
+.preview-person-card:hover,
+.featured-market-card:hover,
+.testimonial-card:hover,
+.proof-card:hover,
+.marketplace-filter-shell:hover {
+  transform: translateY(-2px);
+  border-color: rgba(110, 231, 200, 0.2);
+  background: rgba(255,255,255,0.06);
+}
+
+.preview-person-card strong,
+.featured-market-card h3,
+.testimonial-card strong,
+.proof-card strong,
+.highlight-item strong,
+.marketplace-results-head strong {
+  color: var(--text);
+}
+
+.proof-band {
+  padding-top: 1.2rem;
+}
+
+.public-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.proof-card {
+  padding: 1.25rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035));
+  box-shadow: var(--shadow-soft);
+}
+
+.proof-card p,
+.testimonial-quote,
+.market-card-bio {
+  margin-top: 0.55rem;
+}
+
+.split-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: none;
+}
+
+.featured-market-grid,
+.testimonial-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.featured-market-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.featured-market-card,
+.testimonial-card {
+  padding: 1.2rem;
+  border: 1px solid rgba(255,255,255,0.09);
+  background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035));
+  box-shadow: var(--shadow-soft);
+}
+
+.featured-market-head,
+.testimonial-head,
+.testimonial-identity,
+.marketplace-results-head,
+.profile-link-rail,
+.highlight-item,
+.marketplace-card-signals,
+.featured-market-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.featured-market-head,
+.testimonial-head {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.testimonial-identity {
+  align-items: center;
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.featured-market-actions,
+.profile-link-rail {
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.testimonial-card {
+  min-height: 100%;
+}
+
+.testimonial-quote {
+  color: var(--text);
+  font-size: 0.98rem;
+  line-height: 1.65;
+}
+
+.testimonial-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.testimonial-foot a {
+  color: var(--accent);
+  font-weight: 800;
+}
+
+.workflow-grid > div {
+  min-height: 100%;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  background: rgba(255,255,255,0.04);
+}
+
+.marketplace-stats-band {
+  padding-top: 1rem;
+}
+
+.marketplace-stat-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.marketplace-filter-shell {
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  box-shadow: var(--shadow-soft);
+}
+
+.marketplace-filter-shell summary {
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.marketplace-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.marketplace-filter-grid .check-row {
+  min-height: 44px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 0.72rem 0.8rem;
+  background: rgba(255,255,255,0.03);
+}
+
+.marketplace-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1rem 0 0.65rem;
+}
+
+.marketplace-results-head {
+  align-items: center;
+  justify-content: space-between;
+  margin: 1rem 0;
+}
+
+.marketplace-grid {
+  margin-top: 0.6rem;
+}
+
+.marketplace-card {
+  min-height: 100%;
+}
+
+.marketplace-card-score {
+  min-width: max-content;
+  text-align: right;
+  color: var(--muted);
+}
+
+.marketplace-card-score strong {
+  display: block;
+  color: var(--text);
+}
+
+.marketplace-card-signals {
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.marketplace-card-signals span {
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 999px;
+  padding: 0.26rem 0.55rem;
+  background: rgba(255,255,255,0.03);
+}
+
+.marketplace-empty {
+  grid-column: 1 / -1;
+}
+
+.public-profile-page .public-profile-shell {
+  padding-top: 2rem;
+}
+
+.profile-hero-card,
+.public-profile-detail-card,
+.public-review-section {
+  border-radius: 20px;
+}
+
+.profile-hero-avatar {
+  width: 94px;
+  height: 94px;
+  border-radius: 24px;
+}
+
+.highlight-list {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.highlight-item {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-direction: column;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+}
+
+.highlight-item p {
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+}
+
+.public-profile-detail-card .btn {
+  margin-top: 0.9rem;
+}
+
+.marketplace-skeleton,
+.review-skeleton {
+  min-height: 220px;
+}
+
+@media (max-width: 1100px) {
+  .public-proof-grid,
+  .featured-market-grid,
+  .testimonial-grid,
+  .marketplace-stat-grid,
+  .marketplace-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .split-heading,
+  .testimonial-foot,
+  .featured-market-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 760px) {
+  .public-proof-grid,
+  .featured-market-grid,
+  .testimonial-grid,
+  .marketplace-stat-grid,
+  .marketplace-filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-person-card {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .marketplace-results-head,
+  .featured-market-actions,
+  .profile-link-rail {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .marketplace-card-score {
+    text-align: left;
+  }
+}

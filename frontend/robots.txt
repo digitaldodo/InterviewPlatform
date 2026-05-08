@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://interview-platform-frontend.onrender.com/sitemap.xml

@@ -3,31 +3,51 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interviewer Profile - InterviewPrep</title>
-  <meta name="description" content="Public interviewer profile on InterviewPrep." />
+  <title>InterviewPrep Profile | Public Interviewer</title>
+  <meta name="description" content="Public interviewer profile on InterviewPrep with reviews, trust indicators, and availability preview." />
   <meta name="robots" content="index,follow" />
   <meta property="og:type" content="profile" />
-  <meta property="og:title" content="Interviewer Profile - InterviewPrep" />
-  <meta property="og:description" content="Public interviewer profile on InterviewPrep." />
+  <meta property="og:title" content="InterviewPrep Profile | Public Interviewer" />
+  <meta property="og:description" content="Public interviewer profile on InterviewPrep with reviews, trust indicators, and availability preview." />
   <meta property="og:image" content="../assets/brand/interviewprep-logo.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Interviewer Profile - InterviewPrep" />
-  <meta name="twitter:description" content="Public interviewer profile on InterviewPrep." />
+  <meta name="twitter:title" content="InterviewPrep Profile | Public Interviewer" />
+  <meta name="twitter:description" content="Public interviewer profile on InterviewPrep with reviews, trust indicators, and availability preview." />
   <meta name="twitter:image" content="../assets/brand/interviewprep-logo.png" />
+  <link rel="canonical" href="https://interview-platform-frontend.onrender.com/pages/interviewer.html" />
   <link rel="icon" type="image/png" sizes="32x32" href="../assets/brand/favicon-32.png" />
   <link rel="apple-touch-icon" href="../assets/brand/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" />
   <link rel="stylesheet" href="../css/style.css" />
 </head>
-<body>
+<body class="public-shell public-profile-page">
+  <header class="public-nav">
+    <a class="brand" href="../index.html" aria-label="InterviewPrep home">
+      <img class="brand-logo brand-logo-nav" src="../assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1503" height="236" />
+    </a>
+    <nav class="public-links" aria-label="Primary">
+      <a href="../marketplace.html">Marketplace</a>
+      <a href="../index.html#reviews">Reviews</a>
+      <a href="../index.html#how">How it works</a>
+    </nav>
+    <a class="btn btn-outline btn-sm" href="../index.html#auth">Sign in</a>
+  </header>
+
   <main class="public-profile-shell">
     <section class="public-profile-wrap" id="public-profile-root">
-      <div class="panel"><p>Loading interviewer profile...</p></div>
+      <div class="panel"><div class="empty-state empty-state-rich"><strong>Loading public profile</strong><p>Gathering trust signals, reviews, and live availability.</p></div></div>
     </section>
   </main>
+
+  <footer class="public-footer">
+    <span>InterviewPrep Profile</span>
+    <span>Shareable interviewer pages with richer discovery context.</span>
+  </footer>
+
   <script src="../js/env.js"></script>
+  <script src="../js/public-common.js"></script>
   <script src="../js/public-profile.js"></script>
 </body>
 </html>

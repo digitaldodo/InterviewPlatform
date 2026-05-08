@@ -81,6 +81,16 @@ public class MarketplaceDtos {
             List<PublicReview> reviews
     ) {}
 
+    public record PublicMarketplaceSummary(
+            long interviewerCount,
+            long verifiedCount,
+            long availableCount,
+            long availableTodayCount,
+            long reviewCount,
+            long completedSessions,
+            List<InterviewerCard> featuredInterviewers
+    ) {}
+
     public record PrepTrack(
             String title,
             String summary,

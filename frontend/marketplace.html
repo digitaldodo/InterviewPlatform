@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>InterviewPrep Marketplace | Browse Public Interviewers</title>
+  <meta name="description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta name="robots" content="index,follow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="InterviewPrep Marketplace | Browse Public Interviewers" />
+  <meta property="og:description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta property="og:image" content="assets/brand/interviewprep-logo.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="InterviewPrep Marketplace | Browse Public Interviewers" />
+  <meta name="twitter:description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta name="twitter:image" content="assets/brand/interviewprep-logo.png" />
+  <link rel="canonical" href="https://interview-platform-frontend.onrender.com/marketplace.html" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/favicon-32.png" />
+  <link rel="apple-touch-icon" href="assets/brand/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="public-shell public-marketplace-page">
+  <header class="public-nav">
+    <a class="brand" href="index.html" aria-label="InterviewPrep home">
+      <img class="brand-logo brand-logo-nav" src="assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1503" height="236" />
+    </a>
+    <nav class="public-links" aria-label="Primary">
+      <a href="index.html#featured">Featured</a>
+      <a href="index.html#reviews">Reviews</a>
+      <a href="index.html#how">How it works</a>
+    </nav>
+    <a class="btn btn-outline btn-sm" href="index.html#auth">Sign in</a>
+  </header>
+
+  <main>
+    <section class="public-hero marketplace-hero">
+      <div class="hero-copy">
+        <div class="eyebrow">Public marketplace</div>
+        <h1>Find the right interviewer faster.</h1>
+        <p>Search public profiles by role, topic, company, language, trust signals, and booking readiness before you ever enter the product workspace.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="index.html#auth">Sign in to book</a>
+          <a class="btn btn-ghost" href="index.html">Back to homepage</a>
+        </div>
+        <p class="availability-muted" id="marketplace-hero-note">Loading public marketplace summary.</p>
+      </div>
+      <div class="hero-product landing-product-shell">
+        <div class="preview-toolbar">
+          <span></span><span></span><span></span>
+          <strong>Featured now</strong>
+        </div>
+        <div class="preview-grid landing-preview-grid" id="marketplace-hero-preview"></div>
+      </div>
+    </section>
+
+    <section class="public-band marketplace-stats-band">
+      <div class="stats-grid marketplace-stat-grid">
+        <div class="stat-card"><span id="marketplace-stat-public">0</span><p>Public interviewer profiles</p></div>
+        <div class="stat-card"><span id="marketplace-stat-verified">0</span><p>Verified experts</p></div>
+        <div class="stat-card"><span id="marketplace-stat-available">0</span><p>Accepting bookings</p></div>
+        <div class="stat-card"><span id="marketplace-stat-reviews">0</span><p>Total review signals</p></div>
+      </div>
+    </section>
+
+    <section class="public-band marketplace-results-band">
+      <div class="section-heading split-heading">
+        <div>
+          <span class="eyebrow">Discovery</span>
+          <h2>Responsive browsing with shareable filters and clearer card hierarchy.</h2>
+        </div>
+        <button class="btn btn-ghost btn-sm" type="button" onclick="clearMarketplaceFilters()">Clear all filters</button>
+      </div>
+
+      <details class="marketplace-filter-shell" open>
+        <summary>Search and filters</summary>
+        <div class="marketplace-filter-grid">
+          <input id="marketplace-search" type="search" placeholder="Search by skill, company, role, or name" />
+          <select id="marketplace-sort">
+            <option value="top-rated">Top rated</option>
+            <option value="most-experienced">Most experienced</option>
+            <option value="most-active">Most active</option>
+            <option value="newest">Newest</option>
+          </select>
+          <input id="filter-expertise" type="hidden" aria-label="Expertise" />
+          <input id="filter-company" type="hidden" aria-label="Company" />
+          <input id="filter-language" type="hidden" aria-label="Language" />
+          <input id="filter-timezone" type="hidden" aria-label="Timezone" />
+          <input id="filter-topic" type="hidden" aria-label="Interview topic" />
+          <select id="filter-years">
+            <option value="">Any experience</option>
+            <option value="1">1+ years</option>
+            <option value="3">3+ years</option>
+            <option value="5">5+ years</option>
+            <option value="8">8+ years</option>
+            <option value="10">10+ years</option>
+          </select>
+          <select id="filter-rating">
+            <option value="">Any rating</option>
+            <option value="4">4+ stars</option>
+            <option value="4.5">4.5+ stars</option>
+            <option value="5">5 stars</option>
+          </select>
+          <select id="filter-duration">
+            <option value="">Any duration</option>
+            <option value="30">30 min</option>
+            <option value="45">45 min</option>
+            <option value="60">60 min</option>
+          </select>
+          <label class="check-row"><input id="filter-available" type="checkbox" /> Accepting bookings</label>
+          <label class="check-row"><input id="filter-available-today" type="checkbox" /> Available today</label>
+          <label class="check-row"><input id="filter-verified" type="checkbox" /> Verified only</label>
+        </div>
+      </details>
+
+      <div class="marketplace-shortcuts" id="marketplace-shortcuts"></div>
+      <div class="filter-chip-row" id="marketplace-active-filters"></div>
+
+      <div class="marketplace-results-head">
+        <strong id="marketplace-result-summary">Loading marketplace</strong>
+        <span class="filter-match-note" id="marketplace-page-label">Page 1 of 1</span>
+      </div>
+
+      <div id="public-marketplace-grid" class="interviewer-grid marketplace-grid skeleton-grid"></div>
+
+      <div class="pagination-row">
+        <button class="btn btn-outline btn-sm" type="button" onclick="changeMarketplacePage(-1)">Previous</button>
+        <span id="marketplace-page-label-bottom">Browse public interviewers</span>
+        <button class="btn btn-outline btn-sm" type="button" onclick="changeMarketplacePage(1)">Next</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="public-footer">
+    <span>InterviewPrep Marketplace</span>
+    <span>Public profiles, better search, cleaner comparison.</span>
+  </footer>
+
+  <script src="js/env.js"></script>
+  <script src="js/public-common.js"></script>
+  <script src="js/formControls.js"></script>
+  <script src="js/public-marketplace.js"></script>
+</body>
+</html>
