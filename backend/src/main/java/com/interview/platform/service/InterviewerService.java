@@ -75,7 +75,7 @@ public class InterviewerService {
                     Criteria.where("interviewTopics").regex(pattern)
             ));
         }
-        if (!isBlank(expertise)) addAnyFieldContains(criteria, List.of("skills"), splitOptions(expertise));
+        if (!isBlank(expertise)) addAnyFieldContains(criteria, List.of("preferredDomains", "skills"), splitOptions(expertise));
         if (!isBlank(company)) addAnyFieldContains(criteria, List.of("company"), splitOptions(company));
         if (!isBlank(role)) criteria.add(Criteria.where("currentRole").regex(Pattern.compile(Pattern.quote(role.trim()), Pattern.CASE_INSENSITIVE)));
         if (!isBlank(language)) addAnyFieldContains(criteria, List.of("language"), splitOptions(language));
@@ -294,16 +294,27 @@ public class InterviewerService {
                 .include("company")
                 .include("experienceLevel")
                 .include("timeZone")
+                .include("preferredDomains")
                 .include("interviewTopics")
                 .include("sessionDurations");
         List<User> interviewers = mongoTemplate.find(query, User.class);
+        List<String> domains = uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getPreferredDomains()).stream()).toList());
         return new InterviewerFilterOptions(
-                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getSkills()).stream()).toList()),
+                domains.isEmpty()
+                        ? uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getSkills()).stream()).toList())
+                        : domains,
                 uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getLanguage()).stream()).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getCompany).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getExperienceLevel).toList()),
                 uniqueNormalized(interviewers.stream().map(User::getTimeZone).toList()),
-                uniqueNormalized(interviewers.stream().flatMap(user -> splitOptions(user.getInterviewTopics()).stream()).toList()),
+                uniqueNormalized(interviewers.stream()
+                        .flatMap(user -> {
+                            List<String> topics = new ArrayList<>();
+                            topics.addAll(splitOptions(user.getInterviewTopics()));
+                            topics.addAll(splitOptions(user.getSkills()));
+                            return topics.stream();
+                        })
+                        .toList()),
                 uniqueIntegers(interviewers.stream().flatMap(user -> user.getSessionDurations().stream()).toList())
         );
     }

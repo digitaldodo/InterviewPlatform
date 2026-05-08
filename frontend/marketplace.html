@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>InterviewPrep Marketplace | Browse Public Interviewers</title>
-  <meta name="description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta name="description" content="Search public interviewer profiles by domain, topic, company, language, availability, and trust signals." />
   <meta name="robots" content="index,follow" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="InterviewPrep Marketplace | Browse Public Interviewers" />
-  <meta property="og:description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta property="og:description" content="Search public interviewer profiles by domain, topic, company, language, availability, and trust signals." />
   <meta property="og:image" content="assets/brand/interviewprep-logo.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="InterviewPrep Marketplace | Browse Public Interviewers" />
-  <meta name="twitter:description" content="Search public interviewer profiles by expertise, company, language, availability, and trust signals." />
+  <meta name="twitter:description" content="Search public interviewer profiles by domain, topic, company, language, availability, and trust signals." />
   <meta name="twitter:image" content="assets/brand/interviewprep-logo.png" />
   <link rel="canonical" href="https://interview-platform-frontend.onrender.com/marketplace.html" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/brand/favicon-32.png" />
@@ -76,15 +76,16 @@
 
       <details class="marketplace-filter-shell" open>
         <summary>Search and filters</summary>
+        <p class="marketplace-filter-note">Domains are broad specialization areas. Topics are specific technologies and interview subjects.</p>
         <div class="marketplace-filter-grid">
-          <input id="marketplace-search" type="search" placeholder="Search by skill, company, role, or name" />
+          <input id="marketplace-search" type="search" placeholder="Search by domain, topic, company, role, or name" />
           <select id="marketplace-sort">
             <option value="top-rated">Top rated</option>
             <option value="most-experienced">Most experienced</option>
             <option value="most-active">Most active</option>
             <option value="newest">Newest</option>
           </select>
-          <input id="filter-expertise" type="hidden" aria-label="Expertise" />
+          <input id="filter-expertise" type="hidden" aria-label="Interview domain" />
           <input id="filter-company" type="hidden" aria-label="Company" />
           <input id="filter-language" type="hidden" aria-label="Language" />
           <input id="filter-timezone" type="hidden" aria-label="Timezone" />

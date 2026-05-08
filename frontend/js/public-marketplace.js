@@ -25,8 +25,8 @@ async function initPublicMarketplace() {
 
 function initMarketplaceFilters() {
   FormUx.initMultiSearchSelect('filter-expertise', {
-    placeholder: 'Expertise',
-    label: 'Filter by expertise',
+    placeholder: 'Domain',
+    label: 'Filter by interview domain',
     className: 'discovery-filter-control',
   });
   FormUx.initSearchSelect('filter-company', {
@@ -296,7 +296,7 @@ function renderMarketplaceChips() {
   if (!host) return;
   const chips = [];
   addChip(chips, 'marketplace-search', 'Search');
-  addChip(chips, 'filter-expertise', 'Expertise');
+  addChip(chips, 'filter-expertise', 'Domain');
   addChip(chips, 'filter-company', 'Company');
   addChip(chips, 'filter-language', 'Language');
   addChip(chips, 'filter-timezone', 'Timezone');
@@ -451,8 +451,8 @@ function hydrateMarketplaceSeo(summary, items = []) {
   const title = 'InterviewPrep Marketplace | Browse Public Interviewers';
   const hasSummary = summary && Number(summary.interviewerCount || 0) > 0;
   const description = hasSummary
-    ? `Compare ${formatCount(summary.interviewerCount)} public interviewers, ${formatCount(summary.verifiedCount)} verified experts, and live availability before booking your next mock interview.`
-    : 'Browse public interviewer profiles, compare specialties, and discover live mock interview availability.';
+    ? `Compare ${formatCount(summary.interviewerCount)} public interviewers by domain, topic, language, and live availability before booking your next mock interview.`
+    : 'Browse public interviewer profiles, compare domains, topics, and live mock interview availability.';
   const url = publicPageUrl('/marketplace.html');
   const image = publicPageUrl('/assets/brand/interviewprep-logo.png');
   document.title = title;

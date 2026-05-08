@@ -507,8 +507,8 @@ function bindFilters() {
 
 function initDiscoveryFilterControls() {
   FormUx.initSearchSelect('filter-expertise', {
-    placeholder: 'Expertise',
-    label: 'Filter by interviewer expertise',
+    placeholder: 'Domain',
+    label: 'Filter by interview domain',
     className: 'discovery-filter-control',
     options: discoveryFilterOptions.expertise,
   });
@@ -2467,8 +2467,9 @@ function renderProfile() {
       </div>
       <div class="form-grid">
         <div class="form-group">
-          <label for="profile-skills">Skills</label>
+          <label for="profile-skills">Skills / technologies</label>
           <input id="profile-skills" value="${esc((currentUser.skills || []).join(', '))}" placeholder="Java, DSA, System Design" />
+          <small class="field-hint">Specific technologies, tools, and interview skills.</small>
         </div>
         <div class="form-group">
           <label for="profile-language">Languages</label>
@@ -2487,9 +2488,9 @@ function renderProfile() {
       </div>
       <div class="form-grid">
         <div class="form-group">
-          <label for="profile-domains">Preferred interview domains</label>
-          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend, Frontend, HR" />
-          <small class="field-hint">Press Enter or comma to add a domain. Suggestions and custom domains are both supported.</small>
+          <label for="profile-domains">Interview domains</label>
+          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend Engineering, Frontend Engineering, HR" />
+          <small class="field-hint">Broad interview specialization areas.</small>
         </div>
         <div class="form-group">
           <label for="profile-experience">Experience level</label>
@@ -2512,12 +2513,15 @@ function renderProfile() {
         <div class="form-group">
           <label for="profile-topics">Interview topics</label>
           <input id="profile-topics" value="${esc((currentUser.interviewTopics || []).join(', '))}" placeholder="System Design, Behavioral, DSA" />
+          <small class="field-hint">Specific technologies and interview subjects.</small>
         </div>
         <div class="form-group">
           <label for="profile-durations">Session durations</label>
-          <select id="profile-durations" multiple>
-            ${AVAILABILITY_DURATIONS.map(duration => `<option value="${duration}" ${(currentUser.sessionDurations || []).includes(duration) ? 'selected' : ''}>${duration} minutes</option>`).join('')}
-          </select>
+          <input id="profile-durations" type="hidden" value="${esc((currentUser.sessionDurations || []).join(', '))}" />
+          <div class="duration-pill-group" id="profile-duration-pills" role="group" aria-label="Session durations">
+            ${AVAILABILITY_DURATIONS.map(duration => renderDurationPill(duration, (currentUser.sessionDurations || []).map(Number).includes(duration))).join('')}
+          </div>
+          <small class="field-hint">Select preferred interview lengths.</small>
         </div>
       </div>
       ${showInterviewerSetup ? `
@@ -2693,15 +2697,15 @@ function initProfileControls() {
   FormUx.initTagInput('profile-skills', { placeholder: 'Add skill or expertise' });
   FormUx.initTagInput('profile-domains', {
     placeholder: 'Add domain',
-    label: 'Add preferred interview domain',
-    suggestions: DOMAIN_SUGGESTIONS,
+    label: 'Add interview domain',
+    suggestions: discoveryFilterOptions.expertise.length ? discoveryFilterOptions.expertise : DOMAIN_SUGGESTIONS,
     commitOnTab: false,
     suggestionClickCommits: false,
   });
   FormUx.initTagInput('profile-topics', {
     placeholder: 'Add interview topic',
     label: 'Add interview topic',
-    suggestions: TOPIC_OPTIONS,
+    suggestions: discoveryFilterOptions.topics.length ? discoveryFilterOptions.topics : TOPIC_OPTIONS,
   });
   FormUx.initLanguageSelect('profile-language', { placeholder: 'Search languages' });
   FormUx.initSearchSelect('profile-timezone', {
@@ -2710,6 +2714,7 @@ function initProfileControls() {
     options: discoveryFilterOptions.timeZones.length ? discoveryFilterOptions.timeZones : TIMEZONE_SUGGESTIONS,
     preserveCase: true,
   });
+  syncProfileDurationInput();
 }
 
 function intervieweeAvailabilityValues() {
@@ -2740,11 +2745,35 @@ function profileAvailabilityPayload() {
 }
 
 function selectedProfileDurations() {
-  const select = document.getElementById('profile-durations');
-  if (!select) return [];
-  return Array.from(select.selectedOptions || [])
-    .map(option => Number(option.value))
+  const input = document.getElementById('profile-durations');
+  if (!input) return [];
+  return String(input.value || '').split(',')
+    .map(value => Number(value.trim()))
     .filter(value => Number.isFinite(value) && value > 0);
+}
+
+function renderDurationPill(duration, selected) {
+  return `<button class="chip duration-pill ${selected ? 'active' : ''}" type="button" aria-pressed="${selected}" data-duration="${duration}" onclick="toggleProfileDuration(${duration})">${duration} min</button>`;
+}
+
+function toggleProfileDuration(duration) {
+  const button = document.querySelector(`#profile-duration-pills [data-duration="${duration}"]`);
+  if (!button) return;
+  const active = !button.classList.contains('active');
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', String(active));
+  syncProfileDurationInput();
+}
+
+function syncProfileDurationInput() {
+  const input = document.getElementById('profile-durations');
+  const host = document.getElementById('profile-duration-pills');
+  if (!input || !host) return;
+  const values = Array.from(host.querySelectorAll('.duration-pill.active'))
+    .map(button => Number(button.dataset.duration))
+    .filter(value => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  input.value = values.join(', ');
 }
 
 function filterSelf(list) {
@@ -4067,7 +4096,7 @@ function renderActiveFilterChips() {
   const filters = collectDiscoveryFilters();
   const chips = [
     filters.q && ['search-q', `Search: ${filters.q}`],
-    filters.expertise && ['filter-expertise', filters.expertise],
+    filters.expertise && ['filter-expertise', `Domain: ${filters.expertise}`],
     filters.company && ['filter-company', filters.company],
     filters.language && ['filter-language', filters.language],
     filters.timezone && ['filter-timezone', filters.timezone],

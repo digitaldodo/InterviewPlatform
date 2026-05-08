@@ -2761,6 +2761,22 @@ textarea:focus-visible {
   border-color: rgba(110, 231, 200, 0.35);
 }
 
+.duration-pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.duration-pill {
+  min-height: 38px;
+  background: rgba(255,255,255,0.03);
+}
+
+.duration-pill.active {
+  background: rgba(110, 231, 200, 0.12);
+  box-shadow: 0 0 0 3px rgba(110, 231, 200, 0.08);
+}
+
 .session-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -4235,6 +4251,11 @@ body.public-shell {
   cursor: pointer;
   font-size: 1rem;
   color: var(--text);
+}
+
+.marketplace-filter-note {
+  margin-top: 0.65rem;
+  font-size: 0.86rem;
 }
 
 .marketplace-filter-grid {
