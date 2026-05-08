@@ -485,7 +485,10 @@ function hydrateMarketplaceSeo(summary, items = []) {
 }
 
 function visiblePublicProfiles(items) {
-  return (Array.isArray(items) ? items : []).filter(item => item?.publicProfileVisible !== false && item?.isPublicProfile !== false);
+  return (Array.isArray(items) ? items : []).filter(item => {
+    const username = String(item?.username || '').trim();
+    return username && item?.publicProfileVisible !== false && item?.isPublicProfile !== false;
+  });
 }
 
 window.clearMarketplaceFilters = clearMarketplaceFilters;

@@ -54,6 +54,9 @@ services:
     staticPublishPath: .
     routes:
       - type: rewrite
+        source: /interviewer
+        destination: /pages/interviewer.html
+      - type: rewrite
         source: /interviewer/*
         destination: /pages/interviewer.html
     autoDeploy: true

@@ -675,6 +675,7 @@ async function loadRecommended() {
   try {
     const data = await api(`/api/interviewers/recommended?intervieweeId=${currentUser.id}`);
     const recommendations = filterSelf(data || [])
+      .filter(item => String(item?.username || '').trim())
       .sort((a, b) => recommendationScore(b) - recommendationScore(a))
       .slice(0, 4);
     rememberInterviewers(recommendations);
@@ -713,6 +714,7 @@ function renderInterviewerCard(interviewer) {
   const durations = Array.isArray(interviewer.sessionDurations) ? interviewer.sessionDurations.slice(0, 3) : [];
   const reliability = Number(interviewer.reliabilityScore || 0);
   const bookable = isInterviewerBookable(interviewer);
+  const publicUrl = publicProfileUrl(interviewer?.username);
   return `
     <article class="interviewer-card">
       <div class="interviewer-card-main">
@@ -745,7 +747,7 @@ function renderInterviewerCard(interviewer) {
         <span class="availability-pill">${esc(interviewer.timeZone || 'Timezone flexible')}</span>
         ${durations.length ? `<span class="availability-pill">${esc(durations.join(' / '))} min</span>` : ''}
         <div class="card-actions">
-          <button class="btn btn-outline btn-sm" onclick="openProfile('${interviewer.id}')">Profile</button>
+          <a class="btn btn-outline btn-sm" href="${esc(publicUrl)}" target="_blank" rel="noreferrer">Profile</a>
           <button class="btn ${bookable ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="selectInterviewer('${interviewer.id}')">${bookable ? 'Book' : 'View status'}</button>
         </div>
       </div>
@@ -758,10 +760,11 @@ function renderCompactInterviewer(interviewer, index = 0) {
   const rankLabel = recommendationRankLabel(score, index);
   const availability = recommendationAvailabilityLabel(interviewer);
   const bookable = isInterviewerBookable(interviewer);
+  const publicUrl = publicProfileUrl(interviewer?.username);
   return `
-    <button class="mini-interviewer recommendation-card" onclick="selectInterviewer('${interviewer.id}')">
+    <div class="mini-interviewer recommendation-card">
       ${avatarMarkup(interviewer, 'avatar avatar-compact')}
-      <span class="mini-interviewer-copy">
+      <button class="mini-interviewer-copy recommendation-card-main" type="button" onclick="selectInterviewer('${interviewer.id}')">
         <strong>${esc(interviewerName(interviewer))}</strong>
         <small>${esc(interviewerRole(interviewer))}</small>
         <small class="recommendation-meta">
@@ -769,8 +772,9 @@ function renderCompactInterviewer(interviewer, index = 0) {
           <span class="recommendation-availability ${bookable ? '' : 'is-muted'}">${esc(availability)}</span>
           ${interviewer?.interviewerVerified ? '<span class="recommendation-verified">Verified</span>' : ''}
         </small>
-      </span>
-    </button>
+      </button>
+      <a class="btn btn-outline btn-sm" href="${esc(publicUrl)}" target="_blank" rel="noreferrer">Profile</a>
+    </div>
   `;
 }
 
@@ -800,7 +804,7 @@ async function openProfile(id) {
     const interviewer = await api(`/api/interviewers/${id}`);
     selectedInterviewer = interviewer;
     rememberInterviewers([interviewer]);
-    const publicUrl = publicProfileUrl(interviewer.username || interviewer.id);
+    const publicUrl = publicProfileUrl(interviewer.username);
     const reliability = Number(interviewer.reliabilityScore || 0);
     modal(`
       <div class="profile-modal">
@@ -903,6 +907,7 @@ function renderBookingInterviewerStep() {
 function renderBookingInterviewerCard(interviewer) {
   const skills = Array.isArray(interviewer.skills) ? interviewer.skills.slice(0, 3) : [];
   const bookable = isInterviewerBookable(interviewer);
+  const publicUrl = publicProfileUrl(interviewer?.username);
   return `
     <article class="mini-card booking-interviewer-card">
       <div class="booking-card-profile">
@@ -921,6 +926,7 @@ function renderBookingInterviewerCard(interviewer) {
       <p class="bio">${esc(bioPreview(interviewer.bio, 118))}</p>
       <div class="booking-card-actions">
         <span class="availability-pill ${bookable ? '' : 'is-muted'}">${esc(availabilityLabel(interviewer))}</span>
+        <a class="btn btn-outline btn-sm" href="${esc(publicUrl)}" target="_blank" rel="noreferrer">Profile</a>
         <button class="btn ${bookable ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="selectInterviewer('${interviewer.id}')">${bookable ? 'Select' : 'View status'}</button>
       </div>
     </article>
@@ -2652,7 +2658,7 @@ function renderProfile() {
             </label>
           </div>
           <div class="profile-link-row">
-            <p class="availability-summary-note">Your public profile link: <a href="${esc(publicProfileUrl(currentUser.username || currentUser.id))}" target="_blank" rel="noreferrer">${esc(publicProfileUrl(currentUser.username || currentUser.id))}</a></p>
+            <p class="availability-summary-note">Your public profile link: <a href="${esc(publicProfileUrl(currentUser.username))}" target="_blank" rel="noreferrer">${esc(publicProfileUrl(currentUser.username))}</a></p>
             <div class="card-actions">
               <button class="btn btn-outline btn-sm" type="button" onclick="copyPublicProfileLink()">Copy link</button>
             </div>
@@ -4173,8 +4179,8 @@ function emptyState(text) {
 function publicProfileUrl(username) {
   const value = String(username || '').trim();
   const origin = window.INTERVIEW_SITE_URL || window.location.origin;
-  if (!value) return new URL('/pages/interviewer.html', origin).toString();
-  return new URL(`/interviewer/${encodeURIComponent(value)}`, origin).toString();
+  if (!value) return new URL('/interviewer', origin).toString();
+  return new URL(`/interviewer/${encodeURIComponent(value.toLowerCase())}`, origin).toString();
 }
 
 function discoveryStorageKey() {
@@ -5615,7 +5621,7 @@ function setAdminFilter(section, key, value) {
 }
 
 function copyPublicProfileLink() {
-  copyText(publicProfileUrl(currentUser.username || currentUser.id), 'Public profile link copied.');
+  copyText(publicProfileUrl(currentUser.username), 'Public profile link copied.');
 }
 
 async function copyText(text, successMessage = 'Copied.') {

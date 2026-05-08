@@ -1209,6 +1209,21 @@ textarea:focus-visible {
   gap: 0.12rem;
 }
 
+.recommendation-card-main {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.recommendation-card .btn {
+  margin-left: auto;
+}
+
 .recommendation-meta {
   display: flex;
   align-items: center;
