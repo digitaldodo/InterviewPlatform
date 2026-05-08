@@ -1,4 +1,4 @@
-const API_BASE = window.INTERVIEW_API_BASE;
+const API_BASE = window.INTERVIEW_API_BASE || '';
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,24}$/;
 
 const authStore = {
@@ -24,16 +24,17 @@ let pendingVerificationEmail = '';
 
 window.addEventListener('DOMContentLoaded', () => {
   const storedUser = authStore.user();
-  if (storedUser?.id && storedUser.isVerified !== false) {
+  const authEntry = isAuthEntryRoute();
+  if (storedUser?.id && storedUser.isVerified !== false && !authEntry) {
     window.location.href = 'pages/dashboard.html';
     return;
   }
-  document.getElementById('interviewer-fields').style.display = 'none';
-  document.getElementById('reset-otp-group').style.display = 'none';
-  document.getElementById('reset-password-group').style.display = 'none';
-  document.getElementById('reset-resend').style.display = 'none';
+  setDisplay('interviewer-fields', 'none');
+  setDisplay('reset-otp-group', 'none');
+  setDisplay('reset-password-group', 'none');
+  setDisplay('reset-resend', 'none');
   initRegisterControls();
-  FormUx.initPasswordToggles();
+  if (typeof FormUx !== 'undefined') FormUx.initPasswordToggles();
   bindUsernameValidation('reg-username', 'reg-username-status');
   updateRoleFields();
   if (storedUser?.id && storedUser.isVerified === false) {
@@ -49,19 +50,41 @@ window.addEventListener('DOMContentLoaded', () => {
   if (pendingEmail) {
     beginEmailVerification(pendingEmail);
   }
+  applyAuthEntryRoute();
 });
 
 document.querySelectorAll('#reg-role-group input').forEach(input => input.addEventListener('change', updateRoleFields));
+
+function isAuthEntryRoute() {
+  const path = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+  return ['auth', 'login', 'register'].includes(hash) || ['/auth', '/login', '/register', '/index.html/auth'].includes(path);
+}
+
+function applyAuthEntryRoute() {
+  const path = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+  if (hash === 'register' || path === '/register') switchTab('register');
+  if (['auth', 'login', 'register'].includes(hash) || ['/auth', '/login', '/register', '/index.html/auth'].includes(path)) {
+    document.getElementById('auth')?.scrollIntoView({ block: 'start' });
+  }
+}
+
+function setDisplay(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = value;
+}
 
 function selectedRoles() {
   return Array.from(document.querySelectorAll('#reg-role-group input:checked')).map(input => input.value);
 }
 
 function updateRoleFields() {
-  document.getElementById('interviewer-fields').style.display = selectedRoles().includes('INTERVIEWER') ? 'block' : 'none';
+  setDisplay('interviewer-fields', selectedRoles().includes('INTERVIEWER') ? 'block' : 'none');
 }
 
 function initRegisterControls() {
+  if (typeof FormUx === 'undefined') return;
   FormUx.initLanguageSelect('reg-language', { placeholder: 'Search languages' });
   FormUx.initTagInput('reg-skills', { placeholder: 'Add expertise' });
 }
@@ -93,13 +116,15 @@ function beginEmailVerification(email, options = {}) {
   pendingVerificationEmail = String(email || '').trim();
   if (pendingVerificationEmail) {
     sessionStorage.setItem('ip_pending_verification_email', pendingVerificationEmail);
-    document.getElementById('otp-email').value = pendingVerificationEmail;
+    const otpEmail = document.getElementById('otp-email');
+    if (otpEmail) otpEmail.value = pendingVerificationEmail;
   }
   setVerifyCopy(
     options.title || 'Account created successfully.',
     options.body || 'We sent a verification code to your email.'
   );
-  document.getElementById('otp-code').value = '';
+  const otpCode = document.getElementById('otp-code');
+  if (otpCode) otpCode.value = '';
   switchTab('verify');
   if (options.alert) {
     showAlert('otp-alert', options.alert, options.alertType || 'success');
@@ -114,8 +139,10 @@ function completeEmailVerification(email) {
   sessionStorage.removeItem('ip_pending_verification_email');
   pendingVerificationEmail = '';
   authStore.clear();
-  document.getElementById('login-email').value = verifiedEmail;
-  document.getElementById('login-password').value = '';
+  const loginEmail = document.getElementById('login-email');
+  const loginPassword = document.getElementById('login-password');
+  if (loginEmail) loginEmail.value = verifiedEmail;
+  if (loginPassword) loginPassword.value = '';
   switchTab('login');
   showAlert('login-alert', 'Email verified. You can sign in now.', 'success');
   setTimeout(() => document.getElementById('login-password')?.focus(), 50);
@@ -228,6 +255,7 @@ async function api(path, options = {}, attempt = 0) {
   if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
     headers['Content-Type'] = 'application/json';
   }
+  if (!API_BASE) throw new Error('API configuration is unavailable. Please refresh and try again.');
   const res = await fetchWithTimeout(`${API_BASE}${path}`, {
     ...options,
     headers,
@@ -281,7 +309,7 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-document.getElementById('login-form').addEventListener('submit', async event => {
+document.getElementById('login-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('login-submit');
   const identifier = document.getElementById('login-email').value.trim();
@@ -313,11 +341,11 @@ document.getElementById('login-form').addEventListener('submit', async event => 
   }
 });
 
-document.getElementById('register-form').addEventListener('submit', async event => {
+document.getElementById('register-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('register-submit');
   const roles = selectedRoles();
-  const skills = FormUx.getTagValues('reg-skills');
+  const skills = typeof FormUx !== 'undefined' ? FormUx.getTagValues('reg-skills') : [];
   if (!roles.length) {
     showAlert('register-alert', 'Select at least one workspace role.');
     return;
@@ -340,7 +368,7 @@ document.getElementById('register-form').addEventListener('submit', async event 
         company: document.getElementById('reg-company').value.trim(),
         currentRole: document.getElementById('reg-current-role').value.trim(),
         yearsExperience: Number(document.getElementById('reg-years').value || 0),
-        language: FormUx.getLanguageString('reg-language'),
+        language: typeof FormUx !== 'undefined' ? FormUx.getLanguageString('reg-language') : '',
         skills,
       }),
     });
@@ -353,7 +381,7 @@ document.getElementById('register-form').addEventListener('submit', async event 
   }
 });
 
-document.getElementById('otp-form').addEventListener('submit', async event => {
+document.getElementById('otp-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('otp-submit');
   const email = document.getElementById('otp-email').value.trim();
@@ -394,15 +422,16 @@ async function resendOtp() {
 function openResetPanel() {
   switchTab('reset');
   resetEmail = '';
-  document.getElementById('reset-form').reset();
-  document.getElementById('forgot-email-group').style.display = 'flex';
-  document.getElementById('reset-otp-group').style.display = 'none';
-  document.getElementById('reset-password-group').style.display = 'none';
-  document.getElementById('reset-resend').style.display = 'none';
-  document.getElementById('reset-submit').textContent = 'Send reset OTP';
+  document.getElementById('reset-form')?.reset();
+  setDisplay('forgot-email-group', 'flex');
+  setDisplay('reset-otp-group', 'none');
+  setDisplay('reset-password-group', 'none');
+  setDisplay('reset-resend', 'none');
+  const submit = document.getElementById('reset-submit');
+  if (submit) submit.textContent = 'Send reset OTP';
 }
 
-document.getElementById('reset-form').addEventListener('submit', async event => {
+document.getElementById('reset-form')?.addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('reset-submit');
   setLoading(btn, true, 'Working');
@@ -414,10 +443,10 @@ document.getElementById('reset-form').addEventListener('submit', async event => 
         body: JSON.stringify({ email }),
       });
       resetEmail = email;
-      document.getElementById('forgot-email-group').style.display = 'none';
-      document.getElementById('reset-otp-group').style.display = 'flex';
-      document.getElementById('reset-password-group').style.display = 'flex';
-      document.getElementById('reset-resend').style.display = 'inline-flex';
+      setDisplay('forgot-email-group', 'none');
+      setDisplay('reset-otp-group', 'flex');
+      setDisplay('reset-password-group', 'flex');
+      setDisplay('reset-resend', 'inline-flex');
       document.getElementById('reset-submit').textContent = 'Reset password';
       showAlert('reset-alert', 'If that email exists, a reset OTP has been sent.', 'success');
       return;
@@ -460,3 +489,8 @@ async function resendResetOtp() {
     showAlert('reset-alert', err.message);
   }
 }
+
+window.switchTab = switchTab;
+window.openResetPanel = openResetPanel;
+window.resendOtp = resendOtp;
+window.resendResetOtp = resendResetOtp;

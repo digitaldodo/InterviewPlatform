@@ -4172,6 +4172,12 @@ body.public-shell {
   border-radius: 20px;
 }
 
+.landing-product-shell,
+.marketplace-results-band,
+.public-marketplace-page .hero-product {
+  min-width: 0;
+}
+
 .landing-preview-grid {
   gap: 1.1rem;
 }
@@ -4198,6 +4204,20 @@ body.public-shell {
   border: 1px solid rgba(255,255,255,0.08);
   background: rgba(255,255,255,0.04);
   transition: transform var(--transition-base), border-color var(--transition-base), background var(--transition-base);
+}
+
+.preview-person-card > div,
+.featured-market-card,
+.testimonial-card,
+.proof-card {
+  min-width: 0;
+}
+
+.preview-person-card strong,
+.preview-person-card p,
+.featured-market-card h3,
+.marketplace-card h3 {
+  overflow-wrap: anywhere;
 }
 
 .preview-person-card:hover,
@@ -4373,6 +4393,12 @@ body.public-shell {
   overflow: visible;
 }
 
+.marketplace-filter-grid > *,
+.marketplace-stat-grid > *,
+.marketplace-grid > * {
+  min-width: 0;
+}
+
 .marketplace-filter-grid .chip-combobox {
   z-index: 1;
 }
@@ -4420,15 +4446,30 @@ body.public-shell {
 }
 
 .marketplace-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  align-items: stretch;
   margin-top: 0.6rem;
 }
 
 .marketplace-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
   min-height: 100%;
 }
 
+.marketplace-card .interviewer-card-main,
+.marketplace-card .interviewer-card-copy,
+.marketplace-card .interviewer-card-title {
+  min-width: 0;
+}
+
+.marketplace-card .interviewer-card-title-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .marketplace-card-score {
-  min-width: max-content;
+  min-width: 6.75rem;
+  max-width: 100%;
   text-align: right;
   color: var(--muted);
 }
@@ -4446,10 +4487,28 @@ body.public-shell {
 }
 
 .marketplace-card-signals span {
+  min-width: 0;
   border: 1px solid rgba(255,255,255,0.07);
   border-radius: 999px;
   padding: 0.26rem 0.55rem;
   background: rgba(255,255,255,0.03);
+  overflow-wrap: anywhere;
+}
+
+.marketplace-card .interviewer-card-footer {
+  align-self: end;
+  margin-top: auto;
+}
+
+.marketplace-card .interviewer-card-footer .card-actions {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.marketplace-card .interviewer-card-footer .btn {
+  min-width: 0;
+  white-space: normal;
+  text-align: center;
 }
 
 .marketplace-empty {
@@ -4538,7 +4597,22 @@ body.public-shell {
     flex-direction: column;
   }
 
+  .marketplace-card .interviewer-card-main {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
   .marketplace-card-score {
     text-align: left;
+  }
+
+  .marketplace-card .interviewer-card-title-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .marketplace-card .interviewer-card-footer .card-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    justify-content: stretch;
+    width: 100%;
   }
 }

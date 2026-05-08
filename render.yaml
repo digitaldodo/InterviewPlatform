@@ -54,14 +54,32 @@ services:
     staticPublishPath: .
     routes:
       - type: rewrite
-        source: /interviewer
-        destination: /pages/interviewer.html
+        source: /auth
+        destination: /index.html
       - type: rewrite
-        source: /interviewer/:username
+        source: /login
+        destination: /index.html
+      - type: rewrite
+        source: /register
+        destination: /index.html
+      - type: rewrite
+        source: /search
+        destination: /marketplace.html
+      - type: rewrite
+        source: /marketplace
+        destination: /marketplace.html
+      - type: rewrite
+        source: /interviewer
         destination: /pages/interviewer.html
       - type: rewrite
         source: /interviewer/*
         destination: /pages/interviewer.html
+      - type: rewrite
+        source: /prep
+        destination: /pages/dashboard.html
+      - type: rewrite
+        source: /profile
+        destination: /pages/dashboard.html
       - type: rewrite
         source: /*
         destination: /index.html

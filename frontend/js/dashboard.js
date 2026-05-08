@@ -321,8 +321,13 @@ function toggleSidebar(forceOpen) {
 }
 
 function routeFromHash() {
-  const value = window.location.hash.replace(/^#\/?/, '') || 'overview';
-  return ROUTES.has(value) ? value : 'overview';
+  const value = window.location.hash.replace(/^#\/?/, '');
+  if (value && ROUTES.has(value)) return value;
+  const pathRoute = {
+    '/prep': 'career',
+    '/profile': 'profile',
+  }[window.location.pathname.replace(/\/+$/, '').toLowerCase()];
+  return pathRoute || 'overview';
 }
 
 function showSection(name, updateRoute = true) {
