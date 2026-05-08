@@ -14,9 +14,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -274,6 +278,57 @@ class SessionServiceTest {
         assertEquals("room-1", result.meetingId());
         verify(meetingProviderService).provision(any(Session.class), any(User.class), any(User.class));
         verify(sessionRepository, times(2)).save(any(Session.class));
+    }
+
+    @Test
+    void getMeetingAccessForIntervieweeWaitsForHostBeforeExposingRoom() {
+        Session session = session("session-1", "int-1", "cand-1", "CONFIRMED");
+        session.setStartTime(Instant.now().plusSeconds(120).toString());
+        session.setMeetingProvider("JITSI");
+        session.setMeetingId("room-1");
+        User interviewer = interviewer("int-1");
+        User candidate = candidate("cand-1");
+        MeetingDtos.MeetingAccessResponse access = new MeetingDtos.MeetingAccessResponse(
+                "session-1",
+                "Backend",
+                "JITSI",
+                "In-platform meeting",
+                "room-1",
+                "SCHEDULED",
+                "PARTICIPANT",
+                "Interviewer",
+                "Candidate",
+                "https://meet.jit.si/room-1",
+                "https://meet.jit.si/room-1",
+                "https://meet.jit.si/room-1",
+                null,
+                session.getStartTime(),
+                60,
+                null,
+                null,
+                true,
+                false,
+                "https://meet.jit.si/external_api.js",
+                "meet.jit.si",
+                "room-1",
+                "Candidate",
+                "candidate@example.com",
+                null
+        );
+
+        when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
+        when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
+        when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
+        when(meetingProviderService.buildAccess(any(Session.class), any(User.class), any(User.class), any(User.class))).thenReturn(access);
+
+        MeetingDtos.MeetingAccessResponse result = sessionService.getMeetingAccess("session-1", candidate);
+
+        assertNull(result.joinUrl());
+        assertNull(result.roomName());
+        assertFalse(result.canEmbed());
+        assertEquals("WAITING_FOR_HOST", result.sessionState().liveState());
+        assertTrue(result.sessionState().waitingForHost());
+        assertFalse(result.sessionState().sensitiveAccessExposed());
     }
 
     private Session session(String id, String interviewerId, String candidateId, String status) {

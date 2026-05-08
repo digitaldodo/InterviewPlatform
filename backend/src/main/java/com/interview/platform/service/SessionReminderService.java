@@ -141,7 +141,7 @@ public class SessionReminderService {
                     "SESSION_REMINDER",
                     "Upcoming interview",
                     "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
-                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime())
+                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "sessions")
             );
             markRecipientReminderSent(session.getId(), "intervieweeReminderSentAt", now);
             session.setIntervieweeReminderSentAt(now);
@@ -165,7 +165,7 @@ public class SessionReminderService {
                     "SESSION_REMINDER",
                     "Upcoming interview",
                     "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
-                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime())
+                    java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "sessions")
             );
             markRecipientReminderSent(session.getId(), "interviewerReminderSentAt", now);
             session.setInterviewerReminderSentAt(now);

@@ -9,6 +9,7 @@ import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -26,6 +27,9 @@ public class SessionService {
     private static final Set<String> VALID_STATUSES = new HashSet<>(Arrays.asList(
             "PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"
     ));
+    private static final Duration HOST_JOIN_EARLY = Duration.ofMinutes(15);
+    private static final Duration PARTICIPANT_JOIN_EARLY = Duration.ofMinutes(5);
+    private static final Duration ACCESS_GRACE_AFTER_START = Duration.ofHours(4);
 
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
@@ -133,18 +137,22 @@ public class SessionService {
 
         Session saved = sessionRepository.save(session);
         notifyCreated(saved, interviewer, interviewee);
-        return saved;
+        return sanitizeSession(saved);
     }
 
     public List<Session> getAllSessions() {
-        return sortSessions(sessionRepository.findAll());
+        return sortSessions(sessionRepository.findAll()).stream()
+                .map(this::sanitizeSession)
+                .toList();
     }
 
     public List<Session> getSessionsForUser(User actor) {
         if (actor == null || actor.getId() == null || actor.getId().isBlank()) {
             throw new UnauthorizedException("Authentication required");
         }
-        return sortSessions(sessionRepository.findByInterviewerIdOrCandidateId(actor.getId(), actor.getId()));
+        return sortSessions(sessionRepository.findByInterviewerIdOrCandidateId(actor.getId(), actor.getId())).stream()
+                .map(this::sanitizeSession)
+                .toList();
     }
 
     public Optional<Session> getById(String id) {
@@ -158,18 +166,22 @@ public class SessionService {
         if (!isAdmin(actor) && !actor.getId().equals(interviewerId)) {
             throw new UnauthorizedException("You can only view your own interviewer sessions");
         }
-        return sortSessions(sessionRepository.findByInterviewerId(interviewerId));
+        return sortSessions(sessionRepository.findByInterviewerId(interviewerId)).stream()
+                .map(this::sanitizeSession)
+                .toList();
     }
 
     public List<Session> getByIntervieweeId(String intervieweeId, User actor) {
         if (!isAdmin(actor) && !actor.getId().equals(intervieweeId)) {
             throw new UnauthorizedException("You can only view your own interview sessions");
         }
-        return sortSessions(sessionRepository.findByCandidateId(intervieweeId));
+        return sortSessions(sessionRepository.findByCandidateId(intervieweeId)).stream()
+                .map(this::sanitizeSession)
+                .toList();
     }
 
     public Session getByIdForUser(String id, User actor) {
-        return requireParticipant(id, actor);
+        return sanitizeSession(requireParticipant(id, actor));
     }
 
     public Session updateSessionStatus(String id, String status, User actor) {
@@ -204,7 +216,7 @@ public class SessionService {
         refreshUserSessionStats(saved.getInterviewerId());
         refreshUserSessionStats(saved.getCandidateId());
         notifyStatusChanged(saved);
-        return saved;
+        return sanitizeSession(saved);
     }
 
     public List<MeetingDtos.MeetingProviderOption> getMeetingProviderOptions() {
@@ -224,7 +236,7 @@ public class SessionService {
         User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
         User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
         session = ensureMeetingProvisioned(session, interviewer, interviewee);
-        return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
+        return securedMeetingAccess(session, actor, interviewer, interviewee, false);
     }
 
     public MeetingDtos.MeetingAccessResponse startMeeting(String sessionId, User actor) {
@@ -251,7 +263,7 @@ public class SessionService {
             session = sessionRepository.save(session);
             notifyMeetingStarted(session);
         }
-        return meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
+        return securedMeetingAccess(session, actor, interviewer, interviewee, true);
     }
 
     private Session ensureMeetingProvisioned(Session session, User interviewer, User interviewee) {
@@ -267,6 +279,107 @@ public class SessionService {
         meetingProviderService.provision(session, interviewer, interviewee);
         session.setUpdatedAt(Instant.now());
         return sessionRepository.save(session);
+    }
+
+    private MeetingDtos.MeetingAccessResponse securedMeetingAccess(Session session, User actor, User interviewer, User interviewee,
+                                                                  boolean hostTriggeredStart) {
+        MeetingDtos.MeetingAccessResponse base = meetingProviderService.buildAccess(session, actor, interviewer, interviewee);
+        MeetingDtos.MeetingSessionState state = buildMeetingState(session, actor, hostTriggeredStart);
+        if (state.sensitiveAccessExposed()) {
+            return base.withState(state);
+        }
+        return base.withoutSensitiveAccess(state);
+    }
+
+    private MeetingDtos.MeetingSessionState buildMeetingState(Session session, User actor, boolean hostTriggeredStart) {
+        Instant now = Instant.now();
+        String normalizedSessionStatus = normalizeStatusSafe(session.getStatus());
+        String normalizedMeetingStatus = normalizeStatusSafe(session.getMeetingStatus());
+        Optional<Instant> scheduledStart = parseSessionTime(session.getStartTime());
+        Instant start = scheduledStart.orElse(now);
+        Instant hostJoinAt = start.minus(HOST_JOIN_EARLY);
+        Instant participantJoinAt = start.minus(PARTICIPANT_JOIN_EARLY);
+        Instant accessExpiresAt = start.plus(Duration.ofMinutes((long) effectiveDurationMinutes(session.getDurationMinutes())))
+                .plus(ACCESS_GRACE_AFTER_START);
+        boolean host = actor != null && actor.getId() != null && actor.getId().equals(session.getInterviewerId());
+        boolean ended = "COMPLETED".equals(normalizedSessionStatus) || "CANCELLED".equals(normalizedSessionStatus)
+                || "COMPLETED".equals(normalizedMeetingStatus) || "CANCELLED".equals(normalizedMeetingStatus);
+        if (ended) {
+            return new MeetingDtos.MeetingSessionState(
+                    normalizedSessionStatus,
+                    "ENDED",
+                    "This interview session has ended.",
+                    null,
+                    accessExpiresAt,
+                    false,
+                    false,
+                    false,
+                    false
+            );
+        }
+        if ("LIVE".equals(normalizedMeetingStatus)) {
+            return new MeetingDtos.MeetingSessionState(
+                    normalizedSessionStatus,
+                    "LIVE",
+                    "The interview is live. You can join or reconnect now.",
+                    now,
+                    accessExpiresAt,
+                    host,
+                    true,
+                    false,
+                    true
+            );
+        }
+        if (host) {
+            if (now.isBefore(hostJoinAt)) {
+                return new MeetingDtos.MeetingSessionState(
+                        normalizedSessionStatus,
+                        "COUNTDOWN",
+                        "The room opens 15 minutes before the scheduled start time.",
+                        hostJoinAt,
+                        accessExpiresAt,
+                        false,
+                        false,
+                        false,
+                        false
+                );
+            }
+            return new MeetingDtos.MeetingSessionState(
+                    normalizedSessionStatus,
+                    "READY_TO_START",
+                    "Start the room when you are ready. Interviewees will be admitted after you begin.",
+                    now,
+                    accessExpiresAt,
+                    true,
+                    false,
+                    false,
+                    false
+            );
+        }
+        if (now.isBefore(participantJoinAt)) {
+            return new MeetingDtos.MeetingSessionState(
+                    normalizedSessionStatus,
+                    "COUNTDOWN",
+                    "Your interview lobby opens 5 minutes before the scheduled start time.",
+                    participantJoinAt,
+                    accessExpiresAt,
+                    false,
+                    false,
+                    false,
+                    false
+            );
+        }
+        return new MeetingDtos.MeetingSessionState(
+                normalizedSessionStatus,
+                "WAITING_FOR_HOST",
+                "The interviewer needs to start the interview before the room is unlocked.",
+                participantJoinAt,
+                accessExpiresAt,
+                false,
+                false,
+                true,
+                false
+        );
     }
 
     private String normalizeStatus(String status) {
@@ -379,9 +492,11 @@ public class SessionService {
 
     private void notifyMeetingStarted(Session session) {
         notificationService.create(session.getCandidateId(), "MEETING_LIVE", "Interview is live",
-                "Your " + session.getTitle() + " interview room is now live.");
+                "Your " + session.getTitle() + " interview room is now live.",
+                java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "meeting"));
         notificationService.create(session.getInterviewerId(), "MEETING_LIVE", "Interview is live",
-                "Your " + session.getTitle() + " interview room is now live.");
+                "Your " + session.getTitle() + " interview room is now live.",
+                java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "meeting"));
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
                     emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName());
@@ -395,6 +510,34 @@ public class SessionService {
         return items.stream()
                 .sorted(Comparator.comparing(this::sessionSortValue))
                 .toList();
+    }
+
+    private Session sanitizeSession(Session source) {
+        if (source == null) {
+            return null;
+        }
+        Session view = new Session();
+        view.setId(source.getId());
+        view.setTitle(source.getTitle());
+        view.setInterviewerId(source.getInterviewerId());
+        view.setCandidateId(source.getCandidateId());
+        view.setStartTime(source.getStartTime());
+        view.setStatus(source.getStatus());
+        view.setNotes(source.getNotes());
+        view.setInterviewType(source.getInterviewType());
+        view.setTopics(source.getTopics());
+        view.setDurationMinutes(source.getDurationMinutes());
+        view.setMeetingProvider(source.getMeetingProvider());
+        view.setMeetingStatus(source.getMeetingStatus());
+        view.setMeetingStartedAt(source.getMeetingStartedAt());
+        view.setMeetingEndedAt(source.getMeetingEndedAt());
+        view.setPreInterviewReminderSentAt(source.getPreInterviewReminderSentAt());
+        view.setPreInterviewReminderClaimedAt(source.getPreInterviewReminderClaimedAt());
+        view.setInterviewerReminderSentAt(source.getInterviewerReminderSentAt());
+        view.setIntervieweeReminderSentAt(source.getIntervieweeReminderSentAt());
+        view.setCreatedAt(source.getCreatedAt());
+        view.setUpdatedAt(source.getUpdatedAt());
+        return view;
     }
 
     private Instant sessionSortValue(Session session) {
