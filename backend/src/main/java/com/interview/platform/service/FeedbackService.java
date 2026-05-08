@@ -81,6 +81,9 @@ public class FeedbackService {
         normalizeStructuredFeedback(feedback);
         if (interviewerReviewer) {
             feedback.setShareWithInterviewee(feedback.getShareWithInterviewee());
+            clearIntervieweeFeedbackFields(feedback);
+        } else {
+            clearInterviewerEvaluationFields(feedback);
         }
         ReviewIntegrityService.ReviewIntegrityResult integrity = reviewIntegrityService.analyze(
                 actor,
@@ -251,6 +254,12 @@ public class FeedbackService {
         feedback.setProblemSolvingNotes(trimToNull(feedback.getProblemSolvingNotes()));
         feedback.setFinalSummary(trimToNull(feedback.getFinalSummary()));
         feedback.setPrivateNotes(trimToNull(feedback.getPrivateNotes()));
+        feedback.setInappropriateBehaviorDetails(trimToNull(feedback.getInappropriateBehaviorDetails()));
+        feedback.setOverallExperience(trimToNull(feedback.getOverallExperience()));
+        clampRating(feedback.getProfessionalism());
+        clampRating(feedback.getPoliteness());
+        clampRating(feedback.getPunctuality());
+        clampRating(feedback.getClarity());
         if ((feedback.getImprovementAreas() == null || feedback.getImprovementAreas().isBlank())
                 && feedback.getRecommendations() != null && !feedback.getRecommendations().isBlank()) {
             feedback.setImprovementAreas(feedback.getRecommendations().trim());
@@ -311,6 +320,13 @@ public class FeedbackService {
                 redactForInterviewee ? null : feedback.getFinalSummary(),
                 (reviewerView || adminView) ? feedback.getPrivateNotes() : null,
                 feedback.getShareWithInterviewee(),
+                feedback.getProfessionalism(),
+                feedback.getPoliteness(),
+                feedback.getPunctuality(),
+                feedback.getClarity(),
+                feedback.getInappropriateBehaviorReported(),
+                feedback.getInappropriateBehaviorDetails(),
+                feedback.getOverallExperience(),
                 redactForInterviewee ? null : feedback.getRecommendations(),
                 redactForInterviewee ? null : feedback.getImprovementAreas(),
                 feedback.getReviewType(),
@@ -474,6 +490,27 @@ public class FeedbackService {
             throw new UnauthorizedException("Only the assigned interviewer can edit this evaluation");
         }
         return session;
+    }
+
+    private void clearIntervieweeFeedbackFields(Feedback feedback) {
+        feedback.setProfessionalism(0);
+        feedback.setPoliteness(0);
+        feedback.setPunctuality(0);
+        feedback.setClarity(0);
+        feedback.setInappropriateBehaviorReported(false);
+        feedback.setInappropriateBehaviorDetails(null);
+        feedback.setOverallExperience(null);
+    }
+
+    private void clearInterviewerEvaluationFields(Feedback feedback) {
+        feedback.setPrivateNotes(null);
+        feedback.setRatingLevel(null);
+        feedback.setHiringRecommendation(null);
+        feedback.setCommunicationNotes(null);
+        feedback.setCodingQualityNotes(null);
+        feedback.setProblemSolvingNotes(null);
+        feedback.setFinalSummary(null);
+        feedback.setShareWithInterviewee(true);
     }
 
     private Integer clampRating(Integer value) {

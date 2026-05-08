@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 
 import java.util.Locale;
 import java.util.UUID;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @Component
 public class JitsiMeetingProvider implements MeetingProviderGateway {
@@ -75,8 +77,8 @@ public class JitsiMeetingProvider implements MeetingProviderGateway {
                 session.getJoinUrl(),
                 session.getHostUrl(),
                 viewer.getId().equals(session.getInterviewerId()) && session.getHostUrl() != null && !session.getHostUrl().isBlank()
-                        ? session.getHostUrl()
-                        : session.getJoinUrl(),
+                        ? withDisplayName(session.getHostUrl(), displayName)
+                        : withDisplayName(session.getJoinUrl(), displayName),
                 session.getMeetingPasscode(),
                 session.getStartTime(),
                 session.getDurationMinutes(),
@@ -106,6 +108,14 @@ public class JitsiMeetingProvider implements MeetingProviderGateway {
 
     private String meetingUrl(String roomName) {
         return "https://" + domain + "/" + roomPath(roomName);
+    }
+
+    private String withDisplayName(String url, String displayName) {
+        if (url == null || url.isBlank() || displayName == null || displayName.isBlank()) {
+            return url;
+        }
+        String separator = url.contains("#") ? "&" : "#";
+        return url + separator + "userInfo.displayName=%22" + URLEncoder.encode(displayName, StandardCharsets.UTF_8) + "%22";
     }
 
     private String roomPath(String roomName) {

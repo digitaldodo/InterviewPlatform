@@ -30,6 +30,8 @@ public class SessionService {
     private static final Duration HOST_JOIN_EARLY = Duration.ofMinutes(15);
     private static final Duration PARTICIPANT_JOIN_EARLY = Duration.ofMinutes(5);
     private static final Duration ACCESS_GRACE_AFTER_START = Duration.ofHours(4);
+    private static final Duration COMPLETE_EARLY_WINDOW = Duration.ofMinutes(5);
+    private static final Duration COMPLETE_GRACE_AFTER_END = Duration.ofMinutes(60);
 
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
@@ -198,6 +200,14 @@ public class SessionService {
         String normalizedStatus = normalizeStatus(status);
         if ("CONFIRMED".equals(normalizedStatus) && !actor.getId().equals(session.getInterviewerId())) {
             throw new UnauthorizedException("Only the assigned interviewer can confirm the session");
+        }
+        if ("COMPLETED".equals(normalizedStatus)
+                && "COMPLETED".equals(normalizeStatusSafe(session.getStatus()))
+                && "COMPLETED".equals(normalizeStatusSafe(session.getMeetingStatus()))) {
+            return sanitizeSession(session);
+        }
+        if ("COMPLETED".equals(normalizedStatus)) {
+            validateCompletionWindow(session);
         }
         session.setStatus(normalizedStatus);
         if ("COMPLETED".equals(normalizedStatus)) {
@@ -458,6 +468,36 @@ public class SessionService {
         return session;
     }
 
+    private void validateCompletionWindow(Session session) {
+        String currentStatus = normalizeStatusSafe(session.getStatus());
+        String meetingState = normalizeStatusSafe(session.getMeetingStatus());
+        if ("COMPLETED".equals(currentStatus) && "COMPLETED".equals(meetingState)) {
+            return;
+        }
+        if (!"CONFIRMED".equals(currentStatus)) {
+            throw new IllegalArgumentException("Only confirmed sessions can be completed");
+        }
+        if ("CANCELLED".equals(meetingState) || "COMPLETED".equals(meetingState)) {
+            throw new IllegalArgumentException("This meeting can no longer be completed");
+        }
+        Instant scheduledStart = parseSessionTime(session.getStartTime())
+                .orElseThrow(() -> new IllegalArgumentException("Session start time is invalid"));
+        Instant now = Instant.now();
+        Instant opensAt = scheduledStart.minus(COMPLETE_EARLY_WINDOW);
+        Instant closesAt = scheduledStart
+                .plus(Duration.ofMinutes((long) effectiveDurationMinutes(session.getDurationMinutes())))
+                .plus(COMPLETE_GRACE_AFTER_END);
+        if (now.isBefore(opensAt)) {
+            throw new IllegalArgumentException("Interview can only be completed near the scheduled meeting window");
+        }
+        if (now.isAfter(closesAt)) {
+            throw new IllegalArgumentException("Interview completion window has expired");
+        }
+        if (session.getMeetingStartedAt() != null && now.isBefore(session.getMeetingStartedAt().minus(Duration.ofMinutes(1)))) {
+            throw new IllegalArgumentException("Interview cannot be completed before the meeting starts");
+        }
+    }
+
     private void notifyCreated(Session session, User interviewer, User interviewee) {
         notificationService.create(session.getCandidateId(), "SESSION_SCHEDULED", "Booking requested",
                 "Your " + session.getTitle() + " session request was sent.");
@@ -470,7 +510,8 @@ public class SessionService {
                 session.getTitle(),
                 session.getStartTime(),
                 session.getMeetingProvider(),
-                session.getJoinUrl()
+                session.getJoinUrl(),
+                interviewee.getTimeZone()
         );
         emailService.sendSessionInvite(
                 interviewer.getEmail(),
@@ -479,7 +520,8 @@ public class SessionService {
                 session.getTitle(),
                 session.getStartTime(),
                 session.getMeetingProvider(),
-                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl()
+                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
+                interviewer.getTimeZone()
         );
     }
 
@@ -492,12 +534,13 @@ public class SessionService {
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
                     if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
-                        emailService.sendSessionCancellation(candidate.getEmail(), session.getTitle(), session.getStartTime(), interviewer.getName());
-                        emailService.sendSessionCancellation(interviewer.getEmail(), session.getTitle(), session.getStartTime(), candidate.getName());
+                        emailService.sendSessionCancellation(candidate.getEmail(), session.getTitle(), session.getStartTime(), interviewer.getName(), candidate.getTimeZone());
+                        emailService.sendSessionCancellation(interviewer.getEmail(), session.getTitle(), session.getStartTime(), candidate.getName(), interviewer.getTimeZone());
                     } else {
-                        emailService.sendSessionStatusUpdate(candidate.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(), session.getJoinUrl());
+                        emailService.sendSessionStatusUpdate(candidate.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(), session.getJoinUrl(), candidate.getTimeZone());
                         emailService.sendSessionStatusUpdate(interviewer.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(),
-                                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl());
+                                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
+                                interviewer.getTimeZone());
                     }
                 }));
     }
@@ -511,10 +554,11 @@ public class SessionService {
                 java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "meeting"));
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
-                    emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName());
+                    emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName(), candidate.getTimeZone());
                     emailService.sendMeetingReminder(interviewer.getEmail(), session.getTitle(), session.getStartTime(),
                             session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
-                            candidate.getName());
+                            candidate.getName(),
+                            interviewer.getTimeZone());
                 }));
     }
 

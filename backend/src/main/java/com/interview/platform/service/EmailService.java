@@ -14,11 +14,20 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Locale;
 
 @Service
 public class EmailService {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    private static final DateTimeFormatter MEETING_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("EEE, MMM d, yyyy 'at' h:mm a z", Locale.ENGLISH);
 
     private final String apiKey;
     private final String fromEmail;
@@ -49,21 +58,34 @@ public class EmailService {
     }
 
     public void sendBookingConfirmation(String to, String title, String startTime, String meetingLink) {
+        sendBookingConfirmation(to, title, startTime, meetingLink, null);
+    }
+
+    public void sendBookingConfirmation(String to, String title, String startTime, String meetingLink, String recipientTimeZone) {
         log.info("Preparing booking confirmation email for {}", maskEmail(to));
-        send(to, "Your mock interview is booked", bookingTemplate(title, startTime, meetingLink));
+        send(to, "Your mock interview is booked", bookingTemplate(title, localMeetingTime(startTime, recipientTimeZone), meetingLink));
     }
 
     public void sendSessionInvite(String to, String recipientName, String counterpartName, String title,
                                   String startTime, String meetingProvider, String meetingLink) {
+        sendSessionInvite(to, recipientName, counterpartName, title, startTime, meetingProvider, meetingLink, null);
+    }
+
+    public void sendSessionInvite(String to, String recipientName, String counterpartName, String title,
+                                  String startTime, String meetingProvider, String meetingLink, String recipientTimeZone) {
         log.info("Preparing session invite email for {}", maskEmail(to));
         send(to, "Your interview session is scheduled",
-                meetingInviteTemplate(recipientName, counterpartName, title, startTime, meetingProvider, meetingLink));
+                meetingInviteTemplate(recipientName, counterpartName, title, localMeetingTime(startTime, recipientTimeZone), meetingProvider, meetingLink));
     }
 
     public void sendMeetingReminder(String to, String title, String startTime, String meetingLink, String counterpartName) {
+        sendMeetingReminder(to, title, startTime, meetingLink, counterpartName, null);
+    }
+
+    public void sendMeetingReminder(String to, String title, String startTime, String meetingLink, String counterpartName, String recipientTimeZone) {
         log.info("Preparing meeting reminder email for {}", maskEmail(to));
         send(to, "Your interview room is live",
-                meetingReminderTemplate(title, startTime, meetingLink, counterpartName));
+                meetingReminderTemplate(title, localMeetingTime(startTime, recipientTimeZone), meetingLink, counterpartName));
     }
 
     public void sendPreInterviewReminder(String to, String recipientName, String interviewerName, String intervieweeName,
@@ -76,13 +98,21 @@ public class EmailService {
     }
 
     public void sendSessionCancellation(String to, String title, String startTime, String counterpartName) {
+        sendSessionCancellation(to, title, startTime, counterpartName, null);
+    }
+
+    public void sendSessionCancellation(String to, String title, String startTime, String counterpartName, String recipientTimeZone) {
         log.info("Preparing session cancellation email for {}", maskEmail(to));
-        send(to, "Interview session cancelled", cancellationTemplate(title, startTime, counterpartName));
+        send(to, "Interview session cancelled", cancellationTemplate(title, localMeetingTime(startTime, recipientTimeZone), counterpartName));
     }
 
     public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl) {
+        sendSessionStatusUpdate(to, title, status, startTime, launchUrl, null);
+    }
+
+    public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl, String recipientTimeZone) {
         log.info("Preparing session status email for {}", maskEmail(to));
-        send(to, "Interview session update", sessionStatusTemplate(title, status, startTime, launchUrl));
+        send(to, "Interview session update", sessionStatusTemplate(title, status, localMeetingTime(startTime, recipientTimeZone), launchUrl));
     }
 
     private void send(String to, String subject, String html) {
@@ -217,6 +247,27 @@ public class EmailService {
                   </div>
                 </div>
                 """.formatted(safe(title), safe(status), safe(startTime), button);
+    }
+
+    private String localMeetingTime(String startTime, String timeZone) {
+        if (startTime == null || startTime.isBlank()) {
+            return "the scheduled time";
+        }
+        try {
+            ZoneId zone = timeZone == null || timeZone.isBlank() ? null : ZoneId.of(timeZone.trim());
+            ZonedDateTime zoned = parseMeetingInstant(startTime).atZone(zone == null ? ZoneId.of("UTC") : zone);
+            return MEETING_TIME_FORMATTER.format(zoned);
+        } catch (DateTimeParseException | IllegalArgumentException ignored) {
+            return startTime;
+        }
+    }
+
+    private Instant parseMeetingInstant(String startTime) {
+        try {
+            return OffsetDateTime.parse(startTime).toInstant();
+        } catch (DateTimeParseException ignored) {
+            return Instant.parse(startTime);
+        }
     }
 
     private String preInterviewReminderTemplate(String recipientName, String interviewerName, String intervieweeName,

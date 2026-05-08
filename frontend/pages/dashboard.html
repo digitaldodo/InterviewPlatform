@@ -264,13 +264,14 @@
           <div id="feedback-alert" class="alert"></div>
           <div class="form-group">
             <label for="fb-session">Session</label>
-            <select id="fb-session" required onchange="renderFeedbackTopicSections()"></select>
+            <select id="fb-session" required onchange="refreshFeedbackRoleForm()"></select>
           </div>
           <div class="form-grid">
             <div class="form-group"><label for="fb-rating">Overall</label><select id="fb-rating" required><option value="">Rating</option><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
             <div class="form-group"><label for="fb-communication">Communication</label><select id="fb-communication"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
             <div class="form-group"><label for="fb-technical">Technical</label><select id="fb-technical"><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select></div>
           </div>
+          <div id="feedback-role-fields"></div>
           <div class="form-group"><label for="fb-comments">Comments</label><textarea id="fb-comments" required placeholder="Share clear, actionable feedback"></textarea></div>
           <div class="form-group"><label for="fb-strengths">Strengths</label><input id="fb-strengths" placeholder="What went well" /></div>
           <div class="form-group"><label for="fb-weaknesses">Areas to improve</label><input id="fb-weaknesses" placeholder="What to practice next" /></div>

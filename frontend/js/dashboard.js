@@ -93,6 +93,8 @@ const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const TOPIC_OPTIONS = ['Java', 'DSA', 'Spring Boot', 'System Design', 'React', 'Node.js', 'SQL', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
 const LIVE_FEEDBACK_TOPICS = ['Java', 'DSA', 'System Design', 'Frontend', 'Backend', 'Communication', 'Problem Solving'];
 const FEEDBACK_LEVELS = ['Beginner', 'Intermediate', 'Strong', 'Excellent'];
+const COMPLETE_EARLY_MS = 5 * 60 * 1000;
+const COMPLETE_GRACE_MS = 60 * 60 * 1000;
 const DOMAIN_SUGGESTIONS = ['Backend', 'Frontend', 'Full Stack', 'DevOps', 'HR', 'DSA', 'System Design', 'Java', 'React', 'Spring Boot'];
 const TIMEZONE_SUGGESTIONS = ['Asia/Kolkata', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Singapore'];
 const AVAILABILITY_PREFERENCES = [
@@ -131,6 +133,23 @@ function preferredMeetingProvider() {
   return meetingProviders.find(item => item.isDefault)?.key || meetingProviders[0]?.key || DEFAULT_MEETING_PROVIDERS[0].key;
 }
 
+async function ensureStoredTimezone() {
+  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  if (!detected || currentUser?.timeZone) return;
+  currentUser = { ...currentUser, timeZone: detected };
+  localStorage.setItem('ip_user', JSON.stringify(currentUser));
+  try {
+    const updated = await api('/api/users/me/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ timeZone: detected }),
+    });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+  } catch {
+    // Timezone capture improves meeting emails but must not block dashboard access.
+  }
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   currentUser = readJson('ip_user');
   if (!currentUser?.id) {
@@ -138,6 +157,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   activeWorkspace = savedWorkspace();
+  ensureStoredTimezone();
   restoreDiscoveryFilters();
   initUi();
   bindFilters();
@@ -1579,7 +1599,8 @@ function renderSessionCard(session) {
   const meetingStatus = normalizeMeetingStatus(session);
   const isInterviewer = activeWorkspace === 'INTERVIEWER';
   const canConfirm = isInterviewer && status === 'PENDING';
-  const canComplete = status === 'CONFIRMED';
+  const completeState = completionState(session);
+  const canShowComplete = status === 'CONFIRMED';
   const canOpenMeeting = status === 'CONFIRMED' && !['COMPLETED', 'CANCELLED'].includes(meetingStatus);
   const roomState = sessionRoomState(session);
   const joinLabel = roomState.actionLabel;
@@ -1610,7 +1631,7 @@ function renderSessionCard(session) {
       <div class="session-actions">
         ${canOpenMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}', ${autoStart ? 'true' : 'false'})">${esc(joinLabel)}</button>` : ''}
         ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
-        ${canComplete ? `<button class="btn btn-outline btn-sm" onclick="updateSession('${session.id}','complete')">Complete</button>` : ''}
+        ${canShowComplete ? `<button class="btn btn-outline btn-sm" title="${esc(completeState.message)}" ${completeState.enabled ? `onclick="updateSession('${session.id}','complete')"` : 'disabled'}>Complete</button>` : ''}
         ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-danger btn-sm" onclick="updateSession('${session.id}','cancel')">Cancel</button>` : ''}
       </div>
     </article>
@@ -1663,6 +1684,17 @@ function feedbackSummaryForSession(sessionId) {
 }
 
 async function updateSession(id, action) {
+  if (action === 'complete') {
+    const session = sessions.find(item => item.id === id);
+    const state = completionState(session);
+    if (!state.enabled) {
+      toast(state.message, 'error');
+      return;
+    }
+    if (!window.confirm('Mark this interview as completed? This unlocks final feedback for the session.')) {
+      return;
+    }
+  }
   try {
     await api(`/api/sessions/${id}/${action}`, { method: 'PATCH' });
     toast(`Session ${action}ed.`, 'success');
@@ -1689,6 +1721,31 @@ async function loadFeedback() {
     document.getElementById('recent-feedback').innerHTML = emptyState('Feedback will appear here.');
     populateFeedbackSessions();
   }
+}
+
+function completionState(session) {
+  if (!session) return { enabled: false, message: 'Session details are unavailable.' };
+  const status = String(session.status || '').toUpperCase();
+  const meetingStatus = normalizeMeetingStatus(session);
+  if (status !== 'CONFIRMED') return { enabled: false, message: 'Only confirmed sessions can be completed.' };
+  if (['COMPLETED', 'CANCELLED'].includes(meetingStatus)) return { enabled: false, message: 'This meeting can no longer be completed.' };
+  const startMs = sessionStartMs(session);
+  if (!Number.isFinite(startMs)) return { enabled: false, message: 'Session start time is invalid.' };
+  const durationMs = Math.max(1, Number(session.durationMinutes || 45)) * 60 * 1000;
+  const opensAt = startMs - COMPLETE_EARLY_MS;
+  const closesAt = startMs + durationMs + COMPLETE_GRACE_MS;
+  const now = Date.now();
+  if (now < opensAt) {
+    return { enabled: false, message: `Complete unlocks ${fmtDate(new Date(opensAt).toISOString())}.` };
+  }
+  if (now > closesAt) {
+    return { enabled: false, message: 'The interview completion window has expired.' };
+  }
+  const startedAt = session.meetingStartedAt ? new Date(session.meetingStartedAt).getTime() : NaN;
+  if (Number.isFinite(startedAt) && now < startedAt - 60000) {
+    return { enabled: false, message: 'The meeting has not started yet.' };
+  }
+  return { enabled: true, message: 'Mark this interview as completed.' };
 }
 
 function bindFeedbackForm() {
@@ -1732,7 +1789,76 @@ function populateFeedbackSessions() {
     && !hasCurrentUserReviewedSession(item.id)
   );
   select.innerHTML = eligible.map(item => `<option value="${esc(item.id)}">${esc(sessionTitle(item))} - ${fmtDate(item.startTime)}</option>`).join('') || '<option value="">No eligible sessions</option>';
+  refreshFeedbackRoleForm();
+}
+
+function refreshFeedbackRoleForm() {
   renderFeedbackTopicSections();
+  renderFeedbackRoleFields();
+}
+
+function selectedFeedbackSession() {
+  return sessions.find(item => item.id === val('fb-session')) || null;
+}
+
+function selectedFeedbackRole() {
+  const session = selectedFeedbackSession();
+  if (!session || !currentUser?.id) return 'UNKNOWN';
+  return currentUser.id === session.interviewerId ? 'INTERVIEWER' : 'INTERVIEWEE';
+}
+
+function renderFeedbackRoleFields() {
+  const host = document.getElementById('feedback-role-fields');
+  if (!host) return;
+  const role = selectedFeedbackRole();
+  if (role === 'UNKNOWN') {
+    host.innerHTML = '';
+    return;
+  }
+  const comments = document.getElementById('fb-comments');
+  const recommendations = document.getElementById('fb-recommendations');
+  const topicHost = document.getElementById('feedback-topic-sections');
+  if (role === 'INTERVIEWER') {
+    if (comments) comments.placeholder = 'Summarize candidate performance and observed signals';
+    if (recommendations) recommendations.placeholder = 'Hiring recommendation, practice plan, or next steps';
+    if (topicHost) topicHost.hidden = false;
+    host.innerHTML = `
+      <div class="feedback-role-card">
+        <strong>Interviewer evaluation</strong>
+        <div class="form-grid">
+          <div class="form-group"><label for="fb-problem-solving">Problem solving</label>${feedbackRatingSelect('fb-problem-solving')}</div>
+          <div class="form-group"><label for="fb-hiring-recommendation">Recommendation</label><select id="fb-hiring-recommendation"><option value="">Select</option><option>Strong hire</option><option>Hire</option><option>Leaning hire</option><option>Leaning no hire</option><option>No hire</option></select></div>
+        </div>
+        <div class="form-group"><label for="fb-optional-notes">Optional private notes</label><textarea id="fb-optional-notes" placeholder="Internal notes for your records"></textarea></div>
+      </div>
+    `;
+    return;
+  }
+  if (comments) comments.placeholder = 'Describe your overall experience with this interviewer';
+  if (recommendations) recommendations.placeholder = 'Anything the interviewer or platform should improve';
+  if (topicHost) topicHost.hidden = true;
+  host.innerHTML = `
+    <div class="feedback-role-card">
+      <strong>Interviewee experience review</strong>
+      <div class="form-grid">
+        <div class="form-group"><label for="fb-professionalism">Professionalism</label>${feedbackRatingSelect('fb-professionalism')}</div>
+        <div class="form-group"><label for="fb-politeness">Politeness</label>${feedbackRatingSelect('fb-politeness')}</div>
+        <div class="form-group"><label for="fb-punctuality">Punctuality</label>${feedbackRatingSelect('fb-punctuality')}</div>
+        <div class="form-group"><label for="fb-clarity">Clarity</label>${feedbackRatingSelect('fb-clarity')}</div>
+      </div>
+      <label class="check-row"><input id="fb-inappropriate" type="checkbox" onchange="toggleInappropriateDetails()" /> Report inappropriate behavior</label>
+      <div class="form-group" id="fb-inappropriate-wrap" hidden><label for="fb-inappropriate-details">Report details</label><textarea id="fb-inappropriate-details" placeholder="Describe what happened for trust and safety review"></textarea></div>
+    </div>
+  `;
+}
+
+function feedbackRatingSelect(id) {
+  return `<select id="${esc(id)}"><option value="">Optional</option><option>5</option><option>4</option><option>3</option><option>2</option><option>1</option></select>`;
+}
+
+function toggleInappropriateDetails() {
+  const wrap = document.getElementById('fb-inappropriate-wrap');
+  if (wrap) wrap.hidden = !document.getElementById('fb-inappropriate')?.checked;
 }
 
 function hasCurrentUserReviewedSession(sessionId) {
@@ -3132,7 +3258,7 @@ async function renderMeetingRoom(access) {
   if (liveState === 'COUNTDOWN') {
     startMeetingTimer(access.sessionState?.joinAvailableAt || access.scheduledAt, 'countdown');
   } else if (liveState === 'LIVE') {
-    startMeetingTimer(access.meetingStartedAt || access.scheduledAt, 'elapsed');
+    startMeetingTimer(access.meetingStartedAt || access.scheduledAt, 'elapsed', meetingEndTime(access));
   } else {
     resetMeetingTimer();
   }
@@ -3599,7 +3725,7 @@ async function mountJitsiMeeting(access) {
     meetingUiState.participants = Math.max(1, meetingUiState.participants);
     if (!activeMeetingAccess?.meetingStartedAt) {
       activeMeetingAccess = { ...activeMeetingAccess, meetingStartedAt: new Date().toISOString(), meetingStatus: 'LIVE' };
-      startMeetingTimer(activeMeetingAccess.meetingStartedAt);
+      startMeetingTimer(activeMeetingAccess.meetingStartedAt, 'elapsed', meetingEndTime(activeMeetingAccess));
     }
     renderMeetingSummary({
       title: activeMeetingAccess?.sessionTitle || access.sessionTitle,
@@ -3719,27 +3845,49 @@ function destroyMeetingFrame(clearAccess = true) {
   }
 }
 
-function startMeetingTimer(value, mode = 'elapsed') {
+function startMeetingTimer(value, mode = 'elapsed', endValue = null) {
   clearInterval(activeMeetingTimer);
   const base = value ? new Date(value).getTime() : NaN;
   if (!Number.isFinite(base)) {
     document.getElementById('meeting-timer').textContent = '00:00';
     return;
   }
+  const endMs = endValue ? new Date(endValue).getTime() : NaN;
   const update = () => {
+    const now = Date.now();
     const diff = mode === 'countdown'
       ? Math.max(0, base - Date.now())
-      : Math.max(0, Date.now() - base);
-    const totalSeconds = Math.floor(diff / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    document.getElementById('meeting-timer').textContent = hours > 0
-      ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-      : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      : Math.max(0, now - base);
+    const primary = formatTimerDuration(diff);
+    if (mode === 'countdown') {
+      document.getElementById('meeting-timer').textContent = `${primary} until join`;
+      return;
+    }
+    const remaining = Number.isFinite(endMs) ? Math.max(0, endMs - now) : null;
+    document.getElementById('meeting-timer').textContent = remaining == null
+      ? `${primary} elapsed`
+      : `${primary} elapsed • ${formatTimerDuration(remaining)} left`;
   };
   update();
   activeMeetingTimer = setInterval(update, 1000);
+}
+
+function meetingEndTime(access) {
+  const baseValue = access?.meetingStartedAt || access?.scheduledAt || activeMeetingSession?.startTime;
+  const baseMs = baseValue ? new Date(baseValue).getTime() : NaN;
+  if (!Number.isFinite(baseMs)) return null;
+  const durationMs = Math.max(1, Number(access?.durationMinutes || activeMeetingSession?.durationMinutes || 45)) * 60 * 1000;
+  return new Date(baseMs + durationMs).toISOString();
+}
+
+function formatTimerDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours > 0
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function resetMeetingTimer() {
@@ -6092,6 +6240,7 @@ function bindFeedbackForm() {
         throw new Error('Reviews must be specific and meaningful before submission.');
       }
       const topicFeedback = collectTopicFeedback();
+      const role = selectedFeedbackRole();
       await api('/api/feedback', {
         method: 'POST',
         body: JSON.stringify({
@@ -6104,11 +6253,21 @@ function bindFeedbackForm() {
           weaknesses: val('fb-weaknesses'),
           improvementAreas: val('fb-recommendations'),
           recommendations: val('fb-recommendations'),
-          topicFeedback,
+          problemSolvingNotes: role === 'INTERVIEWER' && val('fb-problem-solving') ? `Problem solving score: ${val('fb-problem-solving')}/5` : '',
+          hiringRecommendation: role === 'INTERVIEWER' ? val('fb-hiring-recommendation') : '',
+          privateNotes: role === 'INTERVIEWER' ? val('fb-optional-notes') : '',
+          professionalism: role === 'INTERVIEWEE' ? Number(val('fb-professionalism') || 0) : 0,
+          politeness: role === 'INTERVIEWEE' ? Number(val('fb-politeness') || 0) : 0,
+          punctuality: role === 'INTERVIEWEE' ? Number(val('fb-punctuality') || 0) : 0,
+          clarity: role === 'INTERVIEWEE' ? Number(val('fb-clarity') || 0) : 0,
+          inappropriateBehaviorReported: role === 'INTERVIEWEE' ? Boolean(document.getElementById('fb-inappropriate')?.checked) : false,
+          inappropriateBehaviorDetails: role === 'INTERVIEWEE' ? val('fb-inappropriate-details') : '',
+          overallExperience: role === 'INTERVIEWEE' ? comments : '',
+          topicFeedback: role === 'INTERVIEWER' ? topicFeedback : [],
         }),
       });
       document.getElementById('feedback-form').reset();
-      renderFeedbackTopicSections();
+      refreshFeedbackRoleForm();
       toast('Feedback submitted. Suspicious reviews may be held for moderation.', 'success');
       await loadFeedback();
     } catch (err) {

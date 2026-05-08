@@ -52,6 +52,13 @@ public class Feedback {
     private String finalSummary;
     private String privateNotes;
     private Boolean shareWithInterviewee = true;
+    private Integer professionalism = 0;
+    private Integer politeness = 0;
+    private Integer punctuality = 0;
+    private Integer clarity = 0;
+    private Boolean inappropriateBehaviorReported = false;
+    private String inappropriateBehaviorDetails;
+    private String overallExperience;
     private String recommendations;
     private String improvementAreas;
     private String reviewType;
@@ -116,6 +123,20 @@ public class Feedback {
     public void setPrivateNotes(String privateNotes) { this.privateNotes = privateNotes; }
     public Boolean getShareWithInterviewee() { return shareWithInterviewee == null || shareWithInterviewee; }
     public void setShareWithInterviewee(Boolean shareWithInterviewee) { this.shareWithInterviewee = shareWithInterviewee == null || shareWithInterviewee; }
+    public Integer getProfessionalism() { return professionalism == null ? 0 : professionalism; }
+    public void setProfessionalism(Integer professionalism) { this.professionalism = professionalism == null ? 0 : professionalism; }
+    public Integer getPoliteness() { return politeness == null ? 0 : politeness; }
+    public void setPoliteness(Integer politeness) { this.politeness = politeness == null ? 0 : politeness; }
+    public Integer getPunctuality() { return punctuality == null ? 0 : punctuality; }
+    public void setPunctuality(Integer punctuality) { this.punctuality = punctuality == null ? 0 : punctuality; }
+    public Integer getClarity() { return clarity == null ? 0 : clarity; }
+    public void setClarity(Integer clarity) { this.clarity = clarity == null ? 0 : clarity; }
+    public Boolean getInappropriateBehaviorReported() { return inappropriateBehaviorReported != null && inappropriateBehaviorReported; }
+    public void setInappropriateBehaviorReported(Boolean inappropriateBehaviorReported) { this.inappropriateBehaviorReported = inappropriateBehaviorReported != null && inappropriateBehaviorReported; }
+    public String getInappropriateBehaviorDetails() { return inappropriateBehaviorDetails; }
+    public void setInappropriateBehaviorDetails(String inappropriateBehaviorDetails) { this.inappropriateBehaviorDetails = inappropriateBehaviorDetails; }
+    public String getOverallExperience() { return overallExperience; }
+    public void setOverallExperience(String overallExperience) { this.overallExperience = overallExperience; }
     public String getRecommendations() { return recommendations; }
     public void setRecommendations(String recommendations) { this.recommendations = recommendations; }
     public String getImprovementAreas() {

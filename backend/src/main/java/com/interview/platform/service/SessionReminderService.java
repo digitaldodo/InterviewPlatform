@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Optional;
@@ -128,9 +130,14 @@ public class SessionReminderService {
         User interviewee = userRepository.findById(session.getCandidateId())
                 .orElseThrow(() -> new IllegalStateException("Interviewee not found for session " + session.getId()));
 
-        String date = scheduled.format(DATE_FORMATTER);
-        String time = scheduled.format(TIME_FORMATTER);
-        String timezone = timezoneLabel(scheduled);
+        ZonedDateTime intervieweeTime = recipientSchedule(scheduled, interviewee);
+        ZonedDateTime interviewerTime = recipientSchedule(scheduled, interviewer);
+        String intervieweeDate = intervieweeTime.format(DATE_FORMATTER);
+        String intervieweeClock = intervieweeTime.format(TIME_FORMATTER);
+        String intervieweeTimezone = timezoneLabel(intervieweeTime);
+        String interviewerDate = interviewerTime.format(DATE_FORMATTER);
+        String interviewerClock = interviewerTime.format(TIME_FORMATTER);
+        String interviewerTimezone = timezoneLabel(interviewerTime);
 
         if (session.getIntervieweeReminderSentAt() == null) {
             emailService.sendPreInterviewReminder(
@@ -139,9 +146,9 @@ public class SessionReminderService {
                     interviewer.getName(),
                     interviewee.getName(),
                     session.getTopics(),
-                    date,
-                    time,
-                    timezone,
+                    intervieweeDate,
+                    intervieweeClock,
+                    intervieweeTimezone,
                     session.getJoinUrl(),
                     session.getDurationMinutes()
             );
@@ -149,7 +156,7 @@ public class SessionReminderService {
                     session.getCandidateId(),
                     "SESSION_REMINDER",
                     "Upcoming interview",
-                    "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
+                    "Your " + session.getTitle() + " session starts at " + intervieweeClock + " (" + intervieweeTimezone + ").",
                     java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "sessions")
             );
             markRecipientReminderSent(session.getId(), "intervieweeReminderSentAt", now);
@@ -163,9 +170,9 @@ public class SessionReminderService {
                     interviewer.getName(),
                     interviewee.getName(),
                     session.getTopics(),
-                    date,
-                    time,
-                    timezone,
+                    interviewerDate,
+                    interviewerClock,
+                    interviewerTimezone,
                     interviewerMeetingLink(session),
                     session.getDurationMinutes()
             );
@@ -173,7 +180,7 @@ public class SessionReminderService {
                     session.getInterviewerId(),
                     "SESSION_REMINDER",
                     "Upcoming interview",
-                    "Your " + session.getTitle() + " session starts at " + time + " (" + timezone + ").",
+                    "Your " + session.getTitle() + " session starts at " + interviewerClock + " (" + interviewerTimezone + ").",
                     java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "sessions")
             );
             markRecipientReminderSent(session.getId(), "interviewerReminderSentAt", now);
@@ -261,11 +268,23 @@ public class SessionReminderService {
         return user.getEmail();
     }
 
-    private String timezoneLabel(OffsetDateTime scheduled) {
+    private ZonedDateTime recipientSchedule(OffsetDateTime scheduled, User user) {
+        String timeZone = user == null ? null : user.getTimeZone();
+        if (timeZone == null || timeZone.isBlank()) {
+            return scheduled.toZonedDateTime();
+        }
+        try {
+            return scheduled.atZoneSameInstant(ZoneId.of(timeZone.trim()));
+        } catch (RuntimeException ignored) {
+            return scheduled.toZonedDateTime();
+        }
+    }
+
+    private String timezoneLabel(ZonedDateTime scheduled) {
         if (scheduled.getOffset().equals(ZoneOffset.UTC)) {
             return "UTC";
         }
-        return scheduled.getOffset().getId();
+        return scheduled.getZone().getId();
     }
 
     private String toString(Instant instant) {
