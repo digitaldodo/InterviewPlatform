@@ -65,32 +65,34 @@
 
     <section id="section-overview" class="dashboard-section user-workspace-section">
       <div id="role-overview-hero" class="role-dashboard-hero"></div>
-      <div class="stats-grid">
+      <div id="availability-onboarding-banner"></div>
+
+      <div class="content-grid overview-primary-grid">
+        <section class="panel overview-upcoming-panel">
+          <div class="panel-head"><h2>Upcoming meetings</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Manage</button></div>
+          <div id="upcoming-list"></div>
+        </section>
+        <section class="panel interviewee-workspace overview-recommendations-panel">
+          <div class="panel-head"><h2>Recommended interviewers</h2><button class="btn btn-ghost btn-sm" onclick="showSection('discover')">View all</button></div>
+          <div class="interviewer-row" id="recommended-list"></div>
+        </section>
+      </div>
+
+      <div id="role-overview-panels"></div>
+
+      <div class="stats-grid overview-stats-grid">
         <div class="stat-card"><span id="stat-upcoming">0</span><p id="stat-upcoming-label">Upcoming</p></div>
         <div class="stat-card"><span id="stat-completed">0</span><p id="stat-completed-label">Completed</p></div>
         <div class="stat-card"><span id="stat-rating">-</span><p id="stat-rating-label">Average rating</p></div>
         <div class="stat-card" id="stat-streak-card" hidden><span id="stat-streak">-</span><p>Practice streak</p></div>
       </div>
-      <div id="availability-onboarding-banner"></div>
-      <div id="role-overview-panels"></div>
 
-      <div class="content-grid">
-        <section class="panel interviewee-workspace">
-          <div class="panel-head"><h2>Recommended interviewers</h2><button class="btn btn-ghost btn-sm" onclick="showSection('discover')">View all</button></div>
-          <div class="interviewer-row" id="recommended-list"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Upcoming meetings</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Manage</button></div>
-          <div id="upcoming-list"></div>
-        </section>
-      </div>
-
-      <div class="content-grid">
-        <section class="panel interviewee-workspace">
+      <div class="content-grid overview-secondary-grid">
+        <section class="panel interviewee-workspace overview-analytics-panel">
           <div class="panel-head"><h2>Skill progress</h2></div>
           <div class="progress-list" id="skill-progress"></div>
         </section>
-        <section class="panel">
+        <section class="panel overview-feedback-panel">
           <div class="panel-head"><h2>Recent feedback</h2></div>
           <div id="recent-feedback"></div>
         </section>
