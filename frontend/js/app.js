@@ -7,6 +7,11 @@ const authStore = {
     if (session.accessToken) localStorage.setItem('ip_access_token', session.accessToken);
     if (session.refreshToken) localStorage.setItem('ip_refresh_token', session.refreshToken);
   },
+  clear() {
+    localStorage.removeItem('ip_user');
+    localStorage.removeItem('ip_access_token');
+    localStorage.removeItem('ip_refresh_token');
+  },
   user() {
     try { return JSON.parse(localStorage.getItem('ip_user')); } catch { return null; }
   },
@@ -15,9 +20,14 @@ const authStore = {
 let resetEmail = '';
 let usernameAvailabilityTimer = null;
 let usernameAvailabilityState = { value: '', available: false };
+let pendingVerificationEmail = '';
 
 window.addEventListener('DOMContentLoaded', () => {
-  if (authStore.user()?.id) window.location.href = 'pages/dashboard.html';
+  const storedUser = authStore.user();
+  if (storedUser?.id && storedUser.isVerified !== false) {
+    window.location.href = 'pages/dashboard.html';
+    return;
+  }
   document.getElementById('interviewer-fields').style.display = 'none';
   document.getElementById('reset-otp-group').style.display = 'none';
   document.getElementById('reset-password-group').style.display = 'none';
@@ -26,6 +36,19 @@ window.addEventListener('DOMContentLoaded', () => {
   FormUx.initPasswordToggles();
   bindUsernameValidation('reg-username', 'reg-username-status');
   updateRoleFields();
+  if (storedUser?.id && storedUser.isVerified === false) {
+    authStore.clear();
+    beginEmailVerification(storedUser.email || '', {
+      title: 'Verify your email.',
+      body: 'Enter the code from your email or request a new one.',
+      alert: 'Please verify your email before signing in.',
+    });
+    return;
+  }
+  const pendingEmail = sessionStorage.getItem('ip_pending_verification_email');
+  if (pendingEmail) {
+    beginEmailVerification(pendingEmail);
+  }
 });
 
 document.querySelectorAll('#reg-role-group input').forEach(input => input.addEventListener('change', updateRoleFields));
@@ -48,6 +71,62 @@ function switchTab(tab) {
     document.getElementById(`tab-${name}`)?.classList.toggle('active', name === tab);
     document.getElementById(`panel-${name}`)?.classList.toggle('active', name === tab);
   });
+}
+
+function setVerifyCopy(title, body) {
+  const root = document.getElementById('verify-copy');
+  if (!root || typeof root.querySelector !== 'function') return;
+  const strong = root.querySelector('strong');
+  const span = root.querySelector('span');
+  if (strong) strong.textContent = title;
+  if (span) span.textContent = body;
+}
+
+function hideAlert(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = '';
+  el.className = 'alert';
+}
+
+function beginEmailVerification(email, options = {}) {
+  pendingVerificationEmail = String(email || '').trim();
+  if (pendingVerificationEmail) {
+    sessionStorage.setItem('ip_pending_verification_email', pendingVerificationEmail);
+    document.getElementById('otp-email').value = pendingVerificationEmail;
+  }
+  setVerifyCopy(
+    options.title || 'Account created successfully.',
+    options.body || 'We sent a verification code to your email.'
+  );
+  document.getElementById('otp-code').value = '';
+  switchTab('verify');
+  if (options.alert) {
+    showAlert('otp-alert', options.alert, options.alertType || 'success');
+  } else {
+    hideAlert('otp-alert');
+  }
+  setTimeout(() => document.getElementById('otp-code')?.focus(), 50);
+}
+
+function completeEmailVerification(email) {
+  const verifiedEmail = String(email || pendingVerificationEmail || '').trim();
+  sessionStorage.removeItem('ip_pending_verification_email');
+  pendingVerificationEmail = '';
+  authStore.clear();
+  document.getElementById('login-email').value = verifiedEmail;
+  document.getElementById('login-password').value = '';
+  switchTab('login');
+  showAlert('login-alert', 'Email verified. You can sign in now.', 'success');
+  setTimeout(() => document.getElementById('login-password')?.focus(), 50);
+}
+
+function isEmailLike(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
+function isVerificationRequiredError(error) {
+  return /verify your email/i.test(error?.message || '');
 }
 
 function showAlert(id, message, type = 'error') {
@@ -205,13 +284,14 @@ function delay(ms) {
 document.getElementById('login-form').addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('login-submit');
+  const identifier = document.getElementById('login-email').value.trim();
   setLoading(btn, true, 'Signing in');
   try {
     const session = await api('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        email: document.getElementById('login-email').value.trim(),
-        identifier: document.getElementById('login-email').value.trim(),
+        email: identifier,
+        identifier,
         password: document.getElementById('login-password').value,
       }),
     });
@@ -219,6 +299,14 @@ document.getElementById('login-form').addEventListener('submit', async event => 
     toast('Welcome back.', 'success');
     window.location.href = 'pages/dashboard.html';
   } catch (err) {
+    if (isVerificationRequiredError(err) && isEmailLike(identifier)) {
+      beginEmailVerification(identifier, {
+        title: 'Verify your email.',
+        body: 'Enter the code from your email or request a new one.',
+        alert: 'Please verify your email before signing in.',
+      });
+      return;
+    }
     showAlert('login-alert', err.message);
   } finally {
     setLoading(btn, false);
@@ -239,7 +327,7 @@ document.getElementById('register-form').addEventListener('submit', async event 
     const username = await validateUsernameBeforeSubmit('reg-username', 'reg-username-status');
     if (!username) return;
     const displayName = document.getElementById('reg-name').value.trim();
-    const session = await api('/api/auth/register', {
+    await api('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         name: displayName,
@@ -256,10 +344,8 @@ document.getElementById('register-form').addEventListener('submit', async event 
         skills,
       }),
     });
-    authStore.set(session);
-    document.getElementById('otp-email').value = document.getElementById('reg-email').value.trim();
-    switchTab('verify');
-    showAlert('otp-alert', 'Account created. Check your email for the OTP.', 'success');
+    authStore.clear();
+    beginEmailVerification(document.getElementById('reg-email').value.trim());
   } catch (err) {
     showAlert('register-alert', err.message);
   } finally {
@@ -270,21 +356,18 @@ document.getElementById('register-form').addEventListener('submit', async event 
 document.getElementById('otp-form').addEventListener('submit', async event => {
   event.preventDefault();
   const btn = document.getElementById('otp-submit');
+  const email = document.getElementById('otp-email').value.trim();
   setLoading(btn, true, 'Verifying');
   try {
     await api('/api/auth/verify-otp', {
       method: 'POST',
       body: JSON.stringify({
-        email: document.getElementById('otp-email').value.trim(),
+        email,
         otp: document.getElementById('otp-code').value.trim(),
       }),
     });
-    const user = authStore.user();
-    if (user) {
-      user.isVerified = true;
-      localStorage.setItem('ip_user', JSON.stringify(user));
-    }
-    window.location.href = 'pages/dashboard.html';
+    showAlert('otp-alert', 'Email verified. Redirecting you to login...', 'success');
+    setTimeout(() => completeEmailVerification(email), 800);
   } catch (err) {
     showAlert('otp-alert', err.message);
   } finally {
@@ -293,6 +376,8 @@ document.getElementById('otp-form').addEventListener('submit', async event => {
 });
 
 async function resendOtp() {
+  const btn = document.getElementById('otp-resend');
+  setLoading(btn, true, 'Sending');
   try {
     await api('/api/auth/resend-otp', {
       method: 'POST',
@@ -301,6 +386,8 @@ async function resendOtp() {
     showAlert('otp-alert', 'A fresh OTP has been sent.', 'success');
   } catch (err) {
     showAlert('otp-alert', err.message);
+  } finally {
+    setLoading(btn, false);
   }
 }
 

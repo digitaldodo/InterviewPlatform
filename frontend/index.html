@@ -202,18 +202,23 @@
         </div>
 
         <div id="panel-verify" class="tab-panel" role="tabpanel">
+          <div class="auth-panel-note" id="verify-copy">
+            <strong>Account created successfully.</strong>
+            <span>We sent a verification code to your email.</span>
+          </div>
           <div id="otp-alert" class="alert"></div>
           <form id="otp-form" novalidate>
             <div class="form-group">
               <label for="otp-email">Email address</label>
-              <input id="otp-email" type="email" required />
+              <input id="otp-email" type="email" placeholder="you@example.com" required autocomplete="email" />
             </div>
             <div class="form-group">
               <label for="otp-code">Verification code</label>
-              <input id="otp-code" type="text" inputmode="numeric" maxlength="6" required />
+              <input id="otp-code" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" required autocomplete="one-time-code" />
             </div>
             <button id="otp-submit" type="submit" class="btn btn-primary btn-full">Verify email</button>
-            <button type="button" class="btn btn-ghost btn-full" onclick="resendOtp()">Resend code</button>
+            <button id="otp-resend" type="button" class="btn btn-ghost btn-full" onclick="resendOtp()">Resend OTP</button>
+            <button type="button" class="btn btn-outline btn-full" onclick="switchTab('login')">Back to login</button>
           </form>
         </div>
 

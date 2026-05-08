@@ -780,6 +780,24 @@ textarea:focus-visible {
   display: block;
 }
 
+.auth-panel-note {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(110, 231, 200, 0.2);
+  border-radius: var(--radius);
+  background: rgba(110, 231, 200, 0.08);
+}
+
+.auth-panel-note strong {
+  color: var(--text);
+}
+
+.auth-panel-note span {
+  color: var(--muted);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
