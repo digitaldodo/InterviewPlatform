@@ -37,17 +37,20 @@ public class SessionService {
     private final EmailService emailService;
     private final MeetingProviderService meetingProviderService;
     private final AvailabilitySlotService availabilitySlotService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
                           NotificationService notificationService, EmailService emailService,
                           MeetingProviderService meetingProviderService,
-                          AvailabilitySlotService availabilitySlotService) {
+                          AvailabilitySlotService availabilitySlotService,
+                          CacheInvalidationService cacheInvalidationService) {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.emailService = emailService;
         this.meetingProviderService = meetingProviderService;
         this.availabilitySlotService = availabilitySlotService;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public Session createSession(Session session) {
@@ -136,6 +139,9 @@ public class SessionService {
         session.setUpdatedAt(Instant.now());
 
         Session saved = sessionRepository.save(session);
+        cacheInvalidationService.evictAvailabilityCaches(saved.getInterviewerId());
+        cacheInvalidationService.evictAnalyticsForParticipants(saved.getInterviewerId(), saved.getCandidateId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getInterviewerId(), interviewer.getUsername());
         notifyCreated(saved, interviewer, interviewee);
         return sanitizeSession(saved);
     }
@@ -215,6 +221,8 @@ public class SessionService {
         Session saved = sessionRepository.save(session);
         refreshUserSessionStats(saved.getInterviewerId());
         refreshUserSessionStats(saved.getCandidateId());
+        cacheInvalidationService.evictAvailabilityCaches(saved.getInterviewerId());
+        cacheInvalidationService.evictAnalyticsForParticipants(saved.getInterviewerId(), saved.getCandidateId());
         notifyStatusChanged(saved);
         return sanitizeSession(saved);
     }
@@ -261,6 +269,7 @@ public class SessionService {
             session.setMeetingStartedAt(session.getMeetingStartedAt() == null ? Instant.now() : session.getMeetingStartedAt());
             session.setUpdatedAt(Instant.now());
             session = sessionRepository.save(session);
+            cacheInvalidationService.evictAnalyticsForParticipants(session.getInterviewerId(), session.getCandidateId());
             notifyMeetingStarted(session);
         }
         return securedMeetingAccess(session, actor, interviewer, interviewee, true);
@@ -604,7 +613,9 @@ public class SessionService {
                     .count();
             user.setCompletedInterviews((int) interviewerCompleted);
         }
-        userRepository.save(user);
+        User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
     }
 
     private boolean isAdmin(User actor) {

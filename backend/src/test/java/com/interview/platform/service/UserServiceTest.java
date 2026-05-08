@@ -68,6 +68,8 @@ class UserServiceTest {
 
     @Mock
     private ResumeIntelligenceService resumeIntelligenceService;
+    @Mock
+    private CacheInvalidationService cacheInvalidationService;
 
     private UserService userService;
 
@@ -87,7 +89,8 @@ class UserServiceTest {
                 passwordResetTokenRepository,
                 verificationOtpRepository,
                 new AccountIdentityService(userRepository),
-                resumeIntelligenceService
+                resumeIntelligenceService,
+                cacheInvalidationService
         );
     }
 

@@ -8,6 +8,7 @@ import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
 import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.TrustService;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,14 +26,14 @@ public class TrustController {
     }
 
     @PostMapping("/reports")
-    public ResponseEntity<ApiResponse<UserReport>> createReport(@RequestBody ReportDtos.CreateReportRequest request,
+    public ResponseEntity<ApiResponse<UserReport>> createReport(@Valid @RequestBody ReportDtos.CreateReportRequest request,
                                                                 Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Report submitted successfully",
                 trustService.submitReport(currentUser(authentication), request)));
     }
 
     @PostMapping("/verification-request")
-    public ResponseEntity<ApiResponse<User>> submitVerificationRequest(@RequestBody UserDtos.VerificationRequestSubmission request,
+    public ResponseEntity<ApiResponse<User>> submitVerificationRequest(@Valid @RequestBody UserDtos.VerificationRequestSubmission request,
                                                                        Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Verification request submitted successfully",
                 trustService.submitVerificationRequest(currentUser(authentication), request)));

@@ -35,6 +35,7 @@ public class AuthService {
     private final EmailService emailService;
     private final AccountIdentityService accountIdentityService;
     private final NotificationService notificationService;
+    private final CacheInvalidationService cacheInvalidationService;
     private final long refreshTokenDays;
 
     public AuthService(
@@ -48,6 +49,7 @@ public class AuthService {
             EmailService emailService,
             AccountIdentityService accountIdentityService,
             NotificationService notificationService,
+            CacheInvalidationService cacheInvalidationService,
             @Value("${app.jwt.refresh-token-days}") long refreshTokenDays
     ) {
         this.userRepository = userRepository;
@@ -60,6 +62,7 @@ public class AuthService {
         this.emailService = emailService;
         this.accountIdentityService = accountIdentityService;
         this.notificationService = notificationService;
+        this.cacheInvalidationService = cacheInvalidationService;
         this.refreshTokenDays = refreshTokenDays;
     }
 
@@ -107,7 +110,10 @@ public class AuthService {
         if (user.getSkills() == null) {
             user.setSkills(List.of());
         }
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
+        return saved;
     }
 
     public AuthDtos.AuthResponse login(AuthDtos.LoginRequest request) {
@@ -129,6 +135,7 @@ public class AuthService {
         accountIdentityService.ensureIdentity(user);
         user.setLastLogin(Instant.now());
         userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(user.getId());
         return authResponse(user);
     }
 
@@ -226,6 +233,8 @@ public class AuthService {
         user.setIsVerified(true);
         accountIdentityService.ensureIdentity(user);
         userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(user.getId());
+        cacheInvalidationService.evictInterviewerCaches(user.getId(), user.getUsername());
         if (!wasVerified) {
             notificationService.create(
                     user.getId(),
@@ -305,6 +314,7 @@ public class AuthService {
         user.setPassword(null);
         user.setIsVerified(true);
         userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(user.getId());
         notificationService.create(
                 user.getId(),
                 "PASSWORD_UPDATED",

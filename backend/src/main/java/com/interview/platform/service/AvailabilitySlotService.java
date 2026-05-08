@@ -1,6 +1,7 @@
 package com.interview.platform.service;
 
 import com.interview.platform.dto.AvailabilityDtos;
+import com.interview.platform.config.CacheConfig;
 import com.interview.platform.model.InterviewerAvailability;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
@@ -8,6 +9,7 @@ import com.interview.platform.repository.InterviewerAvailabilityRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -53,6 +55,7 @@ public class AvailabilitySlotService {
         this.defaultHorizonDays = Math.max(1, defaultHorizonDays);
     }
 
+    @Cacheable(cacheNames = CacheConfig.AVAILABILITY_SLOTS_CACHE, key = "#interviewerId + ':' + (#days == null ? 'default' : #days)")
     public List<String> availableSlotStartTimes(String interviewerId, Integer days) {
         return generatedSlots(interviewerId, days, false).stream()
                 .map(GeneratedSlot::startTime)
@@ -63,6 +66,7 @@ public class AvailabilitySlotService {
         return generatedSlotResponses(interviewerId, days, false);
     }
 
+    @Cacheable(cacheNames = CacheConfig.AVAILABILITY_SLOT_RESPONSES_CACHE, key = "#interviewerId + ':' + (#days == null ? 'default' : #days) + ':' + #includeUnavailable")
     public List<AvailabilityDtos.GeneratedSlotResponse> generatedSlotResponses(String interviewerId, Integer days, boolean includeUnavailable) {
         return generatedSlots(interviewerId, days, includeUnavailable).stream()
                 .map(slot -> new AvailabilityDtos.GeneratedSlotResponse(

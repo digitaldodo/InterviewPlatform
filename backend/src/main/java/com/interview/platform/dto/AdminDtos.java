@@ -233,6 +233,36 @@ public class AdminDtos {
             List<ModerationAuditItem> recentModeration
     ) {}
 
+    public record JvmDiagnostics(
+            long usedMemoryBytes,
+            long allocatedMemoryBytes,
+            long maxMemoryBytes,
+            int availableProcessors,
+            long uptimeMs
+    ) {}
+
+    public record CacheDiagnostics(
+            String name,
+            Long estimatedSize,
+            Long hitCount,
+            Long missCount,
+            Long evictionCount
+    ) {}
+
+    public record NotificationDiagnostics(
+            int activeEmitterCount,
+            int activeUsersWithEmitters
+    ) {}
+
+    public record SystemDiagnosticsResponse(
+            String capturedAt,
+            JvmDiagnostics jvm,
+            List<CacheDiagnostics> caches,
+            Map<String, Object> rateLimits,
+            NotificationDiagnostics notifications,
+            com.interview.platform.service.SessionReminderService.ReminderDiagnostics reminders
+    ) {}
+
     public record OverviewResponse(
             long totalUsers,
             long activeUsers,

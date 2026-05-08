@@ -28,6 +28,7 @@ public class CorsConfig {
                         .allowedOriginPatterns(origins)
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
+                        .exposedHeaders("X-Request-Id", "Retry-After")
                         .allowCredentials(false)
                         .maxAge(3600);
             }

@@ -2,8 +2,13 @@ package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,11 +17,17 @@ import java.util.List;
 import java.util.Map;
 
 @Document(collection = "feedback")
-@CompoundIndex(name = "reviewer_created_idx", def = "{'reviewerId': 1, 'createdAt': -1}")
+@CompoundIndexes({
+        @CompoundIndex(name = "reviewer_created_idx", def = "{'reviewerId': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "session_reviewer_idx", def = "{'sessionId': 1, 'reviewerId': 1}", unique = true),
+        @CompoundIndex(name = "interviewer_public_created_idx", def = "{'interviewerId': 1, 'publicReview': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "moderation_created_idx", def = "{'flaggedForModeration': 1, 'createdAt': -1}")
+})
 public class Feedback {
     @Id
     private String id;
     @Indexed
+    @NotBlank
     private String sessionId;
     @Indexed
     private String reviewerId;
@@ -24,7 +35,10 @@ public class Feedback {
     private String targetUserId;
     @Indexed
     private String interviewerId;
+    @Size(min = 12, max = 4000)
     private String comments;
+    @Min(1)
+    @Max(5)
     private int rating;
     private String strengths;
     private String weaknesses;

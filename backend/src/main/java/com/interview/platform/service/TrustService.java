@@ -30,15 +30,18 @@ public class TrustService {
     private final UserRepository userRepository;
     private final SessionRepository sessionRepository;
     private final ModerationAuditService moderationAuditService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public TrustService(UserReportRepository userReportRepository,
                         UserRepository userRepository,
                         SessionRepository sessionRepository,
-                        ModerationAuditService moderationAuditService) {
+                        ModerationAuditService moderationAuditService,
+                        CacheInvalidationService cacheInvalidationService) {
         this.userReportRepository = userReportRepository;
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.moderationAuditService = moderationAuditService;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public UserReport submitReport(User actor, ReportDtos.CreateReportRequest request) {
@@ -150,6 +153,8 @@ public class TrustService {
                 null,
                 auditState(saved)
         );
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
         return saved;
     }
 

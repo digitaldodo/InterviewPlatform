@@ -12,7 +12,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Document(collection = "users")
-@CompoundIndex(name = "multi_role_active_rating_idx", def = "{'roles': 1, 'role': 1, 'isVerified': 1, 'averageRating': -1}")
+@org.springframework.data.mongodb.core.index.CompoundIndexes({
+        @CompoundIndex(name = "multi_role_active_rating_idx", def = "{'roles': 1, 'role': 1, 'isVerified': 1, 'averageRating': -1}"),
+        @CompoundIndex(name = "marketplace_visibility_idx", def = "{'roles': 1, 'accountEnabled': 1, 'publicProfileVisible': 1, 'acceptingBookings': 1, 'averageRating': -1}"),
+        @CompoundIndex(name = "booking_recommendation_idx", def = "{'roles': 1, 'acceptingBookings': 1, 'completedInterviews': -1}")
+})
 public class User {
 
     @Id

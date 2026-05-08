@@ -12,6 +12,7 @@ import com.interview.platform.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -43,7 +44,11 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<User>> getUserById(@PathVariable String id) {
+    public ResponseEntity<ApiResponse<User>> getUserById(@PathVariable String id, Authentication authentication) {
+        User actor = currentUser(authentication);
+        if (!actor.hasRole("ADMIN") && !actor.getId().equals(id)) {
+            throw new UnauthorizedException("You can only access your own profile");
+        }
         User user = userService.getById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return ResponseEntity.ok(ApiResponse.success("User fetched successfully", user));
@@ -135,6 +140,7 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<List<User>>> getAllUsers() {
         return ResponseEntity.ok(ApiResponse.success("Users fetched successfully", userService.getAllUsers()));
     }

@@ -143,12 +143,21 @@ async function validateUsernameBeforeSubmit(inputId, statusId) {
   return usernameAvailabilityState.value === username && usernameAvailabilityState.available ? username : null;
 }
 
-async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+async function api(path, options = {}, attempt = 0) {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const headers = { ...(options.headers || {}) };
+  if (!isFormData && !headers['Content-Type'] && !headers['content-type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const res = await fetchWithTimeout(`${API_BASE}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers,
   });
   const payload = await readPayload(res);
+  if (shouldRetry(res, options, attempt)) {
+    await delay(retryDelayMs(attempt, retryAfterSeconds(res)));
+    return api(path, options, attempt + 1);
+  }
   if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
   return payload?.data ?? payload;
 }
@@ -157,6 +166,40 @@ async function readPayload(res) {
   const text = await res.text();
   if (!text) return null;
   try { return JSON.parse(text); } catch { return { message: text }; }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('Request timed out. Please try again.');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function shouldRetry(res, options, attempt) {
+  const method = String(options.method || 'GET').toUpperCase();
+  if (attempt >= 2) return false;
+  if (!['GET', 'HEAD'].includes(method)) return false;
+  return res.status === 429 || res.status === 502 || res.status === 503 || res.status === 504;
+}
+
+function retryAfterSeconds(res) {
+  const value = Number(res.headers.get('Retry-After'));
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function retryDelayMs(attempt, retryAfter) {
+  if (retryAfter > 0) return retryAfter * 1000;
+  return 400 * (attempt + 1);
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 document.getElementById('login-form').addEventListener('submit', async event => {

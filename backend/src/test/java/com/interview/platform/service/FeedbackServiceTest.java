@@ -32,10 +32,12 @@ class FeedbackServiceTest {
     private NotificationService notificationService;
     @Mock
     private InterviewReportService interviewReportService;
+    @Mock
+    private CacheInvalidationService cacheInvalidationService;
 
     @Test
     void rejectsDuplicateFeedbackFromSameReviewerForSession() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -58,7 +60,7 @@ class FeedbackServiceTest {
 
     @Test
     void marksCompletedCandidateFeedbackAsPublicReview() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -81,7 +83,7 @@ class FeedbackServiceTest {
         when(feedbackRepository.findTop10ByReviewerIdOrderByCreatedAtDesc("candidate-1")).thenReturn(java.util.List.of());
         when(feedbackRepository.save(any(Feedback.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(sessionRepository.findByInterviewerId("interviewer-1")).thenReturn(java.util.List.of(session));
-        when(feedbackRepository.findAll()).thenReturn(java.util.List.of(feedback));
+        when(feedbackRepository.findByInterviewerIdAndPublicReviewTrue("interviewer-1")).thenReturn(java.util.List.of(feedback));
         when(userRepository.findById("interviewer-1")).thenReturn(Optional.of(interviewer));
 
         FeedbackDtos.FeedbackItem saved = service.submitFeedback(actor, feedback);
@@ -93,7 +95,7 @@ class FeedbackServiceTest {
 
     @Test
     void rejectsFeedbackWhenSessionIsOnlyConfirmed() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService());
+        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();

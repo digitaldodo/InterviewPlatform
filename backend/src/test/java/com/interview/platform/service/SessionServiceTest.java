@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -42,6 +43,8 @@ class SessionServiceTest {
     private MeetingProviderService meetingProviderService;
     @Mock
     private AvailabilitySlotService availabilitySlotService;
+    @Mock
+    private CacheInvalidationService cacheInvalidationService;
 
     @InjectMocks
     private SessionService sessionService;
@@ -271,7 +274,9 @@ class SessionServiceTest {
         when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
         when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(meetingProviderService.buildAccess(any(Session.class), any(User.class), any(User.class), any(User.class))).thenReturn(access);
+        org.mockito.Mockito.doReturn(access)
+                .when(meetingProviderService)
+                .buildAccess(any(Session.class), any(User.class), any(User.class), any(User.class));
 
         MeetingDtos.MeetingAccessResponse result = sessionService.startMeeting("session-1", interviewer);
 
@@ -319,7 +324,10 @@ class SessionServiceTest {
         when(sessionRepository.findById("session-1")).thenReturn(Optional.of(session));
         when(userRepository.findById("int-1")).thenReturn(Optional.of(interviewer));
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(candidate));
-        when(meetingProviderService.buildAccess(any(Session.class), any(User.class), any(User.class), any(User.class))).thenReturn(access);
+        when(sessionRepository.save(any(Session.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        org.mockito.Mockito.doReturn(access)
+                .when(meetingProviderService)
+                .buildAccess(nullable(Session.class), any(User.class), any(User.class), any(User.class));
 
         MeetingDtos.MeetingAccessResponse result = sessionService.getMeetingAccess("session-1", candidate);
 

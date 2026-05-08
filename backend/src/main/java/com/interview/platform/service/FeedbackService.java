@@ -25,19 +25,22 @@ public class FeedbackService {
     private final NotificationService notificationService;
     private final InterviewReportService interviewReportService;
     private final ReviewIntegrityService reviewIntegrityService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public FeedbackService(FeedbackRepository feedbackRepository,
                            SessionRepository sessionRepository,
                            UserRepository userRepository,
                            NotificationService notificationService,
                            InterviewReportService interviewReportService,
-                           ReviewIntegrityService reviewIntegrityService) {
+                           ReviewIntegrityService reviewIntegrityService,
+                           CacheInvalidationService cacheInvalidationService) {
         this.feedbackRepository = feedbackRepository;
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.interviewReportService = interviewReportService;
         this.reviewIntegrityService = reviewIntegrityService;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public FeedbackDtos.FeedbackItem submitFeedback(User actor, Feedback feedback) {
@@ -114,6 +117,9 @@ public class FeedbackService {
                         : "New feedback is available for " + session.getTitle() + ".",
                 java.util.Map.of("sessionId", session.getId())
         );
+        cacheInvalidationService.evictAnalyticsForParticipants(session.getCandidateId(), session.getInterviewerId());
+        cacheInvalidationService.evictInterviewerCaches(session.getInterviewerId(),
+                userRepository.findById(session.getInterviewerId()).map(User::getUsername).orElse(null));
         return toFeedbackItem(saved);
     }
 
@@ -163,11 +169,7 @@ public class FeedbackService {
         Session session = sessionRepository.findById(sessionId).orElse(null);
         if (session == null || session.getInterviewerId() == null) return;
         List<Session> sessions = sessionRepository.findByInterviewerId(session.getInterviewerId());
-        List<String> ids = sessions.stream().map(Session::getId).toList();
-        List<Feedback> all = feedbackRepository.findAll().stream()
-                .filter(item -> ids.contains(item.getSessionId()))
-                .filter(item -> Boolean.TRUE.equals(item.getPublicReview()))
-                .toList();
+        List<Feedback> all = feedbackRepository.findByInterviewerIdAndPublicReviewTrue(session.getInterviewerId());
         User interviewer = userRepository.findById(session.getInterviewerId()).orElse(null);
         if (interviewer == null) return;
         double avg = all.stream().mapToInt(Feedback::getRating).average().orElse(0.0);

@@ -5,6 +5,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClientException;
@@ -16,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
@@ -39,7 +41,7 @@ public class CloudinaryImageService {
     );
     private static final Set<String> ALLOWED_DOCUMENT_EXTENSIONS = Set.of(".pdf", ".docx");
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private final String cloudName;
     private final String apiKey;
     private final String apiSecret;
@@ -51,13 +53,19 @@ public class CloudinaryImageService {
             @org.springframework.beans.factory.annotation.Value("${app.cloudinary.api-key:}") String apiKey,
             @org.springframework.beans.factory.annotation.Value("${app.cloudinary.api-secret:}") String apiSecret,
             @org.springframework.beans.factory.annotation.Value("${app.cloudinary.folder:interviewprep/avatars}") String folder,
-            @org.springframework.beans.factory.annotation.Value("${app.cloudinary.resume-folder:interviewprep/resumes}") String resumeFolder
+            @org.springframework.beans.factory.annotation.Value("${app.cloudinary.resume-folder:interviewprep/resumes}") String resumeFolder,
+            @org.springframework.beans.factory.annotation.Value("${app.cloudinary.connect-timeout-ms:5000}") int connectTimeoutMs,
+            @org.springframework.beans.factory.annotation.Value("${app.cloudinary.read-timeout-ms:15000}") int readTimeoutMs
     ) {
         this.cloudName = cloudName == null ? "" : cloudName.trim();
         this.apiKey = apiKey == null ? "" : apiKey.trim();
         this.apiSecret = apiSecret == null ? "" : apiSecret.trim();
         this.folder = folder == null || folder.isBlank() ? "interviewprep/avatars" : folder.trim();
         this.resumeFolder = resumeFolder == null || resumeFolder.isBlank() ? "interviewprep/resumes" : resumeFolder.trim();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.max(1000, connectTimeoutMs));
+        requestFactory.setReadTimeout(Math.max(1000, readTimeoutMs));
+        this.restTemplate = new RestTemplate(requestFactory);
     }
 
     public String uploadProfileImage(String userId, MultipartFile file) {
@@ -121,6 +129,10 @@ public class CloudinaryImageService {
         if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT))) {
             throw new IllegalArgumentException("Only JPG, PNG, WEBP, GIF, and AVIF images are supported.");
         }
+        byte[] bytes = firstBytes(file);
+        if (!hasSupportedImageSignature(bytes)) {
+            throw new IllegalArgumentException("Image contents do not match the selected file type.");
+        }
     }
 
     private void validateDocumentFile(MultipartFile file) {
@@ -142,6 +154,13 @@ public class CloudinaryImageService {
                 && !"application/octet-stream".equalsIgnoreCase(contentType)) {
             throw new IllegalArgumentException("Unsupported resume file type. Upload PDF or DOCX.");
         }
+        byte[] bytes = firstBytes(file);
+        if (lowerFilename.endsWith(".pdf") && !startsWith(bytes, new byte[]{0x25, 0x50, 0x44, 0x46})) {
+            throw new IllegalArgumentException("Resume contents do not match a PDF file.");
+        }
+        if (lowerFilename.endsWith(".docx") && !startsWith(bytes, new byte[]{0x50, 0x4B, 0x03, 0x04})) {
+            throw new IllegalArgumentException("Resume contents do not match a DOCX file.");
+        }
     }
 
     private ByteArrayResource namedResource(MultipartFile file) {
@@ -149,7 +168,7 @@ public class CloudinaryImageService {
             byte[] bytes = file.getBytes();
             String filename = file.getOriginalFilename() == null || file.getOriginalFilename().isBlank()
                     ? "avatar-upload"
-                    : file.getOriginalFilename().trim();
+                    : sanitizeFilename(file.getOriginalFilename());
             return new ByteArrayResource(bytes) {
                 @Override
                 public String getFilename() {
@@ -205,6 +224,53 @@ public class CloudinaryImageService {
         } catch (RestClientException ex) {
             throw new IllegalArgumentException(errorMessage);
         }
+    }
+
+    private byte[] firstBytes(MultipartFile file) {
+        try {
+            byte[] bytes = file.getBytes();
+            return bytes.length <= 16 ? bytes : Arrays.copyOf(bytes, 16);
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("Could not read the selected file.");
+        }
+    }
+
+    private boolean hasSupportedImageSignature(byte[] bytes) {
+        return startsWith(bytes, new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF})
+                || startsWith(bytes, new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47})
+                || startsWith(bytes, "GIF8".getBytes(StandardCharsets.UTF_8))
+                || (startsWith(bytes, "RIFF".getBytes(StandardCharsets.UTF_8))
+                        && containsAt(bytes, "WEBP".getBytes(StandardCharsets.UTF_8), 8))
+                || containsAt(bytes, "ftypavif".getBytes(StandardCharsets.UTF_8), 4)
+                || containsAt(bytes, "ftypmif1".getBytes(StandardCharsets.UTF_8), 4);
+    }
+
+    private boolean startsWith(byte[] actual, byte[] expected) {
+        if (actual == null || expected == null || actual.length < expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i += 1) {
+            if (actual[i] != expected[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean containsAt(byte[] actual, byte[] expected, int offset) {
+        if (actual == null || expected == null || offset < 0 || actual.length < offset + expected.length) {
+            return false;
+        }
+        for (int i = 0; i < expected.length; i += 1) {
+            if (actual[offset + i] != expected[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String sanitizeFilename(String fileName) {
+        return fileName.trim().replaceAll("[\\r\\n\\\\/]+", "_");
     }
 
     public record UploadedAsset(String url, String fileName, String contentType) {}

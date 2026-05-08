@@ -38,10 +38,14 @@ public class AvailabilityService {
 
     private final InterviewerAvailabilityRepository availabilityRepository;
     private final UserRepository userRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
-    public AvailabilityService(InterviewerAvailabilityRepository availabilityRepository, UserRepository userRepository) {
+    public AvailabilityService(InterviewerAvailabilityRepository availabilityRepository,
+                               UserRepository userRepository,
+                               CacheInvalidationService cacheInvalidationService) {
         this.availabilityRepository = availabilityRepository;
         this.userRepository = userRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public List<AvailabilityDtos.AvailabilityResponse> getOwnAvailability(String interviewerId) {
@@ -66,7 +70,9 @@ public class AvailabilityService {
         availability.setDurationMinutes(request.getDurationMinutes());
         availability.setCreatedAt(Instant.now());
         availability.setUpdatedAt(Instant.now());
-        return toResponse(availabilityRepository.save(availability));
+        AvailabilityDtos.AvailabilityResponse response = toResponse(availabilityRepository.save(availability));
+        cacheInvalidationService.evictAvailabilityCaches(interviewer.getId());
+        return response;
     }
 
     public AvailabilityDtos.AvailabilityResponse update(String interviewerId, String availabilityId, AvailabilityDtos.UpsertRequest request) {
@@ -84,7 +90,9 @@ public class AvailabilityService {
         availability.setEndTime(endTime.truncatedTo(ChronoUnit.MINUTES).toString());
         availability.setDurationMinutes(request.getDurationMinutes());
         availability.setUpdatedAt(Instant.now());
-        return toResponse(availabilityRepository.save(availability));
+        AvailabilityDtos.AvailabilityResponse response = toResponse(availabilityRepository.save(availability));
+        cacheInvalidationService.evictAvailabilityCaches(interviewer.getId());
+        return response;
     }
 
     public void delete(String interviewerId, String availabilityId) {
@@ -92,6 +100,7 @@ public class AvailabilityService {
         InterviewerAvailability availability = availabilityRepository.findByIdAndInterviewerId(availabilityId, interviewer.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Availability not found"));
         availabilityRepository.delete(availability);
+        cacheInvalidationService.evictAvailabilityCaches(interviewer.getId());
     }
 
     private User requireInterviewer(String interviewerId) {

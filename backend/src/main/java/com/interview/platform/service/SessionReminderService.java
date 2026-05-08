@@ -43,6 +43,10 @@ public class SessionReminderService {
     private final int minutesBefore;
     private final int batchSize;
     private final Duration staleClaimAfter;
+    private volatile Instant lastRunAt;
+    private volatile Instant lastSuccessAt;
+    private volatile Instant lastFailureAt;
+    private volatile String lastFailureMessage;
 
     public SessionReminderService(SessionRepository sessionRepository,
                                   UserRepository userRepository,
@@ -75,6 +79,7 @@ public class SessionReminderService {
             return;
         }
         Instant now = schedulingTimeService.nowInstant();
+        lastRunAt = now;
         try {
             sessionRepository.findByStatusAndPreInterviewReminderSentAtIsNull(
                             CONFIRMED,
@@ -82,7 +87,11 @@ public class SessionReminderService {
                     ).stream()
                     .filter(session -> isReminderDue(session, now))
                     .forEach(session -> sendReminderSafely(session, now));
+            lastSuccessAt = now;
+            lastFailureMessage = null;
         } catch (RuntimeException ex) {
+            lastFailureAt = now;
+            lastFailureMessage = ex.getMessage();
             log.error("Pre-interview reminder scheduler failed safely; next run will retry.", ex);
         }
     }
@@ -179,6 +188,19 @@ public class SessionReminderService {
         }
     }
 
+    public ReminderDiagnostics diagnostics() {
+        return new ReminderDiagnostics(
+                enabled,
+                minutesBefore,
+                batchSize,
+                staleClaimAfter.toMinutes(),
+                toString(lastRunAt),
+                toString(lastSuccessAt),
+                toString(lastFailureAt),
+                lastFailureMessage
+        );
+    }
+
     private Optional<Session> claimSession(String sessionId, Instant now) {
         Instant staleBefore = now.minus(staleClaimAfter);
         Criteria claimIsAvailable = new Criteria().orOperator(
@@ -244,5 +266,21 @@ public class SessionReminderService {
             return "UTC";
         }
         return scheduled.getOffset().getId();
+    }
+
+    private String toString(Instant instant) {
+        return instant == null ? null : instant.toString();
+    }
+
+    public record ReminderDiagnostics(
+            boolean enabled,
+            int minutesBefore,
+            int batchSize,
+            long staleClaimMinutes,
+            String lastRunAt,
+            String lastSuccessAt,
+            String lastFailureAt,
+            String lastFailureMessage
+    ) {
     }
 }

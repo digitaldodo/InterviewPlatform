@@ -13,7 +13,6 @@ import com.interview.platform.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,15 +22,18 @@ public class InterviewReportService {
     private final SessionRepository sessionRepository;
     private final FeedbackRepository feedbackRepository;
     private final UserRepository userRepository;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public InterviewReportService(InterviewReportRepository reportRepository,
                                  SessionRepository sessionRepository,
                                  FeedbackRepository feedbackRepository,
-                                 UserRepository userRepository) {
+                                 UserRepository userRepository,
+                                 CacheInvalidationService cacheInvalidationService) {
         this.reportRepository = reportRepository;
         this.sessionRepository = sessionRepository;
         this.feedbackRepository = feedbackRepository;
         this.userRepository = userRepository;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public InterviewReport getForSession(String sessionId, User actor) {
@@ -42,10 +44,10 @@ public class InterviewReportService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        Feedback latest = feedbackRepository.findBySessionId(sessionId).stream()
-                .filter(item -> session.getInterviewerId() != null && session.getInterviewerId().equals(item.getReviewerId()))
-                .max(Comparator.comparing(item -> item.getCreatedAt() == null ? Instant.EPOCH : item.getCreatedAt()))
-                .orElseThrow(() -> new ResourceNotFoundException("Report not available yet"));
+        Feedback latest = feedbackRepository.findTopBySessionIdAndReviewerIdOrderByCreatedAtDesc(sessionId, session.getInterviewerId());
+        if (latest == null) {
+            throw new ResourceNotFoundException("Report not available yet");
+        }
         return buildFromFeedback(session, latest).orElseThrow(() -> new ResourceNotFoundException("Report not available yet"));
     }
 
@@ -81,7 +83,9 @@ public class InterviewReportService {
         report.setInterviewerComments(trimToNull(feedback.getComments()));
         report.setTopicReports(mapTopicReports(feedback.getTopicFeedback()));
 
-        return reportRepository.save(report);
+        InterviewReport saved = reportRepository.save(report);
+        cacheInvalidationService.evictAnalyticsForParticipants(session.getCandidateId(), session.getInterviewerId());
+        return saved;
     }
 
     private Optional<InterviewReport> buildFromFeedback(Session session, Feedback feedback) {

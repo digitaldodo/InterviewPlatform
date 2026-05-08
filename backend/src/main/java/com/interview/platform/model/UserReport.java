@@ -2,13 +2,18 @@ package com.interview.platform.model;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 
 @Document(collection = "user_reports")
-@CompoundIndex(name = "reporter_target_session_idx", def = "{'reporterId': 1, 'reportedUserId': 1, 'sessionId': 1}")
+@CompoundIndexes({
+        @CompoundIndex(name = "reporter_target_session_idx", def = "{'reporterId': 1, 'reportedUserId': 1, 'sessionId': 1}"),
+        @CompoundIndex(name = "reported_status_created_idx", def = "{'reportedUserId': 1, 'status': 1, 'createdAt': -1}"),
+        @CompoundIndex(name = "status_category_created_idx", def = "{'status': 1, 'category': 1, 'createdAt': -1}")
+})
 public class UserReport {
     @Id
     private String id;

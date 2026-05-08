@@ -7,6 +7,7 @@ import com.interview.platform.model.Feedback;
 import com.interview.platform.model.User;
 import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.FeedbackService;
+import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +25,7 @@ public class FeedbackController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackItem>> submitFeedback(@RequestBody Feedback feedback, Authentication authentication) {
+    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackItem>> submitFeedback(@Valid @RequestBody Feedback feedback, Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Feedback submitted successfully", feedbackService.submitFeedback(currentUser(authentication), feedback)));
     }
 

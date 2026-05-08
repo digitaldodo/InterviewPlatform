@@ -8,6 +8,7 @@ import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
 import com.interview.platform.security.UserPrincipal;
 import com.interview.platform.service.AdminService;
+import com.interview.platform.service.OperationalDiagnosticsService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -18,9 +19,11 @@ import org.springframework.web.bind.annotation.*;
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
     private final AdminService adminService;
+    private final OperationalDiagnosticsService operationalDiagnosticsService;
 
-    public AdminController(AdminService adminService) {
+    public AdminController(AdminService adminService, OperationalDiagnosticsService operationalDiagnosticsService) {
         this.adminService = adminService;
+        this.operationalDiagnosticsService = operationalDiagnosticsService;
     }
 
     @GetMapping("/overview")
@@ -95,6 +98,11 @@ public class AdminController {
                                                                          @RequestParam(required = false) String actorUserId,
                                                                          @RequestParam(required = false) String q) {
         return ResponseEntity.ok(ApiResponse.success("Audit logs fetched", adminService.auditLogs(page, size, entityType, subjectUserId, actorUserId, q)));
+    }
+
+    @GetMapping("/system-diagnostics")
+    public ResponseEntity<ApiResponse<AdminDtos.SystemDiagnosticsResponse>> systemDiagnostics() {
+        return ResponseEntity.ok(ApiResponse.success("System diagnostics fetched", operationalDiagnosticsService.snapshot()));
     }
 
     @PatchMapping("/users/{userId}/moderation")

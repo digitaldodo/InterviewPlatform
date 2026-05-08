@@ -2,6 +2,7 @@ package com.interview.platform.service;
 
 import com.interview.platform.dto.AnalyticsDtos;
 import com.interview.platform.exception.UnauthorizedException;
+import com.interview.platform.config.CacheConfig;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.InterviewReport;
 import com.interview.platform.model.Session;
@@ -9,6 +10,7 @@ import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.InterviewReportRepository;
 import com.interview.platform.repository.SessionRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -22,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class AnalyticsService {
@@ -37,6 +40,7 @@ public class AnalyticsService {
         this.feedbackRepository = feedbackRepository;
     }
 
+    @Cacheable(cacheNames = CacheConfig.ANALYTICS_SUMMARY_CACHE, key = "#actor.id + ':' + (#workspace == null ? '' : #workspace.trim().toUpperCase())", unless = "#actor == null || #actor.id == null")
     public AnalyticsDtos.SummaryResponse summary(User actor, String workspace) {
         if (actor == null || actor.getId() == null || actor.getId().isBlank()) {
             throw new UnauthorizedException("Authentication required");
@@ -105,11 +109,11 @@ public class AnalyticsService {
     }
 
     private Double averageIntervieweeRating(String intervieweeId, List<Session> sessions) {
-        List<String> completedSessionIds = sessions.stream()
+        Set<String> completedSessionIds = sessions.stream()
                 .filter(session -> "COMPLETED".equalsIgnoreCase(session.getStatus()))
                 .map(Session::getId)
                 .filter(id -> id != null && !id.isBlank())
-                .toList();
+                .collect(java.util.stream.Collectors.toSet());
         if (completedSessionIds.isEmpty()) return null;
         List<InterviewReport> reports = interviewReportRepository.findByIntervieweeIdOrderByCreatedAtDesc(intervieweeId).stream()
                 .filter(report -> report.getSessionId() != null && completedSessionIds.contains(report.getSessionId()))

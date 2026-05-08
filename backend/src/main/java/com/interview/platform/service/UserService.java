@@ -4,6 +4,7 @@ import com.interview.platform.dto.UserDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
+import com.interview.platform.config.CacheConfig;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.InterviewReportRepository;
 import com.interview.platform.repository.InterviewerAvailabilityRepository;
@@ -14,6 +15,7 @@ import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
 import com.interview.platform.repository.VerificationOtpRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -40,6 +42,7 @@ public class UserService {
     private final VerificationOtpRepository verificationOtpRepository;
     private final AccountIdentityService accountIdentityService;
     private final ResumeIntelligenceService resumeIntelligenceService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public UserService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
@@ -54,7 +57,8 @@ public class UserService {
                        PasswordResetTokenRepository passwordResetTokenRepository,
                        VerificationOtpRepository verificationOtpRepository,
                        AccountIdentityService accountIdentityService,
-                       ResumeIntelligenceService resumeIntelligenceService) {
+                       ResumeIntelligenceService resumeIntelligenceService,
+                       CacheInvalidationService cacheInvalidationService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.cloudinaryImageService = cloudinaryImageService;
@@ -69,8 +73,10 @@ public class UserService {
         this.verificationOtpRepository = verificationOtpRepository;
         this.accountIdentityService = accountIdentityService;
         this.resumeIntelligenceService = resumeIntelligenceService;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
+    @Cacheable(cacheNames = CacheConfig.USER_PROFILE_CACHE, key = "#id", unless = "#result == null || !#result.isPresent()")
     public Optional<User> getById(String id) {
         if (isBlank(id)) {
             return Optional.empty();
@@ -158,7 +164,10 @@ public class UserService {
         if (request.getVerificationCompanyEmail() != null) {
             user.setVerificationCompanyEmail(trimToNull(request.getVerificationCompanyEmail()));
         }
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
+        return saved;
     }
 
     public boolean isUsernameAvailable(String username, String currentUserId) {
@@ -183,6 +192,7 @@ public class UserService {
             user.setActiveWorkspace(role);
         }
         User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
         if (added) {
             notificationService.create(
                     saved.getId(),
@@ -225,13 +235,18 @@ public class UserService {
         }
         removeFavoriteReferences(userId);
         userRepository.delete(user);
+        cacheInvalidationService.evictUserProfile(userId);
+        cacheInvalidationService.evictInterviewerCaches(userId, user.getUsername());
     }
 
     public User uploadOwnAvatar(String userId, MultipartFile file) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setAvatarUrl(cloudinaryImageService.uploadProfileImage(userId, file));
-        return userRepository.save(user);
+        User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
+        return saved;
     }
 
     public User uploadOwnResume(String userId, MultipartFile file) {
@@ -250,6 +265,7 @@ public class UserService {
                 saved.getResumeContentType(),
                 saved.getResumeFileName()
         );
+        cacheInvalidationService.evictUserProfile(saved.getId());
         return saved;
     }
 
@@ -262,6 +278,7 @@ public class UserService {
         user.setResumeUpdatedAt(null);
         User saved = userRepository.save(user);
         resumeIntelligenceService.clearActiveResume(saved.getId());
+        cacheInvalidationService.evictUserProfile(saved.getId());
         return saved;
     }
 
@@ -277,6 +294,7 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         user.setPassword(null);
         userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(user.getId());
     }
 
     private boolean isBlank(String value) {

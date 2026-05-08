@@ -1,5 +1,7 @@
 package com.interview.platform.dto;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.util.List;
@@ -11,6 +13,7 @@ public class UserDtos {
         @Size(min = 1, max = 120)
         private String displayName;
         @Size(min = 3, max = 24)
+        @Pattern(regexp = "^[a-z0-9._-]{3,24}$", message = "must use lowercase letters, numbers, dots, underscores, or hyphens")
         private String username;
         private String avatarUrl;
         @Size(max = 1000)
@@ -79,6 +82,7 @@ public class UserDtos {
         @Size(max = 240)
         private String linkedInUrl;
         @Size(max = 160)
+        @Email
         private String companyEmail;
 
         public String getNotes() { return notes; }

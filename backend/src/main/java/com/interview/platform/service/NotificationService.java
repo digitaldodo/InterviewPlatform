@@ -110,6 +110,14 @@ public class NotificationService {
         return emitter;
     }
 
+    public int activeEmitterCount() {
+        return emittersByUser.values().stream().mapToInt(List::size).sum();
+    }
+
+    public int activeUsersWithEmitters() {
+        return emittersByUser.size();
+    }
+
     private void publish(String userId, Notification notification) {
         if (userId == null || userId.isBlank() || notification == null) return;
         List<SseEmitter> emitters = emittersByUser.get(userId);

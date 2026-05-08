@@ -1,11 +1,17 @@
 package com.interview.platform.dto;
 
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 public class ReportDtos {
     public static class CreateReportRequest {
+        @NotBlank
         private String reportedUserId;
         private String sessionId;
         private String category;
         private String reason;
+        @NotBlank
+        @Size(min = 12, max = 4000)
         private String details;
 
         public String getReportedUserId() { return reportedUserId; }

@@ -13,6 +13,8 @@ import java.util.List;
 @Document(collection = "sessions")
 @CompoundIndexes({
         @CompoundIndex(name = "interviewer_time_status_idx", def = "{'interviewerId': 1, 'startTime': 1, 'status': 1}"),
+        @CompoundIndex(name = "candidate_time_status_idx", def = "{'candidateId': 1, 'startTime': 1, 'status': 1}"),
+        @CompoundIndex(name = "participant_time_idx", def = "{'interviewerId': 1, 'candidateId': 1, 'startTime': 1}"),
         @CompoundIndex(name = "reminder_status_sent_start_idx", def = "{'status': 1, 'preInterviewReminderSentAt': 1, 'startTime': 1}")
 })
 public class Session {

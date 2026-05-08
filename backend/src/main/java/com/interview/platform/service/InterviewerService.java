@@ -5,11 +5,13 @@ import com.interview.platform.dto.AvailabilityDtos;
 import com.interview.platform.dto.InterviewerFilterOptions;
 import com.interview.platform.dto.MarketplaceDtos;
 import com.interview.platform.exception.ResourceNotFoundException;
+import com.interview.platform.config.CacheConfig;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.User;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -109,6 +111,7 @@ public class InterviewerService {
         );
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_CARD_CACHE, key = "#id")
     public MarketplaceDtos.InterviewerCard getById(String id) {
         User user = userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
         if (!user.hasRole("INTERVIEWER")) {
@@ -121,6 +124,7 @@ public class InterviewerService {
         return topRated(excludeUserId, false);
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_TOP_RATED_CACHE, key = "(#excludeUserId == null ? '' : #excludeUserId) + ':' + (#publicOnly == null ? false : #publicOnly)")
     public List<MarketplaceDtos.InterviewerCard> topRated(String excludeUserId, Boolean publicOnly) {
         return userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER").stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
@@ -131,6 +135,7 @@ public class InterviewerService {
                 .toList();
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_RECOMMENDED_CACHE, key = "#intervieweeId == null ? 'anonymous' : #intervieweeId")
     public List<MarketplaceDtos.InterviewerCard> recommended(String intervieweeId) {
         List<User> candidates = userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
@@ -152,6 +157,7 @@ public class InterviewerService {
                 .toList();
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_AUTOCOMPLETE_CACHE, key = "#q == null ? '' : #q.trim().toLowerCase()")
     public List<MarketplaceDtos.SearchSuggestion> autocomplete(String q) {
         String query = normalizeOption(q).toLowerCase(Locale.ROOT);
         if (query.isBlank()) {
@@ -180,6 +186,7 @@ public class InterviewerService {
         return suggestions.stream().distinct().limit(12).toList();
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_PUBLIC_PROFILE_CACHE, key = "#username == null ? '' : #username.trim().toLowerCase()")
     public MarketplaceDtos.PublicInterviewerProfile publicProfile(String username) {
         String normalized = normalizeOption(username).toLowerCase(Locale.ROOT);
         if (normalized.isBlank()) {
@@ -283,6 +290,7 @@ public class InterviewerService {
         return filterOptions(false);
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_FILTER_OPTIONS_CACHE, key = "#publicOnly == null ? false : #publicOnly")
     public InterviewerFilterOptions filterOptions(Boolean publicOnly) {
         Query query = new Query(interviewerCriteria(publicOnly));
         query.fields()
@@ -305,6 +313,7 @@ public class InterviewerService {
         );
     }
 
+    @Cacheable(cacheNames = CacheConfig.INTERVIEWER_PUBLIC_SUMMARY_CACHE, key = "'summary'")
     public MarketplaceDtos.PublicMarketplaceSummary publicMarketplaceSummary() {
         List<User> interviewers = mongoTemplate.find(new Query(interviewerCriteria(true)), User.class);
         long interviewerCount = interviewers.size();
