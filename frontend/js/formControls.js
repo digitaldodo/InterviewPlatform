@@ -1,4 +1,5 @@
 const FormUx = (() => {
+  let controlIdCounter = 0;
   const languageOptions = ['English', 'Hindi', 'Spanish', 'French', 'German', 'Japanese', 'Chinese', 'Arabic', 'Russian'];
   const expertiseSuggestions = [
     'Java', 'JavaScript', 'TypeScript', 'Python', 'C++', 'C#', 'DSA', 'System Design',
@@ -399,11 +400,146 @@ const FormUx = (() => {
     return input.__searchSelectControl;
   }
 
+  function initMultiSearchSelect(inputOrId, options = {}) {
+    const input = resolveInput(inputOrId);
+    if (!input || input.dataset.enhancedControl === 'multi-search-select') return input?.__multiSearchSelectControl;
+
+    const control = createControl(input, {
+      className: `multi-search-select-control ${options.className || ''}`.trim(),
+      placeholder: options.placeholder || input.placeholder || 'Search',
+      label: options.label || input.getAttribute('aria-label') || 'Search options',
+    });
+    const state = {
+      values: selectOptions(input.value, options),
+      query: '',
+      options: selectOptions(options.options || [], options),
+      activeIndex: -1,
+      open: false,
+    };
+
+    input.type = 'hidden';
+    input.dataset.enhancedControl = 'multi-search-select';
+    input.classList.add('enhanced-source');
+
+    function filteredOptions() {
+      const query = state.query.toLowerCase();
+      return state.options
+        .filter(item => !hasValue(state.values, item))
+        .filter(item => !query || item.toLowerCase().includes(query))
+        .slice(0, options.limit || 12);
+    }
+
+    function select(raw) {
+      const value = normalizeSelectValue(raw, options);
+      if (!value || hasValue(state.values, value)) return;
+      state.values.push(value);
+      state.query = '';
+      state.activeIndex = -1;
+      state.open = false;
+      control.textInput.value = '';
+      sync(input, state.values);
+      render();
+      control.textInput.focus();
+    }
+
+    function removeAt(index) {
+      state.values.splice(index, 1);
+      state.query = '';
+      control.textInput.value = '';
+      sync(input, state.values);
+      render();
+      control.textInput.focus();
+    }
+
+    function removeValue(value) {
+      const index = state.values.findIndex(item => item.toLowerCase() === String(value || '').toLowerCase());
+      if (index >= 0) removeAt(index);
+    }
+
+    function render() {
+      renderChips(control.chipWrap, control.textInput, state.values, removeAt);
+      control.textInput.placeholder = state.values.length ? '' : (options.placeholder || input.placeholder || 'Search');
+      renderOptions(control, filteredOptions(), state, select);
+    }
+
+    control.textInput.addEventListener('focus', () => {
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('input', () => {
+      state.query = control.textInput.value;
+      state.activeIndex = -1;
+      state.open = true;
+      render();
+    });
+
+    control.textInput.addEventListener('keydown', event => {
+      const items = filteredOptions();
+      if (event.key === 'Enter' && items.length) {
+        event.preventDefault();
+        select(items[Math.max(0, state.activeIndex)]);
+      } else if (event.key === 'Backspace' && !control.textInput.value && state.values.length) {
+        removeAt(state.values.length - 1);
+      } else if (event.key === 'ArrowDown' && items.length) {
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = (state.activeIndex + 1) % items.length;
+        render();
+      } else if (event.key === 'ArrowUp' && items.length) {
+        event.preventDefault();
+        state.open = true;
+        state.activeIndex = state.activeIndex <= 0 ? items.length - 1 : state.activeIndex - 1;
+        render();
+      } else if (event.key === 'Escape') {
+        state.open = false;
+        state.activeIndex = -1;
+        render();
+      }
+    });
+
+    control.chipWrap.addEventListener('click', () => control.textInput.focus());
+    addOutsideClose(control.shell, state, render);
+
+    input.__multiSearchSelectControl = {
+      values: () => [...state.values],
+      value: () => state.values.join(', '),
+      setValues(values) {
+        state.values = selectOptions(values || [], options);
+        state.query = '';
+        control.textInput.value = '';
+        sync(input, state.values);
+        render();
+      },
+      addValue(value) {
+        select(value);
+      },
+      removeValue(value) {
+        removeValue(value);
+      },
+      toggleValue(value) {
+        if (hasValue(state.values, value)) {
+          removeValue(value);
+        } else {
+          select(value);
+        }
+      },
+      setOptions(values) {
+        state.options = selectOptions(values || [], options);
+        render();
+      },
+    };
+    sync(input, state.values);
+    render();
+    return input.__multiSearchSelectControl;
+  }
+
   function createControl(input, config) {
     const shell = document.createElement('div');
     const chipWrap = document.createElement('div');
     const textInput = document.createElement('input');
     const list = document.createElement('div');
+    const listId = `chip-suggestions-${++controlIdCounter}`;
 
     shell.className = `chip-combobox ${config.className}`;
     chipWrap.className = 'chip-input-shell';
@@ -414,7 +550,10 @@ const FormUx = (() => {
     textInput.setAttribute('autocomplete', 'off');
     textInput.setAttribute('role', 'combobox');
     textInput.setAttribute('aria-expanded', 'false');
+    textInput.setAttribute('aria-controls', listId);
+    textInput.setAttribute('aria-autocomplete', 'list');
     list.className = 'chip-suggestions';
+    list.id = listId;
     list.setAttribute('role', 'listbox');
 
     chipWrap.appendChild(textInput);
@@ -440,20 +579,26 @@ const FormUx = (() => {
     const shouldOpen = state.open && options.length > 0;
     control.shell.classList.toggle('open', shouldOpen);
     control.textInput.setAttribute('aria-expanded', String(shouldOpen));
+    control.textInput.removeAttribute('aria-activedescendant');
     control.list.replaceChildren();
     if (!shouldOpen) return;
     state.activeIndex = Math.max(-1, Math.min(state.activeIndex, options.length - 1));
     options.forEach((item, index) => {
       const option = document.createElement('button');
       option.type = 'button';
+      option.id = `${control.list.id}-option-${index}`;
       option.className = `chip-suggestion${index === state.activeIndex ? ' active' : ''}`;
       option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(index === state.activeIndex));
       option.textContent = item;
       option.addEventListener('mousedown', event => {
         event.preventDefault();
         onSelect(item);
       });
       control.list.appendChild(option);
+      if (index === state.activeIndex) {
+        control.textInput.setAttribute('aria-activedescendant', option.id);
+      }
     });
   }
 
@@ -530,6 +675,7 @@ const FormUx = (() => {
     initTagInput,
     initLanguageSelect,
     initSearchSelect,
+    initMultiSearchSelect,
     initPasswordToggles,
     normalizeValues: uniqueValues,
     getTagValues(id) {

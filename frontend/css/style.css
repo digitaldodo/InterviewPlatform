@@ -4222,10 +4222,13 @@ body.public-shell {
 }
 
 .marketplace-filter-shell {
+  position: relative;
+  z-index: 7;
   padding: 1rem;
   border: 1px solid rgba(255,255,255,0.08);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
   box-shadow: var(--shadow-soft);
+  overflow: visible;
 }
 
 .marketplace-filter-shell summary {
@@ -4239,6 +4242,16 @@ body.public-shell {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.9rem;
   margin-top: 1rem;
+  align-items: start;
+  overflow: visible;
+}
+
+.marketplace-filter-grid .chip-combobox {
+  z-index: 1;
+}
+
+.marketplace-filter-grid .chip-combobox.open {
+  z-index: 48;
 }
 
 .marketplace-filter-grid .check-row {
@@ -4254,6 +4267,23 @@ body.public-shell {
   flex-wrap: wrap;
   gap: 0.6rem;
   margin: 1rem 0 0.65rem;
+}
+
+.public-marketplace-page .filter-chip-row {
+  flex-wrap: wrap;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+.marketplace-shortcuts .chip,
+.public-marketplace-page .filter-chip-row .chip {
+  white-space: normal;
+  text-align: left;
+}
+
+.marketplace-shortcuts .chip.active,
+.public-marketplace-page .filter-chip-row .chip.active {
+  background: rgba(110, 231, 200, 0.1);
 }
 
 .marketplace-results-head {

@@ -75,18 +75,13 @@ public class InterviewerService {
                     Criteria.where("interviewTopics").regex(pattern)
             ));
         }
-        if (!isBlank(expertise)) criteria.add(Criteria.where("skills").regex(Pattern.compile(Pattern.quote(expertise.trim()), Pattern.CASE_INSENSITIVE)));
-        if (!isBlank(company)) criteria.add(Criteria.where("company").regex(Pattern.compile(Pattern.quote(company.trim()), Pattern.CASE_INSENSITIVE)));
+        if (!isBlank(expertise)) addAnyFieldContains(criteria, List.of("skills"), splitOptions(expertise));
+        if (!isBlank(company)) addAnyFieldContains(criteria, List.of("company"), splitOptions(company));
         if (!isBlank(role)) criteria.add(Criteria.where("currentRole").regex(Pattern.compile(Pattern.quote(role.trim()), Pattern.CASE_INSENSITIVE)));
-        if (!isBlank(language)) criteria.add(Criteria.where("language").regex(Pattern.compile(Pattern.quote(language.trim()), Pattern.CASE_INSENSITIVE)));
-        if (!isBlank(timezone)) criteria.add(Criteria.where("timeZone").regex(Pattern.compile(Pattern.quote(timezone.trim()), Pattern.CASE_INSENSITIVE)));
+        if (!isBlank(language)) addAnyFieldContains(criteria, List.of("language"), splitOptions(language));
+        if (!isBlank(timezone)) addAnyFieldContains(criteria, List.of("timeZone"), splitOptions(timezone));
         if (!isBlank(topic)) {
-            Pattern topicPattern = Pattern.compile(Pattern.quote(topic.trim()), Pattern.CASE_INSENSITIVE);
-            criteria.add(new Criteria().orOperator(
-                    Criteria.where("interviewTopics").regex(topicPattern),
-                    Criteria.where("skills").regex(topicPattern),
-                    Criteria.where("preferredDomains").regex(topicPattern)
-            ));
+            addAnyFieldContains(criteria, List.of("interviewTopics", "skills", "preferredDomains"), splitOptions(topic));
         }
         if (minExperience != null) criteria.add(Criteria.where("yearsExperience").gte(minExperience));
         if (maxExperience != null) criteria.add(Criteria.where("yearsExperience").lte(maxExperience));
@@ -394,6 +389,25 @@ public class InterviewerService {
 
     private Criteria interviewerCriteria() {
         return interviewerCriteria(false);
+    }
+
+    private void addAnyFieldContains(List<Criteria> criteria, List<String> fields, List<String> values) {
+        List<Criteria> options = new ArrayList<>();
+        values.stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .forEach(value -> {
+                    Pattern pattern = Pattern.compile(Pattern.quote(value), Pattern.CASE_INSENSITIVE);
+                    fields.forEach(field -> options.add(Criteria.where(field).regex(pattern)));
+                });
+        if (options.isEmpty()) {
+            return;
+        }
+        if (options.size() == 1) {
+            criteria.add(options.get(0));
+        } else {
+            criteria.add(new Criteria().orOperator(options.toArray(new Criteria[0])));
+        }
     }
 
     private List<String> splitOptions(List<String> values) {

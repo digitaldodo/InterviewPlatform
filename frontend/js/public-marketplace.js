@@ -4,7 +4,9 @@ const marketplaceState = {
   totalItems: 0,
   debounceTimer: null,
   summary: null,
+  filterOptions: { expertise: [], languages: [], companies: [], timeZones: [], topics: [], sessionDurations: [] },
 };
+const COMMON_TIMEZONES = ['Asia/Kolkata', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Singapore'];
 
 window.addEventListener('DOMContentLoaded', initPublicMarketplace);
 
@@ -12,8 +14,8 @@ async function initPublicMarketplace() {
   setCanonicalUrl(publicPageUrl('/marketplace.html'));
   hydrateMarketplaceSeo();
   initMarketplaceFilters();
-  bindMarketplaceFilters();
   applyMarketplaceQueryParams();
+  bindMarketplaceFilters();
   renderMarketplaceShortcuts();
   renderMarketplaceSkeletons();
 
@@ -22,7 +24,7 @@ async function initPublicMarketplace() {
 }
 
 function initMarketplaceFilters() {
-  FormUx.initSearchSelect('filter-expertise', {
+  FormUx.initMultiSearchSelect('filter-expertise', {
     placeholder: 'Expertise',
     label: 'Filter by expertise',
     className: 'discovery-filter-control',
@@ -32,7 +34,7 @@ function initMarketplaceFilters() {
     label: 'Filter by company',
     className: 'discovery-filter-control',
   });
-  FormUx.initSearchSelect('filter-language', {
+  FormUx.initMultiSearchSelect('filter-language', {
     placeholder: 'Language',
     label: 'Filter by language',
     className: 'discovery-filter-control',
@@ -42,7 +44,7 @@ function initMarketplaceFilters() {
     label: 'Filter by timezone',
     className: 'discovery-filter-control',
   });
-  FormUx.initSearchSelect('filter-topic', {
+  FormUx.initMultiSearchSelect('filter-topic', {
     placeholder: 'Interview topic',
     label: 'Filter by topic',
     className: 'discovery-filter-control',
@@ -113,13 +115,41 @@ async function loadMarketplaceSummary() {
 async function loadMarketplaceFilterOptions() {
   try {
     const data = await publicApi('/api/interviewers/filter-options?publicOnly=true');
-    document.getElementById('filter-expertise')?.__searchSelectControl?.setOptions(data.expertise || []);
-    document.getElementById('filter-company')?.__searchSelectControl?.setOptions(data.companies || []);
-    document.getElementById('filter-language')?.__searchSelectControl?.setOptions(data.languages || []);
-    document.getElementById('filter-timezone')?.__searchSelectControl?.setOptions(data.timeZones || []);
-    document.getElementById('filter-topic')?.__searchSelectControl?.setOptions(data.topics || []);
-    populateSelectOptions('filter-duration', data.sessionDurations || [], 'Any duration', value => `${value} min`);
+    marketplaceState.filterOptions = {
+      expertise: Array.isArray(data?.expertise) ? data.expertise : [],
+      languages: Array.isArray(data?.languages) ? data.languages : [],
+      companies: Array.isArray(data?.companies) ? data.companies : [],
+      timeZones: Array.isArray(data?.timeZones) ? data.timeZones : [],
+      topics: Array.isArray(data?.topics) ? data.topics : [],
+      sessionDurations: Array.isArray(data?.sessionDurations) ? data.sessionDurations : [],
+    };
+    document.getElementById('filter-expertise')?.__multiSearchSelectControl?.setOptions(marketplaceState.filterOptions.expertise);
+    document.getElementById('filter-company')?.__searchSelectControl?.setOptions(marketplaceState.filterOptions.companies);
+    document.getElementById('filter-language')?.__multiSearchSelectControl?.setOptions(marketplaceState.filterOptions.languages);
+    document.getElementById('filter-timezone')?.__searchSelectControl?.setOptions(prioritizeCommonTimezones(marketplaceState.filterOptions.timeZones));
+    document.getElementById('filter-topic')?.__multiSearchSelectControl?.setOptions(marketplaceState.filterOptions.topics);
+    populateSelectOptions('filter-duration', marketplaceState.filterOptions.sessionDurations, 'Any duration', value => `${value} min`);
+    renderMarketplaceShortcuts();
   } catch {}
+}
+
+function prioritizeCommonTimezones(values) {
+  const items = uniqueFilterValues(values);
+  const common = COMMON_TIMEZONES.filter(zone => items.some(item => item.toLowerCase() === zone.toLowerCase()));
+  const rest = items.filter(item => !common.some(zone => zone.toLowerCase() === item.toLowerCase()));
+  return [...common, ...rest];
+}
+
+function uniqueFilterValues(values) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : [])
+    .map(value => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter(value => {
+      const key = value.toLowerCase();
+      if (!value || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function populateSelectOptions(id, values, defaultLabel, renderLabel = value => value) {
@@ -156,6 +186,7 @@ async function loadMarketplaceResults() {
 
   syncMarketplaceUrl();
   renderMarketplaceChips();
+  renderMarketplaceShortcuts();
 
   try {
     const page = await publicApi(`/api/interviewers/search?${params.toString()}`);
@@ -246,12 +277,16 @@ function renderMarketplaceHeroCard(interviewer) {
 function renderMarketplaceShortcuts() {
   const shortcuts = document.getElementById('marketplace-shortcuts');
   if (!shortcuts) return;
-  const topics = ['System Design', 'Backend', 'Frontend', 'Behavioral', 'Product'];
-  shortcuts.innerHTML = topics.map(topic => `<button class="chip" type="button" onclick="applyMarketplaceTopic('${esc(topic)}')">${esc(topic)}</button>`).join('');
+  const selected = controlValues('filter-topic').map(value => value.toLowerCase());
+  const topics = marketplaceState.filterOptions.topics.slice(0, 8);
+  shortcuts.innerHTML = topics.map(topic => {
+    const active = selected.includes(String(topic).toLowerCase());
+    return `<button class="chip ${active ? 'active' : ''}" type="button" aria-pressed="${active}" onclick="applyMarketplaceTopic('${esc(topic)}')">${esc(topic)}${active ? ' ×' : ''}</button>`;
+  }).join('');
 }
 
 function applyMarketplaceTopic(topic) {
-  document.getElementById('filter-topic')?.__searchSelectControl?.setValue(topic);
+  document.getElementById('filter-topic')?.__multiSearchSelectControl?.toggleValue(topic);
   marketplaceState.page = 0;
   loadMarketplaceResults();
 }
@@ -276,9 +311,8 @@ function renderMarketplaceChips() {
 }
 
 function addChip(chips, id, label) {
-  const value = controlValue(id);
-  if (!value) return;
-  chips.push(renderChip(`${label}: ${value}`, () => clearControl(id)));
+  const values = controlValues(id);
+  values.forEach(value => chips.push(renderChip(`${label}: ${value}`, () => clearControl(id, value))));
 }
 
 function renderChip(label, action) {
@@ -292,9 +326,17 @@ function renderChip(label, action) {
   return `<button class="chip active" type="button" onclick="${id}()">${esc(label)} ×</button>`;
 }
 
-function clearControl(id) {
+function clearControl(id, value = null) {
   const control = document.getElementById(id);
   if (!control) return;
+  if (control.__multiSearchSelectControl) {
+    if (value) {
+      control.__multiSearchSelectControl.removeValue(value);
+    } else {
+      control.__multiSearchSelectControl.setValues([]);
+    }
+    return;
+  }
   if (control.__searchSelectControl) {
     control.__searchSelectControl.setValue('');
     return;
@@ -377,19 +419,32 @@ function applyMarketplaceQueryParams() {
   document.getElementById('filter-available').checked = params.get('available') === 'true';
   document.getElementById('filter-available-today').checked = params.get('availableToday') === 'true';
   document.getElementById('filter-verified').checked = params.get('verified') === 'true';
-  document.getElementById('filter-expertise')?.__searchSelectControl?.setValue(params.get('expertise') || '');
+  document.getElementById('filter-expertise')?.__multiSearchSelectControl?.setValues(splitFilterValues(params.get('expertise')));
   document.getElementById('filter-company')?.__searchSelectControl?.setValue(params.get('company') || '');
-  document.getElementById('filter-language')?.__searchSelectControl?.setValue(params.get('language') || '');
+  document.getElementById('filter-language')?.__multiSearchSelectControl?.setValues(splitFilterValues(params.get('language')));
   document.getElementById('filter-timezone')?.__searchSelectControl?.setValue(params.get('timezone') || '');
-  document.getElementById('filter-topic')?.__searchSelectControl?.setValue(params.get('topic') || '');
+  document.getElementById('filter-topic')?.__multiSearchSelectControl?.setValues(splitFilterValues(params.get('topic')));
   marketplaceState.page = Math.max(0, Number(params.get('page') || 1) - 1);
 }
 
 function controlValue(id) {
   const node = document.getElementById(id);
   if (!node) return '';
+  if (node.__multiSearchSelectControl) return node.__multiSearchSelectControl.value();
   if (node.__searchSelectControl) return node.__searchSelectControl.value();
   return String(node.value || '').trim();
+}
+
+function controlValues(id) {
+  const node = document.getElementById(id);
+  if (!node) return [];
+  if (node.__multiSearchSelectControl) return node.__multiSearchSelectControl.values();
+  const value = controlValue(id);
+  return value ? [value] : [];
+}
+
+function splitFilterValues(value) {
+  return String(value || '').split(',').map(item => item.trim()).filter(Boolean);
 }
 
 function hydrateMarketplaceSeo(summary, items = []) {
