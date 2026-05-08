@@ -137,21 +137,23 @@ window.addEventListener('DOMContentLoaded', async () => {
   bindFilters();
   refreshDiscoverFilterUi();
   bindFeedbackForm();
-  await Promise.all([
-    loadFilterOptions(),
-    loadMeetingProviders(),
-    loadSessions(),
-    loadInterviewers(),
-    loadRecommended(),
-    loadFeedback(),
-    loadNotifications(),
-    loadAvailabilityManagement(),
-    loadPrepHub(),
-    loadResumeIntelligence(),
-    loadAdminData(),
-  ]);
-  startNotificationStream();
   showSection(routeFromHash(), false);
+  const startupLoads = activeWorkspace === 'ADMIN'
+    ? [loadMeetingProviders(), loadNotifications(), loadAdminData(true)]
+    : [
+        loadFilterOptions(),
+        loadMeetingProviders(),
+        loadSessions(),
+        loadInterviewers(),
+        loadRecommended(),
+        loadFeedback(),
+        loadNotifications(),
+        loadAvailabilityManagement(),
+        loadPrepHub(),
+        loadResumeIntelligence(),
+      ];
+  await Promise.allSettled(startupLoads);
+  startNotificationStream();
 });
 
 window.addEventListener('hashchange', () => showSection(routeFromHash(), false));
@@ -250,12 +252,16 @@ function switchWorkspace(workspace) {
   localStorage.setItem('ip_user', JSON.stringify(currentUser));
   initUi();
   if (!routeAllowed(routeFromHash())) showSection('overview');
+  if (activeWorkspace === 'ADMIN') {
+    loadNotifications();
+    loadAdminData(true);
+    return;
+  }
   loadSessions();
   loadRecommended();
   loadInterviewers();
   loadAvailabilityManagement();
   loadAnalyticsSummary();
-  loadAdminData();
   loadPrepHub();
   loadResumeIntelligence();
 }
@@ -653,6 +659,10 @@ async function loadRecommended() {
   if (!list) return;
   if (activeWorkspace === 'INTERVIEWER') {
     list.innerHTML = emptyState('Switch to the interviewee workspace to view recommendations.');
+    return;
+  }
+  if (activeWorkspace === 'ADMIN') {
+    list.innerHTML = emptyState('Admin workspace uses the control center instead of interviewer recommendations.');
     return;
   }
   list.innerHTML = `
@@ -1367,6 +1377,11 @@ function startAnotherBooking() {
 }
 
 async function loadSessions() {
+  if (activeWorkspace === 'ADMIN') {
+    sessions = [];
+    activeMeetingSession = null;
+    return;
+  }
   try {
     const endpoint = activeWorkspace === 'INTERVIEWER' ? `/api/sessions/interviewer/${currentUser.id}` : `/api/sessions/interviewee/${currentUser.id}`;
     sessions = sortSessions(await api(endpoint));
@@ -6472,10 +6487,11 @@ function jsArg(value) {
 }
 
 function parseSortValue(value, fallbackBy, fallbackDir) {
-  const [sortBy, sortDir] = String(value || `${fallbackBy}_${fallbackDir}`).split('_');
+  const raw = String(value || `${fallbackBy}_${fallbackDir}`);
+  const match = raw.match(/^(.*)_(ASC|DESC)$/i);
   return {
-    sortBy: sortBy || fallbackBy,
-    sortDir: sortDir || fallbackDir,
+    sortBy: match?.[1] || fallbackBy,
+    sortDir: match?.[2]?.toUpperCase() || fallbackDir,
   };
 }
 
@@ -6605,35 +6621,44 @@ async function loadAdminData(force = false) {
   }
   adminLoading = true;
   renderAdminPanels();
-  try {
-    const [overview, usersPage, sessionsPage, reportsPage, reviewsPage, trustDashboard, auditLogPage, analytics] = await Promise.all([
-      api('/api/admin/overview'),
-      api(`/api/admin/users?${buildAdminUsersQuery()}`),
-      api(`/api/admin/sessions?${buildAdminSessionsQuery()}`),
-      api(`/api/admin/reports?${buildAdminReportsQuery()}`),
-      api(`/api/admin/reviews?${buildAdminReviewsQuery()}`),
-      api('/api/admin/trust-dashboard'),
-      api(`/api/admin/audit-logs?${buildAuditQuery()}`),
-      api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
-    ]);
-    adminOverview = overview || null;
-    adminUsersPage = usersPage || null;
-    adminSessionsPage = sessionsPage || null;
-    adminReportsPage = reportsPage || null;
-    adminReviewsPage = reviewsPage || null;
-    adminUsers = Array.isArray(usersPage?.items) ? usersPage.items : [];
-    adminSessions = Array.isArray(sessionsPage?.items) ? sessionsPage.items : [];
-    adminReports = Array.isArray(reportsPage?.items) ? reportsPage.items : [];
-    adminReviews = Array.isArray(reviewsPage?.items) ? reviewsPage.items : [];
-    adminTrustDashboard = trustDashboard || null;
-    adminAuditLogPage = auditLogPage || null;
-    adminAnalytics = analytics || null;
-  } catch (err) {
-    toast(err.message || 'Could not load admin data.', 'error');
-  } finally {
-    adminLoading = false;
-    renderAdminPanels();
+  const requests = [
+    api('/api/admin/overview'),
+    api(`/api/admin/users?${buildAdminUsersQuery()}`),
+    api(`/api/admin/sessions?${buildAdminSessionsQuery()}`),
+    api(`/api/admin/reports?${buildAdminReportsQuery()}`),
+    api(`/api/admin/reviews?${buildAdminReviewsQuery()}`),
+    api('/api/admin/trust-dashboard'),
+    api(`/api/admin/audit-logs?${buildAuditQuery()}`),
+    api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
+  ];
+  const results = await Promise.allSettled(requests);
+  const valueAt = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
+  const overview = valueAt(0, adminOverview);
+  const usersPage = valueAt(1, adminUsersPage);
+  const sessionsPage = valueAt(2, adminSessionsPage);
+  const reportsPage = valueAt(3, adminReportsPage);
+  const reviewsPage = valueAt(4, adminReviewsPage);
+  const trustDashboard = valueAt(5, adminTrustDashboard);
+  const auditLogPage = valueAt(6, adminAuditLogPage);
+  const analytics = valueAt(7, adminAnalytics);
+  adminOverview = overview || null;
+  adminUsersPage = usersPage || null;
+  adminSessionsPage = sessionsPage || null;
+  adminReportsPage = reportsPage || null;
+  adminReviewsPage = reviewsPage || null;
+  adminUsers = Array.isArray(usersPage?.items) ? usersPage.items : [];
+  adminSessions = Array.isArray(sessionsPage?.items) ? sessionsPage.items : [];
+  adminReports = Array.isArray(reportsPage?.items) ? reportsPage.items : [];
+  adminReviews = Array.isArray(reviewsPage?.items) ? reviewsPage.items : [];
+  adminTrustDashboard = trustDashboard || null;
+  adminAuditLogPage = auditLogPage || null;
+  adminAnalytics = analytics || null;
+  const failed = results.find(result => result.status === 'rejected');
+  if (failed) {
+    toast(failed.reason?.message || 'Could not load some admin data.', 'error');
   }
+  adminLoading = false;
+  renderAdminPanels();
 }
 
 function renderAdminPanels() {
