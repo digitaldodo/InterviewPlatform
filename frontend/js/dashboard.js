@@ -17,6 +17,10 @@ let activeMeetingSession = null;
 let activeMeetingAccess = null;
 let activeMeetingTimer = null;
 let activeMeetingRefreshTimer = null;
+let meetingPrejoinState = null;
+let liveFeedbackDraft = null;
+let liveFeedbackAutosaveTimer = null;
+let liveFeedbackSaving = false;
 let jitsiApi = null;
 let jitsiScriptPromise = null;
 let meetingUiState = { audioMuted: false, videoMuted: false, screenSharing: false, participants: 1, joined: false };
@@ -87,6 +91,8 @@ const DEFAULT_MEETING_PROVIDERS = [
 const AVAILABILITY_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const AVAILABILITY_DURATIONS = [15, 30, 45, 60, 90, 120];
 const TOPIC_OPTIONS = ['Java', 'DSA', 'Spring Boot', 'System Design', 'React', 'Node.js', 'SQL', 'Frontend', 'Backend', 'Behavioral', 'Resume Review'];
+const LIVE_FEEDBACK_TOPICS = ['Java', 'DSA', 'System Design', 'Frontend', 'Backend', 'Communication', 'Problem Solving'];
+const FEEDBACK_LEVELS = ['Beginner', 'Intermediate', 'Strong', 'Excellent'];
 const DOMAIN_SUGGESTIONS = ['Backend', 'Frontend', 'Full Stack', 'DevOps', 'HR', 'DSA', 'System Design', 'Java', 'React', 'Spring Boot'];
 const TIMEZONE_SUGGESTIONS = ['Asia/Kolkata', 'UTC', 'Europe/London', 'America/New_York', 'America/Los_Angeles', 'Asia/Singapore'];
 const AVAILABILITY_PREFERENCES = [
@@ -2953,6 +2959,8 @@ async function openMeeting(sessionId, preferStart = false) {
   }
   activeMeetingSession = session;
   activeMeetingAccess = null;
+  meetingPrejoinState = null;
+  liveFeedbackDraft = null;
   meetingUiState = { audioMuted: false, videoMuted: false, screenSharing: false, participants: 1, joined: false };
   showSection('meeting');
   renderMeetingLoading(session);
@@ -3079,6 +3087,7 @@ function renderMeetingPlaceholder() {
     meetingStatus: 'SCHEDULED',
   });
   document.getElementById('meeting-meta').innerHTML = emptyState('Choose a scheduled session to see meeting details.');
+  renderLiveFeedbackWorkspace();
   const fallback = document.getElementById('meeting-fallback');
   const embed = document.getElementById('meeting-embed-root');
   document.getElementById('meeting-toolbar').hidden = true;
@@ -3099,6 +3108,7 @@ function renderMeetingLoading(session) {
     meetingStatus: normalizeMeetingStatus(session),
   });
   document.getElementById('meeting-meta').innerHTML = skeletonCards(2);
+  renderLiveFeedbackWorkspace();
   const fallback = document.getElementById('meeting-fallback');
   fallback.hidden = false;
   fallback.innerHTML = `<div class="meeting-fallback-card"><h3>Preparing your room</h3><p>Loading secure access and meeting controls.</p></div>`;
@@ -3118,6 +3128,7 @@ async function renderMeetingRoom(access) {
     meetingStatus: liveState === 'LIVE' ? 'LIVE' : access.meetingStatus,
   });
   renderMeetingMeta(access);
+  renderLiveFeedbackWorkspace(access);
   if (liveState === 'COUNTDOWN') {
     startMeetingTimer(access.sessionState?.joinAvailableAt || access.scheduledAt, 'countdown');
   } else if (liveState === 'LIVE') {
@@ -3139,6 +3150,20 @@ async function renderMeetingRoom(access) {
     }
     return;
   }
+  if (shouldConfirmMeetingPrejoin(access)) {
+    document.getElementById('meeting-toolbar').hidden = true;
+    document.getElementById('meeting-open-external').hidden = true;
+    renderMeetingMeta({
+      ...access,
+      joinUrl: null,
+      launchUrl: null,
+      sessionState: { ...(access.sessionState || {}), sensitiveAccessExposed: false },
+    });
+    destroyMeetingFrame(false);
+    renderMeetingReadyCard(access);
+    showMeetingPrejoinModal(access);
+    return;
+  }
   if (access.canEmbed && access.embedScriptUrl && access.embedDomain && access.roomName) {
     document.getElementById('meeting-toolbar').hidden = false;
     document.getElementById('meeting-fallback').hidden = true;
@@ -3148,6 +3173,10 @@ async function renderMeetingRoom(access) {
   document.getElementById('meeting-toolbar').hidden = true;
   destroyMeetingFrame(false);
   renderMeetingFallback(access);
+}
+
+function shouldConfirmMeetingPrejoin(access) {
+  return access?.sessionState?.canJoin && meetingPrejoinState?.sessionId !== access.sessionId;
 }
 
 function renderMeetingSummary({ title, subtitle, providerLabel: label, meetingStatus }) {
@@ -3200,6 +3229,194 @@ function renderMeetingMeta(access) {
   `;
 }
 
+function renderLiveFeedbackWorkspace(access = activeMeetingAccess) {
+  const host = document.getElementById('meeting-live-feedback');
+  if (!host) return;
+  if (!access || access.participantRole !== 'HOST') {
+    host.innerHTML = '';
+    return;
+  }
+  const session = activeMeetingSession || {};
+  const draft = liveFeedbackDraft || {};
+  const submitted = hasCurrentUserReviewedSession(access.sessionId) || draft.submitted === true;
+  const completed = String(session.status || access.sessionState?.sessionStatus || '').toUpperCase() === 'COMPLETED';
+  const topics = liveFeedbackTopics(session, draft);
+  host.innerHTML = `
+    <div class="meeting-live-feedback-card">
+      <div class="panel-head">
+        <div>
+          <h3>Live evaluation</h3>
+          <p class="availability-summary-note">Autosaves while you interview. Private notes stay interviewer-only.</p>
+        </div>
+        <span class="badge badge-${submitted ? 'green' : 'gray'}" id="live-feedback-save-state">${submitted ? 'Submitted' : 'Draft'}</span>
+      </div>
+      ${submitted ? '<div class="empty-state"><p>Final feedback has already been submitted for this session.</p></div>' : `
+        <form id="live-feedback-form" class="live-feedback-form" oninput="scheduleLiveFeedbackAutosave()">
+          <div class="form-grid">
+            <div class="form-group"><label for="live-rating">Overall</label>${ratingSelect('live-rating', draft.rating)}</div>
+            <div class="form-group"><label for="live-level">Level</label>${levelSelect('live-level', draft.ratingLevel)}</div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group"><label for="live-communication">Communication</label>${ratingSelect('live-communication', draft.communication)}</div>
+            <div class="form-group"><label for="live-technical">Technical</label>${ratingSelect('live-technical', draft.technicalSkills)}</div>
+          </div>
+          <div class="form-group"><label for="live-private-notes">Private notes</label><textarea id="live-private-notes" placeholder="Live notes, signals, concerns, timestamps">${esc(draft.privateNotes || '')}</textarea></div>
+          <div class="form-group"><label for="live-shareable-feedback">Shareable feedback</label><textarea id="live-shareable-feedback" placeholder="Candidate-facing feedback if shared">${esc(draft.shareableFeedback || '')}</textarea></div>
+          <div class="form-grid">
+            <div class="form-group"><label for="live-strengths">Strengths</label><textarea id="live-strengths">${esc(draft.strengths || '')}</textarea></div>
+            <div class="form-group"><label for="live-weaknesses">Weaknesses</label><textarea id="live-weaknesses">${esc(draft.weaknesses || '')}</textarea></div>
+          </div>
+          <div class="form-group"><label for="live-hiring">Hiring recommendation</label><select id="live-hiring">
+            ${['', 'Strong hire', 'Hire', 'Leaning hire', 'Leaning no hire', 'No hire'].map(value => `<option value="${esc(value)}" ${String(draft.hiringRecommendation || '') === value ? 'selected' : ''}>${esc(value || 'Select recommendation')}</option>`).join('')}
+          </select></div>
+          <div class="form-group"><label for="live-communication-notes">Communication notes</label><textarea id="live-communication-notes">${esc(draft.communicationNotes || '')}</textarea></div>
+          <div class="form-group"><label for="live-coding-notes">Coding quality notes</label><textarea id="live-coding-notes">${esc(draft.codingQualityNotes || '')}</textarea></div>
+          <div class="form-group"><label for="live-problem-notes">Problem-solving notes</label><textarea id="live-problem-notes">${esc(draft.problemSolvingNotes || '')}</textarea></div>
+          <div class="live-topic-grid">
+            ${topics.map((topic, index) => renderLiveFeedbackTopic(topic, index, draft)).join('')}
+          </div>
+          <div class="form-group"><label for="live-final-summary">Final summary</label><textarea id="live-final-summary">${esc(draft.finalSummary || '')}</textarea></div>
+          <label class="check-row"><input id="live-share-with-interviewee" type="checkbox" ${draft.shareWithInterviewee === false ? '' : 'checked'} onchange="scheduleLiveFeedbackAutosave()" /> Share the shareable feedback and scores with interviewee</label>
+          <div class="meeting-launch-row">
+            <button class="btn btn-outline btn-sm" type="button" onclick="saveLiveFeedbackDraft(true)">Save draft</button>
+            <button class="btn btn-primary btn-sm" type="button" onclick="submitLiveFeedback()" ${completed ? '' : 'disabled'}>Finalize</button>
+          </div>
+          ${completed ? '' : '<small class="availability-summary-note">Finalize becomes available after this session is marked completed.</small>'}
+        </form>
+      `}
+    </div>
+  `;
+  if (!liveFeedbackDraft && !submitted) {
+    loadLiveFeedbackDraft(access.sessionId);
+  }
+}
+
+function ratingSelect(id, value) {
+  const current = Number(value || 0);
+  return `<select id="${esc(id)}"><option value="">-</option>${[5, 4, 3, 2, 1].map(item => `<option value="${item}" ${current === item ? 'selected' : ''}>${item}</option>`).join('')}</select>`;
+}
+
+function levelSelect(id, value) {
+  return `<select id="${esc(id)}"><option value="">Select level</option>${FEEDBACK_LEVELS.map(level => `<option value="${esc(level)}" ${String(value || '') === level ? 'selected' : ''}>${esc(level)}</option>`).join('')}</select>`;
+}
+
+function liveFeedbackTopics(session, draft) {
+  const saved = Array.isArray(draft?.topicFeedback) ? draft.topicFeedback.map(item => item.topic).filter(Boolean) : [];
+  return FormUx.normalizeValues([...sessionTopics(session), ...LIVE_FEEDBACK_TOPICS, ...saved]).slice(0, 10);
+}
+
+function renderLiveFeedbackTopic(topic, index, draft) {
+  const item = (draft.topicFeedback || []).find(entry => String(entry.topic || '').toLowerCase() === String(topic).toLowerCase()) || {};
+  return `
+    <details class="live-topic-card" open>
+      <summary><span>${esc(topic)}</span><small>${item.rating ? `${esc(String(item.rating))}/5` : 'Not rated'}</small></summary>
+      <div class="form-grid">
+        <div class="form-group"><label for="live-topic-rating-${index}">Score</label>${ratingSelect(`live-topic-rating-${index}`, item.rating)}</div>
+        <div class="form-group"><label>Focus</label><input value="${esc(topic)}" readonly /></div>
+      </div>
+      <div class="form-group"><label for="live-topic-examples-${index}">Examples</label><textarea id="live-topic-examples-${index}">${esc(item.examples || '')}</textarea></div>
+      <div class="form-grid">
+        <div class="form-group"><label for="live-topic-strengths-${index}">Strengths</label><textarea id="live-topic-strengths-${index}">${esc(item.strengths || '')}</textarea></div>
+        <div class="form-group"><label for="live-topic-weaknesses-${index}">Weaknesses</label><textarea id="live-topic-weaknesses-${index}">${esc(item.weaknesses || '')}</textarea></div>
+      </div>
+      <div class="form-group"><label for="live-topic-comments-${index}">Notes</label><textarea id="live-topic-comments-${index}">${esc(item.comments || '')}</textarea></div>
+    </details>
+  `;
+}
+
+async function loadLiveFeedbackDraft(sessionId) {
+  if (!sessionId) return;
+  try {
+    liveFeedbackDraft = await api(`/api/feedback/drafts/session/${encodeURIComponent(sessionId)}`);
+    renderLiveFeedbackWorkspace(activeMeetingAccess);
+  } catch (err) {
+    const state = document.getElementById('live-feedback-save-state');
+    if (state) state.textContent = 'Unavailable';
+  }
+}
+
+function collectLiveFeedbackDraft() {
+  const session = activeMeetingSession || {};
+  const topics = liveFeedbackTopics(session, liveFeedbackDraft || {});
+  return {
+    rating: Number(val('live-rating') || 0),
+    communication: Number(val('live-communication') || 0),
+    technicalSkills: Number(val('live-technical') || 0),
+    ratingLevel: val('live-level'),
+    strengths: val('live-strengths'),
+    weaknesses: val('live-weaknesses'),
+    hiringRecommendation: val('live-hiring'),
+    communicationNotes: val('live-communication-notes'),
+    codingQualityNotes: val('live-coding-notes'),
+    problemSolvingNotes: val('live-problem-notes'),
+    finalSummary: val('live-final-summary'),
+    shareableFeedback: val('live-shareable-feedback'),
+    privateNotes: val('live-private-notes'),
+    shareWithInterviewee: document.getElementById('live-share-with-interviewee')?.checked !== false,
+    topicFeedback: topics.map((topic, index) => {
+      return {
+        topic,
+        rating: Number(val(`live-topic-rating-${index}`) || 0),
+        skillRatings: {},
+        examples: val(`live-topic-examples-${index}`),
+        strengths: val(`live-topic-strengths-${index}`),
+        weaknesses: val(`live-topic-weaknesses-${index}`),
+        comments: val(`live-topic-comments-${index}`),
+      };
+    }).filter(item => item.rating || item.examples || item.strengths || item.weaknesses || item.comments || Object.keys(item.skillRatings).length),
+  };
+}
+
+function scheduleLiveFeedbackAutosave() {
+  if (!activeMeetingAccess?.sessionId || liveFeedbackSaving || hasCurrentUserReviewedSession(activeMeetingAccess.sessionId)) return;
+  clearTimeout(liveFeedbackAutosaveTimer);
+  liveFeedbackAutosaveTimer = setTimeout(() => saveLiveFeedbackDraft(false), 2500);
+  setLiveFeedbackSaveState('Unsaved');
+}
+
+async function saveLiveFeedbackDraft(showToast = false) {
+  if (!activeMeetingAccess?.sessionId || liveFeedbackSaving || hasCurrentUserReviewedSession(activeMeetingAccess.sessionId)) return;
+  clearTimeout(liveFeedbackAutosaveTimer);
+  liveFeedbackSaving = true;
+  setLiveFeedbackSaveState('Saving');
+  try {
+    liveFeedbackDraft = await api(`/api/feedback/drafts/session/${encodeURIComponent(activeMeetingAccess.sessionId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(collectLiveFeedbackDraft()),
+    });
+    setLiveFeedbackSaveState('Saved');
+    if (showToast) toast('Evaluation draft saved.', 'success');
+  } catch (err) {
+    setLiveFeedbackSaveState('Save failed');
+    if (showToast) toast(err.message || 'Could not save draft.', 'error');
+  } finally {
+    liveFeedbackSaving = false;
+  }
+}
+
+async function submitLiveFeedback() {
+  if (!activeMeetingAccess?.sessionId || hasCurrentUserReviewedSession(activeMeetingAccess.sessionId)) return;
+  try {
+    await saveLiveFeedbackDraft(false);
+    const submitted = await api(`/api/feedback/drafts/session/${encodeURIComponent(activeMeetingAccess.sessionId)}/submit`, {
+      method: 'POST',
+      body: JSON.stringify(collectLiveFeedbackDraft()),
+    });
+    feedbackItems = [submitted, ...feedbackItems.filter(item => item.id !== submitted.id)];
+    liveFeedbackDraft = { submitted: true };
+    toast('Final evaluation submitted.', 'success');
+    await loadFeedback();
+    renderLiveFeedbackWorkspace(activeMeetingAccess);
+  } catch (err) {
+    toast(err.message || 'Could not submit evaluation.', 'error');
+  }
+}
+
+function setLiveFeedbackSaveState(text) {
+  const state = document.getElementById('live-feedback-save-state');
+  if (state) state.textContent = text;
+}
+
 function renderMeetingPrejoin(access) {
   const fallback = document.getElementById('meeting-fallback');
   const embed = document.getElementById('meeting-embed-root');
@@ -3215,6 +3432,11 @@ function renderMeetingPrejoin(access) {
       </div>
       <h3>${esc(meetingStateHeading(liveState))}</h3>
       <p>${esc(state.guidance || 'We will refresh this room automatically when access is available.')}</p>
+      <div class="meeting-precheck-list">
+        <span>Confirm your microphone and camera before joining.</span>
+        <span>Use a stable internet connection and close noisy background apps.</span>
+        <span>You are authenticated in InterviewPrep, but Jitsi may still ask for media/device permissions.</span>
+      </div>
       <div class="meeting-launch-row">
         ${state.canStart ? '<button class="btn btn-primary" type="button" onclick="startMeetingFromRoom()">Start Interview</button>' : ''}
         <button class="btn btn-outline" type="button" onclick="refreshMeetingAccess(false, false)">Refresh access</button>
@@ -3222,6 +3444,91 @@ function renderMeetingPrejoin(access) {
       </div>
     </div>
   `;
+}
+
+function renderMeetingReadyCard(access) {
+  const fallback = document.getElementById('meeting-fallback');
+  const embed = document.getElementById('meeting-embed-root');
+  embed.innerHTML = '';
+  fallback.hidden = false;
+  fallback.innerHTML = `
+    <div class="meeting-fallback-card">
+      <div class="meeting-badge-row">
+        <span class="badge badge-green">Ready</span>
+        <span class="badge badge-gray">${esc(access.providerLabel || providerLabel(access.meetingProvider))}</span>
+      </div>
+      <h3>Prejoin checklist</h3>
+      <p>Review your setup before entering the room. InterviewPrep has verified your dashboard session; Jitsi may still request device permissions.</p>
+      <div class="meeting-precheck-list">
+        <span>${esc(access.sessionTitle || sessionTitle(activeMeetingSession))}</span>
+        <span>${esc(access.interviewerName || 'Interviewer')} and ${esc(access.intervieweeName || 'Interviewee')}</span>
+        <span>${esc(fmtDate(access.scheduledAt))}</span>
+      </div>
+      <div class="meeting-launch-row">
+        <button class="btn btn-primary" type="button" onclick="showMeetingPrejoinModal(activeMeetingAccess)">Continue setup</button>
+      </div>
+    </div>
+  `;
+}
+
+function showMeetingPrejoinModal(access) {
+  if (!access) return;
+  const displayName = meetingPrejoinState?.displayName || access.displayName || accountDisplayName(currentUser);
+  modal(`
+    <div class="modal-head">
+      <h2>Ready to join?</h2>
+      <p class="muted">${esc(access.sessionTitle || sessionTitle(activeMeetingSession))} • ${esc(fmtDate(access.scheduledAt))}</p>
+    </div>
+    <div class="prejoin-modal-grid">
+      <div class="prejoin-detail-card">
+        <span>Interviewer</span>
+        <strong>${esc(access.interviewerName || 'Interviewer')}</strong>
+      </div>
+      <div class="prejoin-detail-card">
+        <span>Interviewee</span>
+        <strong>${esc(access.intervieweeName || 'Interviewee')}</strong>
+      </div>
+      <div class="prejoin-detail-card">
+        <span>Meeting</span>
+        <strong>${esc(access.providerLabel || providerLabel(access.meetingProvider))}</strong>
+      </div>
+    </div>
+    <div class="form-group">
+      <label for="prejoin-display-name">Display name</label>
+      <input id="prejoin-display-name" value="${esc(displayName)}" placeholder="Name shown in meeting" />
+    </div>
+    <div class="prejoin-checklist">
+      <label><input id="prejoin-mic" type="checkbox" checked /> Microphone is ready</label>
+      <label><input id="prejoin-camera" type="checkbox" checked /> Camera is ready or intentionally off</label>
+      <label><input id="prejoin-network" type="checkbox" checked /> Internet and device are stable</label>
+    </div>
+    <div class="meeting-guidelines">
+      <strong>Meeting guidelines</strong>
+      <ul>
+        <li>Join from a quiet place and keep the dashboard open for session actions.</li>
+        <li>Do not share sensitive meeting links outside this session.</li>
+        <li>You are authenticated in InterviewPrep, but Jitsi may still ask for media/device permissions.</li>
+        <li>If Jitsi asks for its own sign-in, use that only if your organization requires it.</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" type="button" onclick="closeModal()">Stay here</button>
+      <button class="btn btn-primary" type="button" onclick="confirmMeetingPrejoin()">Enter meeting</button>
+    </div>
+  `);
+}
+
+async function confirmMeetingPrejoin() {
+  if (!activeMeetingAccess) return closeModal();
+  meetingPrejoinState = {
+    sessionId: activeMeetingAccess.sessionId,
+    displayName: val('prejoin-display-name') || activeMeetingAccess.displayName || accountDisplayName(currentUser),
+    audioMuted: !document.getElementById('prejoin-mic')?.checked,
+    videoMuted: !document.getElementById('prejoin-camera')?.checked,
+  };
+  activeMeetingAccess = { ...activeMeetingAccess, displayName: meetingPrejoinState.displayName };
+  closeModal();
+  await renderMeetingRoom(activeMeetingAccess);
 }
 
 function renderMeetingFallback(access) {
@@ -3277,8 +3584,8 @@ async function mountJitsiMeeting(access) {
     configOverwrite: {
       prejoinPageEnabled: false,
       disableDeepLinking: true,
-      startWithAudioMuted: false,
-      startWithVideoMuted: false,
+      startWithAudioMuted: Boolean(meetingPrejoinState?.audioMuted),
+      startWithVideoMuted: Boolean(meetingPrejoinState?.videoMuted),
       enableWelcomePage: false,
     },
     interfaceConfigOverwrite: {
@@ -3396,6 +3703,8 @@ function leaveMeetingRoom(goBack = false) {
 
 function destroyMeetingFrame(clearAccess = true) {
   clearMeetingRefreshTimer();
+  clearTimeout(liveFeedbackAutosaveTimer);
+  liveFeedbackAutosaveTimer = null;
   clearInterval(activeMeetingTimer);
   activeMeetingTimer = null;
   if (jitsiApi?.dispose) {
@@ -3405,6 +3714,8 @@ function destroyMeetingFrame(clearAccess = true) {
   document.getElementById('meeting-embed-root').innerHTML = '';
   if (clearAccess) {
     activeMeetingAccess = null;
+    liveFeedbackDraft = null;
+    meetingPrejoinState = null;
   }
 }
 

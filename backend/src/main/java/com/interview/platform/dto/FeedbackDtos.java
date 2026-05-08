@@ -8,7 +8,9 @@ public class FeedbackDtos {
             String topic,
             Integer rating,
             Map<String, Integer> skillRatings,
+            String examples,
             String strengths,
+            String weaknesses,
             String improvementAreas,
             String comments
     ) {}
@@ -24,6 +26,14 @@ public class FeedbackDtos {
             String weaknesses,
             Integer communication,
             Integer technicalSkills,
+            String ratingLevel,
+            String hiringRecommendation,
+            String communicationNotes,
+            String codingQualityNotes,
+            String problemSolvingNotes,
+            String finalSummary,
+            String privateNotes,
+            Boolean shareWithInterviewee,
             String recommendations,
             String improvementAreas,
             String reviewType,
@@ -34,6 +44,48 @@ public class FeedbackDtos {
             Double reviewQualityScore,
             String createdAt,
             List<TopicFeedbackSummary> topicFeedback
+    ) {}
+
+    public record FeedbackDraftRequest(
+            Integer rating,
+            Integer communication,
+            Integer technicalSkills,
+            String ratingLevel,
+            String strengths,
+            String weaknesses,
+            String hiringRecommendation,
+            String communicationNotes,
+            String codingQualityNotes,
+            String problemSolvingNotes,
+            String finalSummary,
+            String shareableFeedback,
+            String privateNotes,
+            Boolean shareWithInterviewee,
+            List<TopicFeedbackSummary> topicFeedback
+    ) {}
+
+    public record FeedbackDraftItem(
+            String id,
+            String sessionId,
+            String interviewerId,
+            Integer rating,
+            Integer communication,
+            Integer technicalSkills,
+            String ratingLevel,
+            String strengths,
+            String weaknesses,
+            String hiringRecommendation,
+            String communicationNotes,
+            String codingQualityNotes,
+            String problemSolvingNotes,
+            String finalSummary,
+            String shareableFeedback,
+            String privateNotes,
+            Boolean shareWithInterviewee,
+            String createdAt,
+            String updatedAt,
+            List<TopicFeedbackSummary> topicFeedback,
+            Boolean submitted
     ) {}
 
     public record PublicFeedbackItem(

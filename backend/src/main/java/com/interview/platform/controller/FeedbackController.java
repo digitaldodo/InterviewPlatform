@@ -36,6 +36,29 @@ public class FeedbackController {
                 feedbackService.getFeedbackForSession(sessionId, currentUser(authentication))));
     }
 
+    @GetMapping("/drafts/session/{sessionId}")
+    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackDraftItem>> getEvaluationDraft(@PathVariable String sessionId,
+                                                                                           Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Evaluation draft fetched successfully",
+                feedbackService.getEvaluationDraft(sessionId, currentUser(authentication))));
+    }
+
+    @PutMapping("/drafts/session/{sessionId}")
+    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackDraftItem>> saveEvaluationDraft(@PathVariable String sessionId,
+                                                                                           @RequestBody FeedbackDtos.FeedbackDraftRequest request,
+                                                                                           Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Evaluation draft saved successfully",
+                feedbackService.saveEvaluationDraft(sessionId, currentUser(authentication), request)));
+    }
+
+    @PostMapping("/drafts/session/{sessionId}/submit")
+    public ResponseEntity<ApiResponse<FeedbackDtos.FeedbackItem>> submitEvaluationDraft(@PathVariable String sessionId,
+                                                                                        @RequestBody FeedbackDtos.FeedbackDraftRequest request,
+                                                                                        Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Evaluation submitted successfully",
+                feedbackService.submitEvaluationDraft(sessionId, currentUser(authentication), request)));
+    }
+
     @GetMapping
     public ResponseEntity<ApiResponse<List<FeedbackDtos.FeedbackItem>>> getAllFeedback(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Feedback fetched successfully",

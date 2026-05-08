@@ -44,6 +44,14 @@ public class Feedback {
     private String weaknesses;
     private Integer communication = 0;
     private Integer technicalSkills = 0;
+    private String ratingLevel;
+    private String hiringRecommendation;
+    private String communicationNotes;
+    private String codingQualityNotes;
+    private String problemSolvingNotes;
+    private String finalSummary;
+    private String privateNotes;
+    private Boolean shareWithInterviewee = true;
     private String recommendations;
     private String improvementAreas;
     private String reviewType;
@@ -92,6 +100,22 @@ public class Feedback {
     public void setCommunication(Integer communication) { this.communication = communication == null ? 0 : communication; }
     public Integer getTechnicalSkills() { return technicalSkills; }
     public void setTechnicalSkills(Integer technicalSkills) { this.technicalSkills = technicalSkills == null ? 0 : technicalSkills; }
+    public String getRatingLevel() { return ratingLevel; }
+    public void setRatingLevel(String ratingLevel) { this.ratingLevel = ratingLevel; }
+    public String getHiringRecommendation() { return hiringRecommendation; }
+    public void setHiringRecommendation(String hiringRecommendation) { this.hiringRecommendation = hiringRecommendation; }
+    public String getCommunicationNotes() { return communicationNotes; }
+    public void setCommunicationNotes(String communicationNotes) { this.communicationNotes = communicationNotes; }
+    public String getCodingQualityNotes() { return codingQualityNotes; }
+    public void setCodingQualityNotes(String codingQualityNotes) { this.codingQualityNotes = codingQualityNotes; }
+    public String getProblemSolvingNotes() { return problemSolvingNotes; }
+    public void setProblemSolvingNotes(String problemSolvingNotes) { this.problemSolvingNotes = problemSolvingNotes; }
+    public String getFinalSummary() { return finalSummary; }
+    public void setFinalSummary(String finalSummary) { this.finalSummary = finalSummary; }
+    public String getPrivateNotes() { return privateNotes; }
+    public void setPrivateNotes(String privateNotes) { this.privateNotes = privateNotes; }
+    public Boolean getShareWithInterviewee() { return shareWithInterviewee == null || shareWithInterviewee; }
+    public void setShareWithInterviewee(Boolean shareWithInterviewee) { this.shareWithInterviewee = shareWithInterviewee == null || shareWithInterviewee; }
     public String getRecommendations() { return recommendations; }
     public void setRecommendations(String recommendations) { this.recommendations = recommendations; }
     public String getImprovementAreas() {

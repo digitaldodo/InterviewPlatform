@@ -3,6 +3,7 @@ package com.interview.platform.service;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
+import com.interview.platform.repository.FeedbackDraftRepository;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
@@ -25,6 +26,8 @@ class FeedbackServiceTest {
     @Mock
     private FeedbackRepository feedbackRepository;
     @Mock
+    private FeedbackDraftRepository feedbackDraftRepository;
+    @Mock
     private SessionRepository sessionRepository;
     @Mock
     private UserRepository userRepository;
@@ -37,7 +40,7 @@ class FeedbackServiceTest {
 
     @Test
     void rejectsDuplicateFeedbackFromSameReviewerForSession() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
+        FeedbackService service = new FeedbackService(feedbackRepository, feedbackDraftRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -60,7 +63,7 @@ class FeedbackServiceTest {
 
     @Test
     void marksCompletedCandidateFeedbackAsPublicReview() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
+        FeedbackService service = new FeedbackService(feedbackRepository, feedbackDraftRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
@@ -95,7 +98,7 @@ class FeedbackServiceTest {
 
     @Test
     void rejectsFeedbackWhenSessionIsOnlyConfirmed() {
-        FeedbackService service = new FeedbackService(feedbackRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
+        FeedbackService service = new FeedbackService(feedbackRepository, feedbackDraftRepository, sessionRepository, userRepository, notificationService, interviewReportService, new ReviewIntegrityService(), cacheInvalidationService);
         User actor = new User();
         actor.setId("candidate-1");
         Session session = new Session();
