@@ -73,6 +73,7 @@ let discoverFiltersOpen = false;
 let lastDiscoveryResultCount = 0;
 let searchSuggestionTimer = null;
 let adminReloadTimer = null;
+let currentRoleNavKey = '';
 const adminState = {
   users: { page: 0, size: 8, q: '', role: '', enabled: '', verification: '', flagged: false, sortBy: 'CREATED_AT', sortDir: 'DESC' },
   sessions: { page: 0, size: 8, q: '', status: '', focus: '', sortBy: 'START_TIME', sortDir: 'DESC' },
@@ -111,6 +112,65 @@ const AVAILABILITY_PREFERENCES = [
   'Early morning availability',
 ];
 const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops']);
+const ROLE_NAVIGATION = {
+  ADMIN: [
+    { key: 'admin-dashboard', label: 'Dashboard', section: 'admin-overview' },
+    { key: 'admin-analytics', label: 'Analytics', section: 'admin-analytics' },
+    { key: 'admin-users', label: 'Users', section: 'admin-users' },
+    { key: 'admin-interviewers', label: 'Interviewers', section: 'admin-users', action: 'admin-interviewers' },
+    { key: 'admin-sessions', label: 'Sessions', section: 'admin-sessions' },
+    { key: 'admin-moderation', label: 'Moderation', section: 'admin-reports', action: 'admin-open-reports' },
+    { key: 'admin-reports', label: 'Reports', section: 'admin-reports' },
+    { key: 'admin-prep', label: 'Prep Modules', section: 'admin-prep' },
+    { key: 'admin-announcements', label: 'Announcements', section: 'admin-ops', action: 'admin-announcements' },
+    { key: 'admin-ops', label: 'Platform Ops', section: 'admin-ops' },
+    { key: 'admin-audit', label: 'Audit Trail', section: 'admin-audit' },
+    { key: 'admin-settings', label: 'Settings', section: 'profile' },
+  ],
+  INTERVIEWER: [
+    { key: 'interviewer-dashboard', label: 'Dashboard', section: 'overview' },
+    { key: 'interviewer-availability', label: 'Availability', section: 'interviewer' },
+    { key: 'interviewer-upcoming', label: 'Upcoming Sessions', section: 'sessions', action: 'sessions-upcoming' },
+    { key: 'interviewer-history', label: 'Session History', section: 'sessions', action: 'sessions-history' },
+    { key: 'interviewer-feedback', label: 'Candidate Feedback', section: 'feedback' },
+    { key: 'interviewer-reviews', label: 'Reviews', section: 'feedback' },
+    { key: 'interviewer-stats', label: 'Earnings/Stats', section: 'overview', action: 'interviewer-stats' },
+    { key: 'interviewer-public-profile', label: 'Public Profile', section: 'profile' },
+    { key: 'interviewer-notifications', label: 'Notifications', section: 'notifications' },
+    { key: 'interviewer-profile', label: 'Profile', section: 'profile' },
+  ],
+  INTERVIEWEE: [
+    { key: 'interviewee-home', label: 'Home', section: 'overview' },
+    { key: 'interviewee-discover', label: 'Discover Interviewers', section: 'discover' },
+    { key: 'interviewee-booking', label: 'Book Interview', section: 'booking' },
+    { key: 'interviewee-sessions', label: 'My Sessions', section: 'sessions' },
+    { key: 'interviewee-feedback', label: 'Feedback', section: 'feedback' },
+    { key: 'interviewee-prep', label: 'Preparation Hub', section: 'career' },
+    { key: 'interviewee-notifications', label: 'Notifications', section: 'notifications' },
+    { key: 'interviewee-profile', label: 'Profile', section: 'profile' },
+  ],
+};
+const ROLE_BOTTOM_NAVIGATION = {
+  ADMIN: [
+    { key: 'admin-dashboard', label: 'Dashboard', section: 'admin-overview' },
+    { key: 'admin-users', label: 'Users', section: 'admin-users' },
+    { key: 'admin-moderation', label: 'Moderation', section: 'admin-reports', action: 'admin-open-reports' },
+    { key: 'admin-ops', label: 'Ops', section: 'admin-ops' },
+  ],
+  INTERVIEWER: [
+    { key: 'interviewer-dashboard', label: 'Dashboard', section: 'overview' },
+    { key: 'interviewer-availability', label: 'Availability', section: 'interviewer' },
+    { key: 'interviewer-upcoming', label: 'Sessions', section: 'sessions', action: 'sessions-upcoming' },
+    { key: 'interviewer-profile', label: 'Profile', section: 'profile' },
+  ],
+  INTERVIEWEE: [
+    { key: 'interviewee-home', label: 'Home', section: 'overview' },
+    { key: 'interviewee-sessions', label: 'Sessions', section: 'sessions' },
+    { key: 'interviewee-discover', label: 'Search', section: 'discover' },
+    { key: 'interviewee-prep', label: 'Prep', section: 'career' },
+    { key: 'interviewee-profile', label: 'Profile', section: 'profile' },
+  ],
+};
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 let analyticsSummary = null;
@@ -227,12 +287,13 @@ function initUi() {
     </div>
   `;
   renderWorkspaceSwitcher(roles);
+  renderRoleNavigation();
   applyWorkspaceVisibility();
   applyRoleNavigationLabels();
   document.getElementById('primary-action').textContent = activeWorkspace === 'ADMIN'
     ? 'Open console'
     : workspace === 'interviewer'
-      ? 'Manage queue'
+      ? 'Manage availability'
       : 'Book interview';
   renderBookingStep();
   renderResumePanel();
@@ -275,10 +336,80 @@ function renderWorkspaceSwitcher(roles) {
   select.innerHTML = roles.map(role => `<option value="${role}" ${role === activeWorkspace ? 'selected' : ''}>${workspaceLabel(role)}</option>`).join('');
 }
 
+function navigationItems(role = activeWorkspace) {
+  return ROLE_NAVIGATION[role] || ROLE_NAVIGATION.INTERVIEWEE;
+}
+
+function bottomNavigationItems(role = activeWorkspace) {
+  return ROLE_BOTTOM_NAVIGATION[role] || ROLE_BOTTOM_NAVIGATION.INTERVIEWEE;
+}
+
+function renderRoleNavigation() {
+  const nav = document.querySelector('.nav-menu');
+  if (nav) {
+    nav.innerHTML = navigationItems().map(item => `
+      <button class="nav-link role-nav-link" data-nav-key="${esc(item.key)}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+    `).join('');
+  }
+  const bottom = document.querySelector('.bottom-nav');
+  if (bottom) {
+    bottom.innerHTML = bottomNavigationItems().map(item => `
+      <button data-nav-key="${esc(item.key)}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+    `).join('');
+  }
+}
+
+function navItemByKey(key) {
+  return navigationItems().find(item => item.key === key)
+    || bottomNavigationItems().find(item => item.key === key)
+    || navigationItems().find(item => item.section === defaultWorkspaceRoute());
+}
+
+function navItemForSection(section) {
+  return navigationItems().find(item => item.section === section)
+    || bottomNavigationItems().find(item => item.section === section)
+    || navItemByKey(currentRoleNavKey);
+}
+
+function runRoleNav(key) {
+  const item = navItemByKey(key);
+  if (!item) return;
+  currentRoleNavKey = item.key;
+  applyRoleNavigationAction(item, 'before');
+  showSection(item.section);
+  applyRoleNavigationAction(item, 'after');
+  syncRoleNavigationActiveState(item.section);
+}
+
+function applyRoleNavigationAction(item, phase) {
+  if (!item?.action) return;
+  if (phase === 'before') {
+    if (item.action === 'admin-interviewers') {
+      adminState.users.role = 'INTERVIEWER';
+      adminState.users.page = 0;
+    }
+    if (item.action === 'admin-open-reports') {
+      adminState.reports.status = 'OPEN';
+      adminState.reports.page = 0;
+    }
+    return;
+  }
+  if (item.action === 'sessions-upcoming') {
+    renderSessions('upcoming');
+  } else if (item.action === 'sessions-history') {
+    renderSessions('history');
+  } else if (item.action === 'admin-interviewers' || item.action === 'admin-open-reports') {
+    loadAdminData(true);
+  } else if (item.action === 'interviewer-stats') {
+    document.getElementById('role-overview-panels')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
 function switchWorkspace(workspace) {
   const normalized = String(workspace || '').toUpperCase();
   if (!userRoles().includes(normalized)) return;
   activeWorkspace = normalized;
+  currentRoleNavKey = '';
   currentUser.activeWorkspace = normalized;
   localStorage.setItem(`ip_workspace_${currentUser.id}`, normalized);
   localStorage.setItem('ip_user', JSON.stringify(currentUser));
@@ -331,7 +462,7 @@ function applyWorkspaceVisibility() {
   document.body.classList.toggle('interviewer-workspace-active', isInterviewer);
   document.body.classList.toggle('interviewee-workspace-active', !isAdmin && !isInterviewer);
   document.body.classList.toggle('admin-workspace-active', isAdmin);
-  document.querySelector('.bottom-nav')?.classList.toggle('hidden', isAdmin);
+  document.querySelector('.bottom-nav')?.classList.remove('hidden');
 }
 
 function applyRoleNavigationLabels() {
@@ -347,10 +478,33 @@ function applyRoleNavigationLabels() {
 
 function routeAllowed(route) {
   if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops', 'profile'].includes(route);
-  if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
+  if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking', 'career'].includes(route) && !route.startsWith('admin-');
   if (route === 'interviewer') return false;
   if (route.startsWith('admin-')) return false;
   return true;
+}
+
+function syncRoleNavigationActiveState(targetName) {
+  const activeItem = navItemByKey(currentRoleNavKey);
+  const sectionItem = activeItem?.section === targetName ? activeItem : navItemForSection(targetName);
+  currentRoleNavKey = sectionItem?.key || currentRoleNavKey || '';
+  document.querySelectorAll('.nav-link').forEach(link => {
+    const isActive = link.dataset.navKey
+      ? link.dataset.navKey === currentRoleNavKey
+      : link.dataset.section === targetName;
+    link.classList.toggle('active', isActive);
+  });
+  document.querySelectorAll('.bottom-nav button').forEach(button => {
+    const isActive = button.dataset.navKey
+      ? button.dataset.navKey === currentRoleNavKey
+      : button.dataset.section === targetName;
+    button.classList.toggle('active', isActive);
+    if (isActive) {
+      button.setAttribute('aria-current', 'page');
+    } else {
+      button.removeAttribute('aria-current');
+    }
+  });
 }
 
 function toggleSidebar(forceOpen) {
@@ -381,16 +535,7 @@ function showSection(name, updateRoute = true) {
   if (meetingWasVisible && targetName !== 'meeting') destroyMeetingFrame();
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
   document.getElementById(`section-${targetName}`).hidden = false;
-  document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.section === targetName));
-  document.querySelectorAll('.bottom-nav button').forEach(button => {
-    const isActive = button.dataset.section === targetName;
-    button.classList.toggle('active', isActive);
-    if (isActive) {
-      button.setAttribute('aria-current', 'page');
-    } else {
-      button.removeAttribute('aria-current');
-    }
-  });
+  syncRoleNavigationActiveState(targetName);
   if (targetName === 'booking') renderBookingStep();
   if (targetName === 'discover') refreshDiscoverFilterUi();
   if (targetName !== 'discover') {
@@ -422,6 +567,7 @@ function showSection(name, updateRoute = true) {
 
 function defaultWorkspaceRoute() {
   if (activeWorkspace === 'ADMIN') return 'admin-overview';
+  if (activeWorkspace === 'INTERVIEWER') return 'overview';
   return 'overview';
 }
 
@@ -1572,6 +1718,27 @@ function renderOverview() {
   renderSkillProgress();
 }
 
+function profileCompletionScore() {
+  const checks = [
+    currentUser?.displayName,
+    currentUser?.bio,
+    currentUser?.experienceLevel || currentUser?.currentRole,
+    currentUser?.company,
+    (currentUser?.interviewTopics || []).length,
+    currentUser?.timeZone,
+    activeWorkspace === 'INTERVIEWER' ? availabilitySchedules.length : true,
+    activeWorkspace === 'INTERVIEWER' ? currentUser?.publicProfileVisible !== false : true,
+  ];
+  const complete = checks.filter(Boolean).length;
+  return Math.round((complete / checks.length) * 100);
+}
+
+function readinessLabel(score) {
+  if (score >= 80) return 'Ready';
+  if (score >= 50) return 'In progress';
+  return 'Needs setup';
+}
+
 function renderRoleOverviewHero(upcoming, completed) {
   const host = document.getElementById('role-overview-hero');
   if (!host || activeWorkspace === 'ADMIN') return;
@@ -1584,21 +1751,24 @@ function renderRoleOverviewHero(upcoming, completed) {
       : availabilitySchedules.length
         ? `${availabilitySchedules.length} weekly windows active`
         : 'Availability not added';
+  const completion = profileCompletionScore();
+  const readiness = readinessLabel(completion);
   host.innerHTML = isInterviewer
     ? `
       <section class="role-hero-card interviewer-role-hero">
         <div>
           <span class="badge badge-purple">Interviewer workspace</span>
-          <h2>Run your interview queue with confidence.</h2>
-          <p>Approve candidate requests, keep availability current, join sessions, and submit structured feedback from one focused workspace.</p>
+          <h2>Coaching workspace</h2>
+          <p>Manage availability, upcoming sessions, feedback delivery, and trust signals from a host-focused command center.</p>
         </div>
         <div class="role-hero-actions">
-          <button class="btn btn-primary" type="button" onclick="showSection('interviewer')">Manage availability</button>
-          <button class="btn btn-outline" type="button" onclick="showSection('sessions')">Review schedule</button>
+          <button class="btn btn-primary" type="button" onclick="runRoleNav('interviewer-availability')">Manage availability</button>
+          <button class="btn btn-outline" type="button" onclick="runRoleNav('interviewer-upcoming')">Review schedule</button>
         </div>
         <div class="role-hero-meta">
           <span>${esc(availabilityState)}</span>
           <span>${esc(next ? `Next: ${fmtDate(next.startTime || next.scheduledAt)}` : 'No next session')}</span>
+          <span>${esc(readiness)} profile (${completion}%)</span>
         </div>
       </section>
     `
@@ -1606,16 +1776,17 @@ function renderRoleOverviewHero(upcoming, completed) {
       <section class="role-hero-card interviewee-role-hero">
         <div>
           <span class="badge badge-green">Interviewee workspace</span>
-          <h2>Prepare, book, and improve faster.</h2>
-          <p>Discover interviewers, reserve realistic sessions, track feedback, and keep your candidate context ready for every mock interview.</p>
+          <h2>Career growth workspace</h2>
+          <p>Find the right interviewer, book realistic practice, track feedback, and keep a personalized prep plan moving.</p>
         </div>
         <div class="role-hero-actions">
-          <button class="btn btn-primary" type="button" onclick="showSection('booking')">Book interview</button>
-          <button class="btn btn-outline" type="button" onclick="showSection('career')">Open prep hub</button>
+          <button class="btn btn-primary" type="button" onclick="runRoleNav('interviewee-booking')">Book interview</button>
+          <button class="btn btn-outline" type="button" onclick="runRoleNav('interviewee-prep')">Open prep hub</button>
         </div>
         <div class="role-hero-meta">
           <span>${esc(next ? `Next: ${fmtDate(next.startTime || next.scheduledAt)}` : 'No upcoming interview')}</span>
           <span>${esc(completed.length ? `${completed.length} completed sessions` : 'Start with your first booking')}</span>
+          <span>${esc(readiness)} profile (${completion}%)</span>
         </div>
       </section>
     `;
@@ -1626,11 +1797,12 @@ function renderRoleOverviewPanels(upcoming, completed) {
   if (!host || activeWorkspace === 'ADMIN') return;
   const pending = sessions.filter(item => (item.status || '').toUpperCase() === 'PENDING');
   const recentCompleted = completed.slice(0, 3);
+  const completion = profileCompletionScore();
   host.innerHTML = activeWorkspace === 'INTERVIEWER'
     ? `
       <div class="role-overview-grid">
         <section class="panel role-focus-panel">
-          <div class="panel-head"><h2>Candidate queue</h2><button class="btn btn-ghost btn-sm" onclick="showSection('interviewer')">Manage</button></div>
+          <div class="panel-head"><h2>Candidate queue</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewer-availability')">Manage</button></div>
           ${pending.slice(0, 3).map(renderSessionCard).join('') || emptyState('No candidates are waiting for approval.')}
         </section>
         <section class="panel role-focus-panel">
@@ -1641,12 +1813,36 @@ function renderRoleOverviewPanels(upcoming, completed) {
             <div><strong>${recentCompleted.length}</strong><span>recent completed sessions</span></div>
           </div>
         </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Reputation and trust</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewer-public-profile')">Profile</button></div>
+          <div class="role-progress-stack">
+            <div><span>Profile strength</span><strong>${completion}%</strong></div>
+            <div class="role-progress"><i style="width:${completion}%"></i></div>
+            <p class="availability-muted">Keep your public profile, availability, and feedback delivery current to improve booking confidence.</p>
+          </div>
+        </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Earnings and stats</h2><span class="badge badge-gray">Placeholder-safe</span></div>
+          <div class="role-checklist">
+            <div><strong>${esc(String(currentUser.completedSessions || currentUser.completedInterviews || completed.length || 0))}</strong><span>delivered sessions</span></div>
+            <div><strong>${esc(ratingValue(currentUser) || '-')}</strong><span>public rating</span></div>
+            <div><strong>0</strong><span>earnings data connected</span></div>
+          </div>
+        </section>
       </div>
     `
     : `
       <div class="role-overview-grid">
         <section class="panel role-focus-panel">
-          <div class="panel-head"><h2>Candidate prep snapshot</h2><button class="btn btn-ghost btn-sm" onclick="showSection('profile')">Update profile</button></div>
+          <div class="panel-head"><h2>Onboarding progress</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewee-profile')">Update</button></div>
+          <div class="role-progress-stack">
+            <div><span>Candidate profile</span><strong>${completion}%</strong></div>
+            <div class="role-progress"><i style="width:${completion}%"></i></div>
+            <p class="availability-muted">Complete your context so interviewers can tailor questions and feedback.</p>
+          </div>
+        </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Interview readiness</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewee-prep')">Prep</button></div>
           <p class="availability-muted">Tell the interviewer what you want them to know about yourself before the meeting.</p>
           <div class="candidate-context-list">
             <span>${esc(currentUser.experienceLevel || 'Experience level not set')}</span>
@@ -1655,12 +1851,16 @@ function renderRoleOverviewPanels(upcoming, completed) {
           </div>
         </section>
         <section class="panel role-focus-panel">
-          <div class="panel-head"><h2>Preparation flow</h2><button class="btn btn-ghost btn-sm" onclick="showSection('career')">Continue</button></div>
+          <div class="panel-head"><h2>Recommendation focus</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewee-discover')">Discover</button></div>
           <div class="role-checklist">
             <div><strong>${(currentUser.interviewTopics || []).length}</strong><span>preferred topics</span></div>
             <div><strong>${(currentUser.favoriteInterviewerIds || []).length}</strong><span>saved interviewers</span></div>
             <div><strong>${feedbackItems.length}</strong><span>feedback items</span></div>
           </div>
+        </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Personalized prep</h2><button class="btn btn-ghost btn-sm" onclick="runRoleNav('interviewee-prep')">Continue</button></div>
+          <p class="availability-muted">${prepHubLoading ? 'Loading prep recommendations.' : prepHub ? 'Prep modules and resume signals are ready in your preparation hub.' : 'No prep modules available yet. Published admin modules will appear in the preparation hub.'}</p>
         </section>
       </div>
     `;
@@ -3062,6 +3262,13 @@ function renderProfile() {
     ${deleteAccountSection()}
   `;
   const saved = document.getElementById('saved-interviewers');
+  saved?.closest('.panel')?.toggleAttribute('hidden', activeWorkspace === 'ADMIN');
+  if (activeWorkspace === 'ADMIN') {
+    initProfileControls();
+    FormUx.initPasswordToggles(summary);
+    renderProfileAvailabilityPanel();
+    return;
+  }
   const ids = currentUser.favoriteInterviewerIds || [];
   const savedList = filterSelf(interviewers).filter(item => ids.includes(item.id));
   saved.innerHTML = savedList.map(renderCompactInterviewer).join('') || interviewerEmptyState(
@@ -7938,6 +8145,54 @@ function renderAdminPanels() {
   renderAdminPrepModules();
 }
 
+function latestTrendValue(list) {
+  const points = Array.isArray(list) ? list : [];
+  return Number(points.at(-1)?.value || 0);
+}
+
+function platformHealthLabel(health) {
+  const items = Array.isArray(health) ? health : [];
+  if (items.some(item => item.status === 'DEGRADED')) return 'Degraded';
+  if (items.some(item => item.status === 'WATCH')) return 'Watch';
+  return items.length ? 'Healthy' : 'No signals';
+}
+
+function adminSparkline(points) {
+  const values = (Array.isArray(points) ? points : []).slice(-14).map(point => Number(point.value || 0));
+  const max = Math.max(1, ...values);
+  if (!values.length) {
+    return `<div class="admin-sparkline empty">${Array.from({ length: 10 }).map(() => '<i style="height:8%"></i>').join('')}</div>`;
+  }
+  return `<div class="admin-sparkline">${values.map(value => `<i style="height:${Math.max(8, Math.round((value / max) * 100))}%"></i>`).join('')}</div>`;
+}
+
+function adminInsightCard(title, value, detail, points = [], tone = 'neutral') {
+  return `
+    <article class="admin-insight-card ${tone}">
+      <div>
+        <span>${esc(title)}</span>
+        <strong>${esc(String(value))}</strong>
+        <small>${esc(detail)}</small>
+      </div>
+      ${adminSparkline(points)}
+    </article>
+  `;
+}
+
+function adminActivityList(items, emptyText) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  return safeItems.map(item => `
+    <article class="admin-activity-item">
+      <div>
+        <strong>${esc(item.title || 'Activity')}</strong>
+        <p>${esc(item.detail || '')}</p>
+        <small>${esc(item.meta || '')}</small>
+      </div>
+      ${item.badge ? `<span class="badge ${esc(item.badgeClass || 'badge-gray')}">${esc(item.badge)}</span>` : ''}
+    </article>
+  `).join('') || emptyState(emptyText);
+}
+
 function renderAdminOverview() {
   const metricsHost = document.getElementById('admin-metrics-grid');
   const analyticsHost = document.getElementById('admin-analytics-panel');
@@ -7947,34 +8202,100 @@ function renderAdminOverview() {
       metricsHost.innerHTML = skeletonCards(6);
     } else if (adminOverview) {
       const health = Array.isArray(adminOverview.healthIndicators) ? adminOverview.healthIndicators : [];
+      const sessionsToday = latestTrendValue(adminAnalytics?.sessionTrend);
+      const healthLabel = platformHealthLabel(health);
       metricsHost.innerHTML = [
-        statMetric('Total users', adminOverview.totalUsers || 0, 'badge-purple'),
         statMetric('Active users', adminOverview.activeUsers || 0, 'badge-green'),
-        statMetric('Interviewers', adminOverview.totalInterviewers || 0, 'badge-purple'),
-        statMetric('Interviewees', adminOverview.totalInterviewees || 0, 'badge-purple'),
-        statMetric('Verified interviewers', adminOverview.verifiedInterviewers || 0, 'badge-green'),
-        statMetric('Total sessions', adminOverview.totalSessions || 0, 'badge-gray'),
-        statMetric('Completed sessions', adminOverview.completedSessions || 0, 'badge-green'),
-        statMetric('Cancellation rate', `${adminOverview.cancellationRate || 0}%`, 'badge-yellow'),
-        statMetric('Active meetings', adminOverview.activeMeetings || 0, 'badge-green'),
-        statMetric('Upcoming interviews', adminOverview.upcomingInterviews || adminOverview.pendingSessions || 0, 'badge-yellow'),
-        statMetric('Average rating', adminOverview.platformAverageRating || 0, 'badge-green'),
+        statMetric('Sessions today', sessionsToday, 'badge-purple'),
+        statMetric('Completion rate', `${adminOverview.completionRate || 0}%`, 'badge-green'),
         statMetric('Reports pending', adminOverview.reportsPendingReview || adminOverview.openReports || 0, 'badge-red'),
+        statMetric('Verified interviewers', adminOverview.verifiedInterviewers || 0, 'badge-green'),
+        statMetric('Platform health', healthLabel, healthLabel === 'Degraded' ? 'badge-red' : healthLabel === 'Watch' ? 'badge-yellow' : 'badge-green'),
       ].join('');
       if (analyticsHost) {
+        const moderationItems = (adminTrustDashboard?.recentModeration || []).slice(0, 5).map(item => ({
+          title: item.action || item.entityType || 'Moderation action',
+          detail: item.summary || item.reason || 'Admin action recorded.',
+          meta: `${fmtDate(item.createdAt)} • Actor ${item.actorUserId || 'system'}`,
+          badge: item.entityType || 'AUDIT',
+          badgeClass: 'badge-gray',
+        }));
+        const reportItems = adminReports.slice(0, 5).map(report => ({
+          title: reportCategoryLabel(report.category || report.reason),
+          detail: report.details || report.reason || 'No report details provided.',
+          meta: `${report.reporterName || report.reporterId || 'Reporter'} -> ${report.reportedUserName || report.reportedUserId || 'Target'} • ${fmtDate(report.createdAt)}`,
+          badge: report.status || 'OPEN',
+          badgeClass: report.status === 'OPEN' ? 'badge-yellow' : report.status === 'ACTIONED' ? 'badge-red' : 'badge-gray',
+        }));
+        const verifiedItems = adminUsers
+          .filter(user => user.interviewerVerified)
+          .slice(0, 5)
+          .map(user => ({
+            title: user.displayName || accountDisplayName(user),
+            detail: user.company || user.currentRole || 'Verified interviewer',
+            meta: user.email || 'No email available',
+            badge: 'Verified',
+            badgeClass: 'badge-green',
+          }));
+        const failedMeetings = adminSessions
+          .filter(session => session.noShowRisk || session.disputeRisk)
+          .slice(0, 5)
+          .map(session => ({
+            title: session.title || sessionTitle(session),
+            detail: `${session.interviewerName || 'Interviewer'} -> ${session.candidateName || 'Candidate'}`,
+            meta: fmtDate(session.startTime),
+            badge: session.disputeRisk ? 'Dispute' : 'No-show',
+            badgeClass: session.disputeRisk ? 'badge-red' : 'badge-yellow',
+          }));
+        const cancellationItems = adminSessions
+          .filter(session => session.cancellation)
+          .slice(0, 5)
+          .map(session => ({
+            title: session.title || sessionTitle(session),
+            detail: `${session.interviewerName || 'Interviewer'} -> ${session.candidateName || 'Candidate'}`,
+            meta: fmtDate(session.startTime),
+            badge: 'Cancelled',
+            badgeClass: 'badge-yellow',
+          }));
         analyticsHost.innerHTML = `
-          <div class="panel-head"><h2>Platform health</h2><span class="badge badge-gray">${esc(String(health.length))} indicators</span></div>
-          <div class="admin-list">
-            ${health.map(item => `
-              <article class="admin-list-item">
-                <div>
-                  <strong>${esc(String(item.key || 'HEALTH'))}</strong>
-                  <p>${esc(item.detail || 'Healthy')}</p>
-                  <small>${esc(fmtDate(item.updatedAt))}</small>
-                </div>
-                <span class="badge badge-${item.status === 'DEGRADED' ? 'red' : item.status === 'WATCH' ? 'yellow' : 'green'}">${esc(item.status || 'HEALTHY')}</span>
+          <div class="admin-dashboard-shell">
+            <div class="admin-insight-grid">
+              ${adminInsightCard('User growth', latestTrendValue(adminAnalytics?.userGrowthTrend), 'New users in latest analytics bucket.', adminAnalytics?.userGrowthTrend || [])}
+              ${adminInsightCard('Session volume', latestTrendValue(adminAnalytics?.sessionTrend), 'Sessions in latest analytics bucket.', adminAnalytics?.sessionTrend || [])}
+              ${adminInsightCard('Cancellation pressure', `${adminOverview.cancellationRate || 0}%`, 'Current all-time cancellation rate.', adminAnalytics?.cancellationTrend || [], Number(adminOverview.cancellationRate || 0) > 20 ? 'warning' : 'neutral')}
+              ${adminInsightCard('Trust queue', adminOverview.openReports || 0, 'Open reports waiting for review.', adminAnalytics?.reportTrend || [], Number(adminOverview.openReports || 0) > 0 ? 'warning' : 'neutral')}
+            </div>
+            <div class="admin-health-strip">
+              ${health.map(item => `
+                <article>
+                  <span class="badge badge-${item.status === 'DEGRADED' ? 'red' : item.status === 'WATCH' ? 'yellow' : 'green'}">${esc(item.status || 'HEALTHY')}</span>
+                  <strong>${esc(String(item.key || 'HEALTH')).replaceAll('_', ' ')}</strong>
+                  <small>${esc(item.detail || 'Healthy')}</small>
+                </article>
+              `).join('') || emptyState('No platform health indicators yet. Operational signals will appear as sessions, reports, and verification activity accumulate.')}
+            </div>
+            <div class="admin-activity-grid">
+              <article class="admin-moderation-card">
+                <div class="panel-head"><h2>Recent moderation actions</h2><span class="badge badge-gray">${esc(String(moderationItems.length))}</span></div>
+                ${adminActivityList(moderationItems, 'No moderation actions recorded yet.')}
               </article>
-            `).join('') || emptyState('No platform health indicators yet.')}
+              <article class="admin-moderation-card">
+                <div class="panel-head"><h2>Recent reports</h2><span class="badge badge-gray">${esc(String(reportItems.length))}</span></div>
+                ${adminActivityList(reportItems, 'No reports pending review.')}
+              </article>
+              <article class="admin-moderation-card">
+                <div class="panel-head"><h2>Recently verified interviewers</h2><span class="badge badge-gray">${esc(String(verifiedItems.length))}</span></div>
+                ${adminActivityList(verifiedItems, 'No verified interviewers found in the current user result set.')}
+              </article>
+              <article class="admin-moderation-card">
+                <div class="panel-head"><h2>Failed meetings</h2><span class="badge badge-gray">${esc(String(failedMeetings.length))}</span></div>
+                ${adminActivityList(failedMeetings, 'No failed meeting signals in the current session window.')}
+              </article>
+              <article class="admin-moderation-card">
+                <div class="panel-head"><h2>Cancellation spikes</h2><span class="badge badge-gray">${esc(String(cancellationItems.length))}</span></div>
+                ${adminActivityList(cancellationItems, 'No cancellations in the current session window.')}
+              </article>
+            </div>
           </div>
         `;
       }
@@ -8369,18 +8690,16 @@ function renderAdminAnalytics() {
     host.innerHTML = skeletonCards(3);
     return;
   }
-  const chart = (title, list, suffix = '') => `
-    <article class="admin-moderation-card">
-      <div class="panel-head"><h2>${esc(title)}</h2><span class="badge badge-gray">${esc(String(list.length || 0))} points</span></div>
-      <div class="admin-topic-bars">
-        ${(list || []).slice(-14).map(point => `
-          <div class="admin-topic-bar">
-            <span>${esc(point.label || '')}</span>
-            <div><i style="width:${Math.max(4, Math.min(100, Number(point.value || 0) * 8))}%"></i></div>
-            <strong>${esc(String(point.value || 0))}${esc(suffix)}</strong>
-          </div>
-        `).join('') || emptyState('No trend data yet.')}
+  const chartCard = (title, list, detail, tone = 'neutral') => `
+    <article class="admin-chart-card ${tone}">
+      <div class="admin-chart-head">
+        <div>
+          <span>${esc(title)}</span>
+          <strong>${esc(String(latestTrendValue(list)))}</strong>
+        </div>
+        <small>${esc(detail)}</small>
       </div>
+      ${adminSparkline(list)}
     </article>
   `;
   host.innerHTML = `
@@ -8389,17 +8708,42 @@ function renderAdminAnalytics() {
         ${[14, 30, 60, 90].map(days => `<option value="${days}" ${Number(adminState.analytics.days || 30) === days ? 'selected' : ''}>Last ${days} days</option>`).join('')}
       </select>
     </div>
-    <div class="admin-trust-summary-grid">
-      <article class="admin-trust-card"><strong>Active users</strong><span>${esc(String(adminAnalytics?.activeUsers || 0))}</span><small>Users active in recent window.</small></article>
-      <article class="admin-trust-card"><strong>Flagged users</strong><span>${esc(String(adminAnalytics?.flaggedUsers || 0))}</span><small>Users with elevated trust risk.</small></article>
-      <article class="admin-trust-card"><strong>Disputed sessions</strong><span>${esc(String(adminAnalytics?.disputedSessions || 0))}</span><small>Sessions linked to trust disputes.</small></article>
-      <article class="admin-trust-card"><strong>No-show sessions</strong><span>${esc(String(adminAnalytics?.noShowSessions || 0))}</span><small>Sessions flagged for no-show behavior.</small></article>
+    <div class="admin-analytics-hero">
+      <article>
+        <span>Active users</span>
+        <strong>${esc(String(adminAnalytics?.activeUsers || 0))}</strong>
+        <small>Users active in the selected operational window.</small>
+      </article>
+      <article>
+        <span>Flagged users</span>
+        <strong>${esc(String(adminAnalytics?.flaggedUsers || 0))}</strong>
+        <small>Accounts with elevated trust risk.</small>
+      </article>
+      <article>
+        <span>Disputed sessions</span>
+        <strong>${esc(String(adminAnalytics?.disputedSessions || 0))}</strong>
+        <small>Sessions linked to trust disputes.</small>
+      </article>
+      <article>
+        <span>No-show sessions</span>
+        <strong>${esc(String(adminAnalytics?.noShowSessions || 0))}</strong>
+        <small>Sessions flagged for no-show behavior.</small>
+      </article>
     </div>
-    <div class="admin-moderation-grid">
-      ${chart('User growth trend', adminAnalytics?.userGrowthTrend || [])}
-      ${chart('Session trend', adminAnalytics?.sessionTrend || [])}
-      ${chart('Review trend', adminAnalytics?.reviewTrend || [])}
-      ${chart('Cancellation trend', adminAnalytics?.cancellationTrend || [])}
+    <div class="admin-chart-grid">
+      ${chartCard('User growth', adminAnalytics?.userGrowthTrend || [], 'New accounts by day.')}
+      ${chartCard('Active users', adminAnalytics?.activeUserTrend || [], 'Daily active operators and participants.')}
+      ${chartCard('Sessions', adminAnalytics?.sessionTrend || [], 'Interview volume by day.')}
+      ${chartCard('Completed sessions', adminAnalytics?.completedSessionTrend || [], 'Successful session completions.')}
+      ${chartCard('Cancellations', adminAnalytics?.cancellationTrend || [], 'Cancellation volume by day.', latestTrendValue(adminAnalytics?.cancellationTrend) > 0 ? 'warning' : 'neutral')}
+      ${chartCard('Reports', adminAnalytics?.reportTrend || [], 'Moderation report intake.', latestTrendValue(adminAnalytics?.reportTrend) > 0 ? 'warning' : 'neutral')}
+      ${adminInsightCard('Average rating', adminOverview?.platformAverageRating || 0, 'Public interviewer review average.', adminAnalytics?.averageRatingTrend || [])}
+      ${adminInsightCard('Trust signal', adminOverview?.averageTrustScore || 0, 'Average trust score across current users.', adminAnalytics?.trustTrend || [])}
+    </div>
+    <div class="admin-analytics-empty-note">
+      ${(adminAnalytics?.sessionTrend || []).some(point => Number(point.value || 0) > 0)
+        ? ''
+        : emptyState('No analytics activity yet. Charts will populate as real users, sessions, reviews, and reports are created.')}
     </div>
   `;
 }

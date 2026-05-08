@@ -2169,6 +2169,175 @@ body:not(.admin-workspace-active) .admin-only {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
+.admin-dashboard-shell,
+.role-progress-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-insight-grid,
+.admin-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-insight-card,
+.admin-chart-card,
+.admin-health-strip article,
+.admin-activity-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.035);
+}
+
+.admin-insight-card,
+.admin-chart-card {
+  min-width: 0;
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.admin-insight-card.warning,
+.admin-chart-card.warning {
+  border-color: rgba(242, 200, 107, 0.34);
+  background: linear-gradient(180deg, rgba(242, 200, 107, 0.08), rgba(255,255,255,0.025));
+}
+
+.admin-insight-card span,
+.admin-chart-head span,
+.admin-analytics-hero span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-insight-card strong,
+.admin-chart-head strong,
+.admin-analytics-hero strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.8rem;
+}
+
+.admin-insight-card small,
+.admin-chart-head small,
+.admin-analytics-hero small,
+.admin-health-strip small {
+  color: var(--muted);
+}
+
+.admin-sparkline {
+  height: 72px;
+  display: grid;
+  grid-template-columns: repeat(14, minmax(4px, 1fr));
+  gap: 0.28rem;
+  align-items: end;
+}
+
+.admin-sparkline.empty {
+  opacity: 0.4;
+}
+
+.admin-sparkline i {
+  display: block;
+  min-height: 6px;
+  border-radius: 999px 999px 4px 4px;
+  background: linear-gradient(180deg, rgba(110, 231, 200, 0.95), rgba(138, 167, 255, 0.65));
+}
+
+.admin-health-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.8rem;
+}
+
+.admin-health-strip article {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem;
+}
+
+.admin-health-strip strong {
+  text-transform: capitalize;
+}
+
+.admin-activity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-activity-grid .admin-moderation-card:first-child {
+  grid-row: span 2;
+}
+
+.admin-activity-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.8rem;
+}
+
+.admin-activity-item p {
+  margin: 0.25rem 0;
+  color: var(--text);
+}
+
+.admin-activity-item small {
+  color: var(--muted);
+}
+
+.admin-analytics-hero {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.admin-analytics-hero article {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(110, 231, 200, 0.07), transparent),
+    rgba(255,255,255,0.03);
+}
+
+.admin-chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.admin-analytics-empty-note {
+  margin-top: 1rem;
+}
+
+.role-progress {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+}
+
+.role-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(110, 231, 200, 0.95), rgba(138, 167, 255, 0.9));
+}
+
+.role-progress-stack > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+}
+
 .admin-stat-card {
   background:
     linear-gradient(180deg, rgba(138, 167, 255, 0.12), transparent),
@@ -4274,15 +4443,23 @@ body:not(.admin-workspace-active) .admin-only {
   .prep-intel-score-grid,
   .prep-primary-layout,
   .prep-module-grid,
-  .admin-prep-layout {
+  .admin-prep-layout,
+  .admin-insight-grid,
+  .admin-chart-grid,
+  .admin-analytics-hero {
     grid-template-columns: 1fr;
   }
 
   .prep-intel-columns,
   .prep-history-columns,
   .prep-intel-reco-grid,
-  .prep-jd-result-grid {
+  .prep-jd-result-grid,
+  .admin-activity-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-activity-grid .admin-moderation-card:first-child {
+    grid-row: auto;
   }
 }
 
@@ -4546,6 +4723,10 @@ body:not(.admin-workspace-active) .admin-only {
   }
 
   body.interviewer-workspace-active .bottom-nav {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  body.admin-workspace-active .bottom-nav {
     grid-template-columns: repeat(4, 1fr);
   }
 
