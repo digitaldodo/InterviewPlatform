@@ -313,17 +313,33 @@
 
     <section id="section-career" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
-        <div><p class="eyebrow">Career Prep</p><h1>Resume and interview prep hub</h1></div>
+        <div><p class="eyebrow">Career Prep</p><h1>Preparation hub</h1></div>
       </div>
-      <div class="content-grid">
-        <section class="panel" id="resume-panel"></section>
-        <section class="panel" id="prep-intelligence-panel"></section>
-      </div>
-      <div class="content-grid">
-        <section class="panel" id="prep-resources-panel"></section>
-        <section class="panel" id="prep-history-panel"></section>
-      </div>
-      <section class="panel" id="prep-tracks-panel"></section>
+      <section class="panel prep-primary-panel" id="prep-primary-panel"></section>
+      <section class="panel prep-category-panel" id="prep-resources-panel"></section>
+      <section class="prep-advanced-shell" aria-label="Advanced preparation insights">
+        <details class="prep-disclosure-panel" id="prep-disclosure-resume">
+          <summary>
+            <span>Resume workspace</span>
+            <small>Upload, replace, preview, and manage resume versions.</small>
+          </summary>
+          <div id="resume-panel"></div>
+        </details>
+        <details class="prep-disclosure-panel" id="prep-disclosure-intelligence">
+          <summary>
+            <span>ATS and job match analysis</span>
+            <small>Deep scoring, skill gaps, topic readiness, and JD matching.</small>
+          </summary>
+          <div id="prep-intelligence-panel"></div>
+        </details>
+        <details class="prep-disclosure-panel" id="prep-disclosure-history">
+          <summary>
+            <span>Trends and historical analytics</span>
+            <small>Readiness trends, ATS history, and the detailed roadmap.</small>
+          </summary>
+          <div id="prep-history-panel"></div>
+        </details>
+      </section>
     </section>
 
     <section id="section-admin-overview" class="dashboard-section admin-only" hidden>
