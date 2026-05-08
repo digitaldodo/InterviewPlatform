@@ -39,9 +39,8 @@ function marketplaceUrl(params = {}) {
 
 function profileUrl(username) {
   const value = String(username || '').trim();
-  const url = new URL(publicPageUrl('/pages/interviewer.html'));
-  if (value) url.searchParams.set('username', value);
-  return url.toString();
+  if (!value) return publicPageUrl('/pages/interviewer.html');
+  return publicPageUrl(`/interviewer/${encodeURIComponent(value)}`);
 }
 
 function authUrl() {

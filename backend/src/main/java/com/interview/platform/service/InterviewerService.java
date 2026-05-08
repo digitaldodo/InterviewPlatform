@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 @Service
 public class InterviewerService {
     private static final int SEARCH_WINDOW_SIZE = 120;
+    private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9._-]{3,24}$");
 
     private final MongoTemplate mongoTemplate;
     private final UserRepository userRepository;
@@ -61,7 +62,7 @@ public class InterviewerService {
         List<Criteria> criteria = new ArrayList<>();
         criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
         criteria.add(Criteria.where("accountEnabled").ne(false));
-        if (Boolean.TRUE.equals(publicOnly)) criteria.add(Criteria.where("publicProfileVisible").ne(false));
+        criteria.add(Criteria.where("publicProfileVisible").ne(false));
         if (!isBlank(excludeUserId)) criteria.add(Criteria.where("id").ne(excludeUserId.trim()));
         if (!isBlank(q)) {
             Pattern pattern = Pattern.compile(Pattern.quote(q.trim()), Pattern.CASE_INSENSITIVE);
@@ -123,7 +124,7 @@ public class InterviewerService {
     public List<MarketplaceDtos.InterviewerCard> topRated(String excludeUserId, Boolean publicOnly) {
         return userRepository.findByRoleOrderByAverageRatingDesc("INTERVIEWER").stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
-                .filter(user -> !Boolean.TRUE.equals(publicOnly) || !Boolean.FALSE.equals(user.getPublicProfileVisible()))
+                .filter(this::isPubliclyVisible)
                 .filter(user -> isBlank(excludeUserId) || !excludeUserId.equals(user.getId()))
                 .limit(6)
                 .map(this::toInterviewerCard)
@@ -134,6 +135,7 @@ public class InterviewerService {
     public List<MarketplaceDtos.InterviewerCard> recommended(String intervieweeId) {
         List<User> candidates = userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .filter(this::isPubliclyVisible)
                 .filter(user -> isBlank(intervieweeId) || !intervieweeId.equals(user.getId()))
                 .limit(SEARCH_WINDOW_SIZE)
                 .toList();
@@ -173,6 +175,7 @@ public class InterviewerService {
                 .forEach(item -> suggestions.add(new MarketplaceDtos.SearchSuggestion(item, "topic")));
         userRepository.findByRole("INTERVIEWER").stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .filter(this::isPubliclyVisible)
                 .map(this::interviewerIdentity)
                 .filter(item -> item.toLowerCase(Locale.ROOT).contains(query))
                 .distinct()
@@ -184,7 +187,7 @@ public class InterviewerService {
     @Cacheable(cacheNames = CacheConfig.INTERVIEWER_PUBLIC_PROFILE_CACHE, key = "#username == null ? '' : #username.trim().toLowerCase()")
     public MarketplaceDtos.PublicInterviewerProfile publicProfile(String username) {
         String normalized = normalizeOption(username).toLowerCase(Locale.ROOT);
-        if (normalized.isBlank()) {
+        if (normalized.isBlank() || !USERNAME_PATTERN.matcher(normalized).matches()) {
             throw new ResourceNotFoundException("Interviewer not found");
         }
         User interviewer = userRepository.findByUsernameKey(normalized)
@@ -392,9 +395,7 @@ public class InterviewerService {
         List<Criteria> criteria = new ArrayList<>();
         criteria.add(new Criteria().orOperator(Criteria.where("roles").is("INTERVIEWER"), Criteria.where("role").is("INTERVIEWER")));
         criteria.add(Criteria.where("accountEnabled").ne(false));
-        if (Boolean.TRUE.equals(publicOnly)) {
-            criteria.add(Criteria.where("publicProfileVisible").ne(false));
-        }
+        criteria.add(Criteria.where("publicProfileVisible").ne(false));
         return new Criteria().andOperator(criteria.toArray(new Criteria[0]));
     }
 
@@ -693,6 +694,12 @@ public class InterviewerService {
 
     private boolean hasRole(User user) {
         return user != null && user.hasRole("INTERVIEWER");
+    }
+
+    private boolean isPubliclyVisible(User user) {
+        return user != null
+                && !Boolean.FALSE.equals(user.getAccountEnabled())
+                && !Boolean.FALSE.equals(user.getPublicProfileVisible());
     }
 
     private boolean isBlank(String value) {

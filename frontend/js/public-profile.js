@@ -4,7 +4,7 @@ async function loadPublicProfile() {
   const root = document.getElementById('public-profile-root');
   const username = resolveUsername();
   if (!username) {
-    root.innerHTML = renderProfileMessage('Interviewer profile not found.');
+    root.innerHTML = renderProfileMessage('interviewer not found', 'We could not find a public interviewer profile for this link.');
     return;
   }
   try {
@@ -12,17 +12,26 @@ async function loadPublicProfile() {
     root.innerHTML = renderPublicProfile(profile);
     hydrateProfileSeo(profile);
   } catch (err) {
-    root.innerHTML = renderProfileMessage(err.message || 'Could not load interviewer profile.');
+    root.innerHTML = renderProfileMessage('interviewer not found', err.message || 'This interviewer profile is unavailable or no longer public.');
   }
 }
 
 function resolveUsername() {
   const url = new URL(window.location.href);
   const query = url.searchParams.get('username');
-  if (query) return query;
+  if (query) return normalizePublicUsername(query);
+  const segments = url.pathname.split('/').map(part => part.trim()).filter(Boolean);
+  const interviewerIndex = segments.findIndex(part => part.toLowerCase() === 'interviewer');
+  if (interviewerIndex >= 0 && segments[interviewerIndex + 1]) {
+    return normalizePublicUsername(decodeURIComponent(segments[interviewerIndex + 1]));
+  }
   const hash = url.hash.replace(/^#\/?/, '');
-  if (hash) return hash;
+  if (hash) return normalizePublicUsername(hash);
   return '';
+}
+
+function normalizePublicUsername(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function renderPublicProfile(profile) {
@@ -250,8 +259,8 @@ async function sharePublicProfile() {
   await copyPublicProfileLink();
 }
 
-function renderProfileMessage(message) {
-  return `<div class="panel"><div class="empty-state empty-state-rich"><strong>Profile unavailable</strong><p>${esc(message)}</p><a class="btn btn-outline btn-sm" href="${esc(marketplaceUrl())}">Browse marketplace</a></div></div>`;
+function renderProfileMessage(title, message) {
+  return `<div class="panel public-profile-not-found"><div class="empty-state empty-state-rich"><strong>${esc(title || 'interviewer not found')}</strong><p>${esc(message)}</p><a class="btn btn-primary btn-sm" href="${esc(marketplaceUrl())}">Return to discovery</a></div></div>`;
 }
 
 function arrayValues(value, limit = 6) {

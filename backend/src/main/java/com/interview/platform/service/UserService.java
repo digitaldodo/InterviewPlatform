@@ -89,7 +89,10 @@ public class UserService {
     }
 
     public List<User> getInterviewers(String skill) {
-        List<User> interviewers = userRepository.findByRole("INTERVIEWER");
+        List<User> interviewers = userRepository.findByRole("INTERVIEWER").stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .filter(user -> !Boolean.FALSE.equals(user.getPublicProfileVisible()))
+                .toList();
         if (isBlank(skill)) {
             return interviewers;
         }
@@ -155,8 +158,11 @@ public class UserService {
         if (request.getAcceptingBookings() != null) {
             user.setAcceptingBookings(request.getAcceptingBookings());
         }
-        if (request.getPublicProfileVisible() != null) {
-            user.setPublicProfileVisible(request.getPublicProfileVisible());
+        Boolean requestedPublicProfile = request.getPublicProfileVisible() != null
+                ? request.getPublicProfileVisible()
+                : request.getIsPublicProfile();
+        if (requestedPublicProfile != null) {
+            user.setPublicProfileVisible(requestedPublicProfile);
         }
         if (request.getLinkedInUrl() != null) {
             user.setLinkedInUrl(trimToNull(request.getLinkedInUrl()));

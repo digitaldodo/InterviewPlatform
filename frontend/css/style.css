@@ -3212,6 +3212,36 @@ textarea:focus-visible {
   gap: 0.6rem;
 }
 
+.marketplace-control-list {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.marketplace-control-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+.marketplace-control-row input {
+  flex: 0 0 auto;
+  width: 18px;
+  min-height: 18px;
+  margin-top: 0.2rem;
+}
+
+.marketplace-control-row span {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.marketplace-control-row small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .field-hint {
   display: block;
   margin-top: 0.45rem;

@@ -16,6 +16,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -76,6 +77,35 @@ class InterviewerServiceTest {
 
         assertEquals(List.of("visible"), ids);
         assertFalse(ids.contains("hidden"));
+    }
+
+    @Test
+    void recommendationsExcludeHiddenProfiles() {
+        InterviewerService service = new InterviewerService(mongoTemplate, userRepository, sessionRepository, feedbackRepository, availabilitySlotService);
+        User visible = interviewer(List.of("Java"), "English", "OpenAI");
+        visible.setId("visible");
+        visible.setAcceptingBookings(true);
+        visible.setPublicProfileVisible(true);
+        User hidden = interviewer(List.of("React"), "English", "Meta");
+        hidden.setId("hidden");
+        hidden.setAcceptingBookings(true);
+        hidden.setPublicProfileVisible(false);
+
+        when(userRepository.findByRoleAndAcceptingBookingsOrderByCompletedInterviewsDesc("INTERVIEWER", true))
+                .thenReturn(List.of(hidden, visible));
+
+        List<String> ids = service.recommended(null).stream().map(item -> item.id()).toList();
+
+        assertEquals(List.of("visible"), ids);
+        assertFalse(ids.contains("hidden"));
+    }
+
+    @Test
+    void publicProfileRejectsDisplayNameSlug() {
+        InterviewerService service = new InterviewerService(mongoTemplate, userRepository, sessionRepository, feedbackRepository, availabilitySlotService);
+
+        assertThrows(com.interview.platform.exception.ResourceNotFoundException.class,
+                () -> service.publicProfile("MS Dhoni"));
     }
 
     private User interviewer(List<String> skills, String language, String company) {

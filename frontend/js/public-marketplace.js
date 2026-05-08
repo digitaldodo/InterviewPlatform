@@ -485,7 +485,7 @@ function hydrateMarketplaceSeo(summary, items = []) {
 }
 
 function visiblePublicProfiles(items) {
-  return (Array.isArray(items) ? items : []).filter(item => item?.publicProfileVisible !== false);
+  return (Array.isArray(items) ? items : []).filter(item => item?.publicProfileVisible !== false && item?.isPublicProfile !== false);
 }
 
 window.clearMarketplaceFilters = clearMarketplaceFilters;

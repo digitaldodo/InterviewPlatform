@@ -52,6 +52,10 @@ services:
     rootDir: frontend
     buildCommand: printf "window.INTERVIEW_API_BASE = '%s';\nwindow.INTERVIEW_SITE_URL = '%s';\n" "$INTERVIEW_API_BASE" "$INTERVIEW_SITE_URL" > js/env.js
     staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /interviewer/*
+        destination: /pages/interviewer.html
     autoDeploy: true
     envVars:
       - key: INTERVIEW_API_BASE

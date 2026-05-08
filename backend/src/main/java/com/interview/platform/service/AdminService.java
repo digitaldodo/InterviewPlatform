@@ -47,6 +47,7 @@ public class AdminService {
     private final ModerationAuditService moderationAuditService;
     private final ModerationAuditLogRepository moderationAuditLogRepository;
     private final TrustSignalService trustSignalService;
+    private final CacheInvalidationService cacheInvalidationService;
 
     public AdminService(UserRepository userRepository,
                         SessionRepository sessionRepository,
@@ -54,7 +55,8 @@ public class AdminService {
                         FeedbackRepository feedbackRepository,
                         ModerationAuditService moderationAuditService,
                         ModerationAuditLogRepository moderationAuditLogRepository,
-                        TrustSignalService trustSignalService) {
+                        TrustSignalService trustSignalService,
+                        CacheInvalidationService cacheInvalidationService) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.userReportRepository = userReportRepository;
@@ -62,6 +64,7 @@ public class AdminService {
         this.moderationAuditService = moderationAuditService;
         this.moderationAuditLogRepository = moderationAuditLogRepository;
         this.trustSignalService = trustSignalService;
+        this.cacheInvalidationService = cacheInvalidationService;
     }
 
     public AdminDtos.OverviewResponse overview() {
@@ -650,8 +653,11 @@ public class AdminService {
             user.setAccountEnabled(request.getEnabled());
             changed = true;
         }
-        if (request.getPublicProfileVisible() != null && !request.getPublicProfileVisible().equals(user.getPublicProfileVisible())) {
-            user.setPublicProfileVisible(request.getPublicProfileVisible());
+        Boolean requestedPublicProfile = request.getPublicProfileVisible() != null
+                ? request.getPublicProfileVisible()
+                : request.getIsPublicProfile();
+        if (requestedPublicProfile != null && !requestedPublicProfile.equals(user.getPublicProfileVisible())) {
+            user.setPublicProfileVisible(requestedPublicProfile);
             changed = true;
         }
         if (!changed) {
@@ -659,6 +665,8 @@ public class AdminService {
         }
         String reason = requireReason(request.getReason(), "Moderation reason is required");
         User saved = userRepository.save(user);
+        cacheInvalidationService.evictUserProfile(saved.getId());
+        cacheInvalidationService.evictInterviewerCaches(saved.getId(), saved.getUsername());
         moderationAuditService.log(
                 "USER",
                 saved.getId(),

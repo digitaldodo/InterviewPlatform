@@ -294,9 +294,19 @@ public class User {
     public Instant getVerificationApprovedAt() { return verificationApprovedAt; }
     public void setVerificationApprovedAt(Instant verificationApprovedAt) { this.verificationApprovedAt = verificationApprovedAt; }
 
-    public Boolean getPublicProfileVisible() { return publicProfileVisible; }
+    public Boolean getPublicProfileVisible() { return publicProfileVisible == null || publicProfileVisible; }
     public void setPublicProfileVisible(Boolean publicProfileVisible) {
         this.publicProfileVisible = publicProfileVisible == null || publicProfileVisible;
+    }
+
+    @JsonProperty("isPublicProfile")
+    public Boolean getIsPublicProfile() {
+        return getPublicProfileVisible();
+    }
+
+    @JsonProperty("isPublicProfile")
+    public void setIsPublicProfile(Boolean isPublicProfile) {
+        setPublicProfileVisible(isPublicProfile);
     }
 
     public Boolean getAccountEnabled() { return accountEnabled; }

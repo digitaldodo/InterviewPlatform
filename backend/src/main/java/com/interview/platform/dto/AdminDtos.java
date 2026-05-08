@@ -1,5 +1,6 @@
 package com.interview.platform.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
 
@@ -7,12 +8,16 @@ public class AdminDtos {
     public static class UserModerationRequest {
         private Boolean enabled;
         private Boolean publicProfileVisible;
+        @JsonProperty("isPublicProfile")
+        private Boolean isPublicProfile;
         private String reason;
 
         public Boolean getEnabled() { return enabled; }
         public void setEnabled(Boolean enabled) { this.enabled = enabled; }
         public Boolean getPublicProfileVisible() { return publicProfileVisible; }
         public void setPublicProfileVisible(Boolean publicProfileVisible) { this.publicProfileVisible = publicProfileVisible; }
+        public Boolean getIsPublicProfile() { return isPublicProfile; }
+        public void setIsPublicProfile(Boolean isPublicProfile) { this.isPublicProfile = isPublicProfile; }
         public String getReason() { return reason; }
         public void setReason(String reason) { this.reason = reason; }
     }

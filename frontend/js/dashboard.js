@@ -2527,9 +2527,15 @@ function renderProfile() {
       ${showInterviewerSetup ? `
         <div class="availability-preference-card">
           <h3>Public marketplace controls</h3>
-          <div class="form-grid">
-            <label class="check-row"><input id="profile-accepting-bookings" type="checkbox" ${currentUser.acceptingBookings === false ? '' : 'checked'} /> Accept new bookings</label>
-            <label class="check-row"><input id="profile-public-profile" type="checkbox" ${currentUser.publicProfileVisible === false ? '' : 'checked'} /> Show public profile</label>
+          <div class="marketplace-control-list">
+            <label class="marketplace-control-row">
+              <input id="profile-public-profile" type="checkbox" ${currentUser.publicProfileVisible === false ? '' : 'checked'} />
+              <span><strong>Show my profile in public search</strong><small>Allow your profile to appear in public interviewer search and recommendations.</small></span>
+            </label>
+            <label class="marketplace-control-row">
+              <input id="profile-accepting-bookings" type="checkbox" ${currentUser.acceptingBookings === false ? '' : 'checked'} />
+              <span><strong>Accept new bookings</strong><small>Let candidates request sessions. This is separate from public profile visibility.</small></span>
+            </label>
           </div>
           <div class="profile-link-row">
             <p class="availability-summary-note">Your public profile link: <a href="${esc(publicProfileUrl(currentUser.username || currentUser.id))}" target="_blank" rel="noreferrer">${esc(publicProfileUrl(currentUser.username || currentUser.id))}</a></p>
@@ -2777,7 +2783,7 @@ function syncProfileDurationInput() {
 }
 
 function filterSelf(list) {
-  return (list || []).filter(item => item?.id !== currentUser.id);
+  return (list || []).filter(item => item?.id !== currentUser.id && item?.publicProfileVisible !== false && item?.isPublicProfile !== false);
 }
 
 function interviewerEmptyState(title, message) {
@@ -4028,7 +4034,10 @@ function emptyState(text) {
 }
 
 function publicProfileUrl(username) {
-  return new URL(`./interviewer.html?username=${encodeURIComponent(username)}`, window.location.href).toString();
+  const value = String(username || '').trim();
+  const origin = window.INTERVIEW_SITE_URL || window.location.origin;
+  if (!value) return new URL('/pages/interviewer.html', origin).toString();
+  return new URL(`/interviewer/${encodeURIComponent(value)}`, origin).toString();
 }
 
 function discoveryStorageKey() {

@@ -248,5 +248,5 @@ function hydrateLandingSeo(summary) {
 }
 
 function visiblePublicProfiles(items) {
-  return (Array.isArray(items) ? items : []).filter(item => item?.publicProfileVisible !== false);
+  return (Array.isArray(items) ? items : []).filter(item => item?.publicProfileVisible !== false && item?.isPublicProfile !== false);
 }

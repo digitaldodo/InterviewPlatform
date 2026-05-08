@@ -1,5 +1,6 @@
 package com.interview.platform.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -31,6 +32,8 @@ public class UserDtos {
         private List<String> availability;
         private Boolean acceptingBookings;
         private Boolean publicProfileVisible;
+        @JsonProperty("isPublicProfile")
+        private Boolean isPublicProfile;
         private String linkedInUrl;
         private String verificationCompanyEmail;
 
@@ -70,6 +73,8 @@ public class UserDtos {
         public void setAcceptingBookings(Boolean acceptingBookings) { this.acceptingBookings = acceptingBookings; }
         public Boolean getPublicProfileVisible() { return publicProfileVisible; }
         public void setPublicProfileVisible(Boolean publicProfileVisible) { this.publicProfileVisible = publicProfileVisible; }
+        public Boolean getIsPublicProfile() { return isPublicProfile; }
+        public void setIsPublicProfile(Boolean isPublicProfile) { this.isPublicProfile = isPublicProfile; }
         public String getLinkedInUrl() { return linkedInUrl; }
         public void setLinkedInUrl(String linkedInUrl) { this.linkedInUrl = linkedInUrl; }
         public String getVerificationCompanyEmail() { return verificationCompanyEmail; }
