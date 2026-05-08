@@ -24,7 +24,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -42,14 +41,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
 public class AdminService {
     private static final Logger log = LoggerFactory.getLogger(AdminService.class);
-    private static final Set<String> REPORT_STATUSES = Set.of("OPEN", "REVIEWED", "ACTIONED", "DISMISSED", "DUPLICATE");
+    private static final Set<String> REPORT_STATUSES = Set.of("OPEN", "REVIEWED", "ACTIONED", "DISMISSED", "DUPLICATE", "ARCHIVED");
     private static final Set<String> VERIFICATION_STATUSES = Set.of("NONE", "PENDING", "APPROVED", "REJECTED");
     private static final Set<String> PREP_MODULE_STATUSES = Set.of("DRAFT", "PUBLISHED", "ARCHIVED");
 
@@ -104,6 +102,7 @@ public class AdminService {
 
         long totalUsers = users.size();
         long totalInterviewers = users.stream().filter(user -> user.hasRole("INTERVIEWER")).count();
+        long totalInterviewees = users.stream().filter(user -> user.hasRole("INTERVIEWEE")).count();
         long totalAdmins = users.stream().filter(user -> user.hasRole("ADMIN")).count();
         long enabledUsers = users.stream().filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled())).count();
         long verifiedInterviewers = users.stream().filter(user -> Boolean.TRUE.equals(user.getInterviewerVerified())).count();
@@ -112,6 +111,16 @@ public class AdminService {
         long completedSessions = sessions.stream().filter(session -> "COMPLETED".equalsIgnoreCase(session.getStatus())).count();
         long cancelledSessions = sessions.stream().filter(session -> "CANCELLED".equalsIgnoreCase(session.getStatus())).count();
         long pendingSessions = sessions.stream().filter(session -> "PENDING".equalsIgnoreCase(session.getStatus()) || "CONFIRMED".equalsIgnoreCase(session.getStatus())).count();
+        Instant now = Instant.now();
+        long activeMeetings = sessions.stream()
+                .filter(session -> session.getMeetingStartedAt() != null)
+                .filter(session -> session.getMeetingEndedAt() == null)
+                .filter(session -> !"COMPLETED".equalsIgnoreCase(session.getStatus()) && !"CANCELLED".equalsIgnoreCase(session.getStatus()))
+                .count();
+        long upcomingInterviews = sessions.stream()
+                .filter(session -> "PENDING".equalsIgnoreCase(session.getStatus()) || "CONFIRMED".equalsIgnoreCase(session.getStatus()))
+                .filter(session -> parseSessionInstant(session.getStartTime()).map(start -> !start.isBefore(now)).orElse(false))
+                .count();
         long openReports = reports.stream().filter(report -> "OPEN".equalsIgnoreCase(report.getStatus())).count();
         long visiblePublicReviews = publicReviews.size();
         long hiddenPublicReviews = reviews.stream()
@@ -167,6 +176,7 @@ public class AdminService {
                 totalUsers,
                 activeUsers,
                 totalInterviewers,
+                totalInterviewees,
                 totalAdmins,
                 enabledUsers,
                 verifiedInterviewers,
@@ -175,8 +185,11 @@ public class AdminService {
                 completedSessions,
                 cancelledSessions,
                 pendingSessions,
+                activeMeetings,
+                upcomingInterviews,
                 disputedSessions,
                 noShowSessions,
+                openReports,
                 openReports,
                 visiblePublicReviews,
                 hiddenPublicReviews,
@@ -308,18 +321,18 @@ public class AdminService {
                                                        String sortDir,
                                                        Integer page,
                                                        Integer size) {
-        List<User> users = userRepository.findAll();
+        List<User> users = safeAdminList("admin users users", userRepository::findAll);
         String query = normalize(q);
         String normalizedRole = normalizeRole(role);
         String normalizedVerification = normalize(verification) == null ? null : normalize(verification).toUpperCase(Locale.ROOT);
 
         boolean trustNeeded = Boolean.TRUE.equals(flagged) || "TRUST".equalsIgnoreCase(sortBy);
-        List<Session> sessions = trustNeeded ? sessionRepository.findAll() : List.of();
-        List<Feedback> reviews = trustNeeded ? feedbackRepository.findAll() : List.of();
-        List<UserReport> reports = trustNeeded ? userReportRepository.findAll() : List.of();
+        List<Session> sessions = trustNeeded ? safeAdminList("admin users sessions", sessionRepository::findAll) : List.of();
+        List<Feedback> reviews = trustNeeded ? safeAdminList("admin users reviews", feedbackRepository::findAll) : List.of();
+        List<UserReport> reports = trustNeeded ? safeAdminList("admin users reports", userReportRepository::findAll) : List.of();
         Map<String, TrustSignalService.UserTrustSnapshot> trustMap = trustNeeded ? evaluateTrust(users, sessions, reviews, reports) : new HashMap<>();
 
-        Map<String, Long> moderationCountMap = moderationAuditLogRepository.findAll().stream()
+        Map<String, Long> moderationCountMap = safeAdminList("admin users moderation audit logs", moderationAuditLogRepository::findAll).stream()
                 .filter(log -> log.getSubjectUserId() != null && !log.getSubjectUserId().isBlank())
                 .collect(Collectors.groupingBy(ModerationAuditLog::getSubjectUserId, Collectors.counting()));
 
@@ -377,9 +390,9 @@ public class AdminService {
         String query = normalize(q);
         String normalizedStatus = normalize(status) == null ? null : normalize(status).toUpperCase(Locale.ROOT);
 
-        List<Session> sessions = sessionRepository.findAll();
-        Map<String, User> users = userRepository.findAll().stream().collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
-        Map<String, List<UserReport>> reportsBySession = userReportRepository.findAll().stream()
+        List<Session> sessions = safeAdminList("admin sessions sessions", sessionRepository::findAll);
+        Map<String, User> users = userIndex(safeAdminList("admin sessions users", userRepository::findAll));
+        Map<String, List<UserReport>> reportsBySession = safeAdminList("admin sessions reports", userReportRepository::findAll).stream()
                 .filter(item -> item.getSessionId() != null && !item.getSessionId().isBlank())
                 .collect(Collectors.groupingBy(UserReport::getSessionId));
 
@@ -462,8 +475,8 @@ public class AdminService {
         String normalizedStatus = normalize(status) == null ? null : normalize(status).toUpperCase(Locale.ROOT);
         String normalizedCategory = normalize(category) == null ? null : normalize(category).toUpperCase(Locale.ROOT);
 
-        Map<String, User> users = userRepository.findAll().stream().collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left));
-        List<UserReport> reports = userReportRepository.findAll().stream()
+        Map<String, User> users = userIndex(safeAdminList("admin reports users", userRepository::findAll));
+        List<UserReport> reports = safeAdminList("admin reports reports", userReportRepository::findAll).stream()
                 .filter(report -> normalizedStatus == null || normalizedStatus.equalsIgnoreCase(report.getStatus()))
                 .filter(report -> normalizedCategory == null || normalizedCategory.equals(resolveReportCategory(report)))
                 .filter(report -> {
@@ -520,12 +533,12 @@ public class AdminService {
                                                            String sortDir,
                                                            Integer page,
                                                            Integer size) {
-        List<User> users = userRepository.findAll();
-        List<Session> sessions = sessionRepository.findAll();
-        List<Feedback> allReviews = feedbackRepository.findByReviewTypeOrderByCreatedAtDesc("INTERVIEWER_REVIEW");
-        List<UserReport> reports = userReportRepository.findAll();
-        Map<String, User> userIndex = users.stream().collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
-        Map<String, Session> sessionIndex = sessions.stream().collect(Collectors.toMap(Session::getId, session -> session, (left, right) -> left));
+        List<User> users = safeAdminList("admin reviews users", userRepository::findAll);
+        List<Session> sessions = safeAdminList("admin reviews sessions", sessionRepository::findAll);
+        List<Feedback> allReviews = safeAdminList("admin reviews reviews", () -> feedbackRepository.findByReviewTypeOrderByCreatedAtDesc("INTERVIEWER_REVIEW"));
+        List<UserReport> reports = safeAdminList("admin reviews reports", userReportRepository::findAll);
+        Map<String, User> userIndex = userIndex(users);
+        Map<String, Session> sessionIndex = sessionIndex(sessions);
 
         String query = normalize(q);
         int safeMinRating = minRating == null ? 0 : Math.max(0, minRating);
@@ -562,13 +575,13 @@ public class AdminService {
     }
 
     public AdminDtos.TrustDashboardResponse trustDashboard() {
-        List<User> users = userRepository.findAll();
-        List<Session> sessions = sessionRepository.findAll();
-        List<Feedback> reviews = feedbackRepository.findAll();
-        List<UserReport> reports = userReportRepository.findAll();
-        List<ModerationAuditLog> recentModeration = moderationAuditLogRepository.findTop20ByOrderByCreatedAtDesc();
-        Map<String, User> userIndex = users.stream().collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
-        Map<String, Session> sessionIndex = sessions.stream().collect(Collectors.toMap(Session::getId, session -> session, (left, right) -> left));
+        List<User> users = safeAdminList("admin trust users", userRepository::findAll);
+        List<Session> sessions = safeAdminList("admin trust sessions", sessionRepository::findAll);
+        List<Feedback> reviews = safeAdminList("admin trust reviews", feedbackRepository::findAll);
+        List<UserReport> reports = safeAdminList("admin trust reports", userReportRepository::findAll);
+        List<ModerationAuditLog> recentModeration = safeAdminList("admin trust recent moderation", moderationAuditLogRepository::findTop20ByOrderByCreatedAtDesc);
+        Map<String, User> userIndex = userIndex(users);
+        Map<String, Session> sessionIndex = sessionIndex(sessions);
 
         List<AdminDtos.FlaggedUserItem> flaggedUsers = users.stream()
                 .map(user -> {
@@ -642,7 +655,7 @@ public class AdminService {
 
         List<ModerationAuditLog> logs;
         if (query != null || normalizedActor != null) {
-            logs = moderationAuditLogRepository.findAll().stream()
+            logs = safeAdminList("admin audit logs", moderationAuditLogRepository::findAll).stream()
                     .sorted(Comparator.comparing(ModerationAuditLog::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                     .filter(log -> normalizedEntityType == null || normalizedEntityType.equalsIgnoreCase(log.getEntityType()))
                     .filter(log -> normalizedSubject == null || normalizedSubject.equalsIgnoreCase(log.getSubjectUserId()))
@@ -654,15 +667,24 @@ public class AdminService {
 
         PageRequest request = PageRequest.of(safePage, safeSize);
         Page<ModerationAuditLog> result;
-        if (normalizedSubject != null) {
-            result = moderationAuditLogRepository.findBySubjectUserIdOrderByCreatedAtDesc(normalizedSubject, request);
-        } else if (normalizedEntityType != null) {
-            result = moderationAuditLogRepository.findByEntityTypeOrderByCreatedAtDesc(normalizedEntityType, request);
-        } else {
-            result = moderationAuditLogRepository.findAllByOrderByCreatedAtDesc(request);
+        try {
+            if (normalizedSubject != null) {
+                result = moderationAuditLogRepository.findBySubjectUserIdOrderByCreatedAtDesc(normalizedSubject, request);
+            } else if (normalizedEntityType != null) {
+                result = moderationAuditLogRepository.findByEntityTypeOrderByCreatedAtDesc(normalizedEntityType, request);
+            } else {
+                result = moderationAuditLogRepository.findAllByOrderByCreatedAtDesc(request);
+            }
+        } catch (RuntimeException ex) {
+            log.error("Admin audit log page failed; using empty audit response", ex);
+            return new AdminDtos.AuditLogPage(List.of(), safePage, safeSize, 0, 0);
+        }
+        if (result == null) {
+            log.warn("Admin audit log repository returned null page; using empty audit response");
+            return new AdminDtos.AuditLogPage(List.of(), safePage, safeSize, 0, 0);
         }
         return new AdminDtos.AuditLogPage(
-                result.getContent().stream().map(this::toAuditItem).toList(),
+                Optional.ofNullable(result.getContent()).orElse(List.of()).stream().filter(Objects::nonNull).map(this::toAuditItem).toList(),
                 result.getNumber(),
                 result.getSize(),
                 result.getTotalElements(),
@@ -736,6 +758,9 @@ public class AdminService {
     }
 
     public User verifyInterviewer(String userId, AdminDtos.InterviewerVerificationRequest request, String adminId) {
+        if (request == null) {
+            throw new IllegalArgumentException("Verification details are required");
+        }
         User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         if (!user.hasRole("INTERVIEWER")) {
             throw new IllegalArgumentException("Only interviewer accounts can be verified");
@@ -787,6 +812,9 @@ public class AdminService {
     }
 
     public UserReport moderateReport(String reportId, AdminDtos.ReportModerationRequest request, String adminId) {
+        if (request == null) {
+            throw new IllegalArgumentException("Report moderation details are required");
+        }
         UserReport report = userReportRepository.findById(reportId)
                 .orElseThrow(() -> new ResourceNotFoundException("Report not found"));
         String status = normalize(request.getStatus());
@@ -853,27 +881,20 @@ public class AdminService {
                         "moderationNotes", saved.getModerationNotes()
                 )
         );
-        List<User> users = userRepository.findAll();
-        List<Session> sessions = sessionRepository.findAll();
-        List<Feedback> reviews = feedbackRepository.findAll();
-        List<UserReport> reports = userReportRepository.findAll();
-        Map<String, User> userIndex = users.stream().collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
-        Map<String, Session> sessionIndex = sessions.stream().collect(Collectors.toMap(Session::getId, session -> session, (left, right) -> left));
+        List<User> users = safeAdminList("admin moderate review users", userRepository::findAll);
+        List<Session> sessions = safeAdminList("admin moderate review sessions", sessionRepository::findAll);
+        List<Feedback> reviews = safeAdminList("admin moderate review reviews", feedbackRepository::findAll);
+        List<UserReport> reports = safeAdminList("admin moderate review reports", userReportRepository::findAll);
+        Map<String, User> userIndex = userIndex(users);
+        Map<String, Session> sessionIndex = sessionIndex(sessions);
         return toReviewQueueItem(saved, userIndex, sessionIndex, sessions, reviews, reports);
     }
 
     public List<AdminDtos.PrepModuleItem> prepModules() {
-        try {
-            List<PrepModule> modules = Optional.ofNullable(prepModuleRepository.findAll()).orElse(List.of());
-            return modules.stream()
-                    .filter(Objects::nonNull)
-                    .sorted(Comparator.comparing((PrepModule module) -> module.getUpdatedAt() == null ? Instant.EPOCH : module.getUpdatedAt()).reversed())
-                    .map(this::toPrepModuleItem)
-                    .toList();
-        } catch (DataAccessException ex) {
-            log.error("Failed to fetch admin prep modules from MongoDB", ex);
-            throw ex;
-        }
+        return safeAdminList("admin prep modules", prepModuleRepository::findAll).stream()
+                .sorted(Comparator.comparing((PrepModule module) -> module.getUpdatedAt() == null ? Instant.EPOCH : module.getUpdatedAt()).reversed())
+                .map(this::toPrepModuleItem)
+                .toList();
     }
 
     public AdminDtos.PrepModuleItem createPrepModule(AdminDtos.PrepModuleRequest request, String adminId) {
@@ -1078,7 +1099,7 @@ public class AdminService {
 
     private void broadcastPlatformNotice(PlatformNotice notice) {
         if (notice == null || normalize(notice.getTitle()) == null || normalize(notice.getMessage()) == null) return;
-        List<Notification> notifications = userRepository.findAll().stream()
+        List<Notification> notifications = safeAdminList("platform notice broadcast users", userRepository::findAll).stream()
                 .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
                 .map(User::getId)
                 .filter(Objects::nonNull)
@@ -1410,6 +1431,20 @@ public class AdminService {
             log.error("Admin aggregation failed for source={}; using empty list for degraded response", source, ex);
             return List.of();
         }
+    }
+
+    private Map<String, User> userIndex(List<User> users) {
+        return (users == null ? List.<User>of() : users).stream()
+                .filter(Objects::nonNull)
+                .filter(user -> user.getId() != null && !user.getId().isBlank())
+                .collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
+    }
+
+    private Map<String, Session> sessionIndex(List<Session> sessions) {
+        return (sessions == null ? List.<Session>of() : sessions).stream()
+                .filter(Objects::nonNull)
+                .filter(session -> session.getId() != null && !session.getId().isBlank())
+                .collect(Collectors.toMap(Session::getId, session -> session, (left, right) -> left));
     }
 
     private boolean matchesAuditQuery(ModerationAuditLog log, String query) {

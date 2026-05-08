@@ -1,6 +1,7 @@
 package com.interview.platform.service;
 
 import com.interview.platform.dto.AdminDtos;
+import com.interview.platform.dto.PageResponse;
 import com.interview.platform.model.PrepModule;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.ModerationAuditLogRepository;
@@ -168,5 +169,33 @@ class AdminServicePrepModuleTest {
         assertEquals(List.of(), response.platformNotices());
         assertEquals(List.of(), response.activeNotices());
         assertEquals(List.of(), response.recentNotifications());
+    }
+
+    @Test
+    void overviewAndQueuesReturnSafeEmptyShapesForEmptyDatabase() {
+        when(userRepository.findAll()).thenReturn(List.of());
+        when(sessionRepository.findAll()).thenReturn(List.of());
+        when(feedbackRepository.findAll()).thenReturn(List.of());
+        when(userReportRepository.findAll()).thenReturn(List.of());
+        when(moderationAuditLogRepository.findAll()).thenReturn(List.of());
+        when(feedbackRepository.findByReviewTypeOrderByCreatedAtDesc("INTERVIEWER_REVIEW")).thenReturn(List.of());
+
+        AdminDtos.OverviewResponse overview = adminService.overview();
+        PageResponse<AdminDtos.AdminUserItem> users = adminService.users(null, null, null, null, null, null, null, null, null);
+        PageResponse<AdminDtos.AdminSessionItem> sessions = adminService.sessions(null, null, null, null, null, null, null, null, null);
+        PageResponse<AdminDtos.AdminReportItem> reports = adminService.reports(null, null, null, null, null, null, null);
+        PageResponse<AdminDtos.ReviewQueueItem> reviews = adminService.reviews(null, null, null, null, null, null, null, null);
+        AdminDtos.TrustDashboardResponse trust = adminService.trustDashboard();
+
+        assertEquals(0, overview.totalUsers());
+        assertEquals(0, overview.totalInterviewees());
+        assertEquals(0, overview.activeMeetings());
+        assertEquals(0, overview.upcomingInterviews());
+        assertEquals(0, overview.reportsPendingReview());
+        assertEquals(0, users.getTotal());
+        assertEquals(0, sessions.getTotal());
+        assertEquals(0, reports.getTotal());
+        assertEquals(0, reviews.getTotal());
+        assertEquals(0, trust.openReportCount());
     }
 }

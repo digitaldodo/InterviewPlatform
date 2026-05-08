@@ -8,25 +8,31 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Service
 public class TrustSignalService {
     public UserTrustSnapshot evaluate(User user, List<Session> sessions, List<Feedback> feedback, List<UserReport> reports) {
+        if (user == null) {
+            return new UserTrustSnapshot(100.0, 100.0, 100.0, 100.0, 100.0, List.of());
+        }
+        List<Feedback> safeFeedback = feedback == null ? List.of() : feedback.stream().filter(Objects::nonNull).toList();
+        List<UserReport> safeReports = reports == null ? List.of() : reports.stream().filter(Objects::nonNull).toList();
         int completed = user.getCompletedSessions() == null ? 0 : user.getCompletedSessions();
         int cancelled = user.getCancelledSessions() == null ? 0 : user.getCancelledSessions();
         int totalDecidedSessions = completed + cancelled;
         double sessionCompletionRate = totalDecidedSessions == 0 ? 100.0 : round((completed * 100.0) / totalDecidedSessions);
         double cancellationReliability = totalDecidedSessions == 0 ? 100.0 : round(100.0 - ((cancelled * 100.0) / totalDecidedSessions));
 
-        List<Feedback> authoredReviews = feedback.stream()
-                .filter(item -> user.getId().equals(item.getReviewerId()))
+        List<Feedback> authoredReviews = safeFeedback.stream()
+                .filter(item -> Objects.equals(user.getId(), item.getReviewerId()))
                 .toList();
-        List<Feedback> receivedPublicReviews = feedback.stream()
-                .filter(item -> user.getId().equals(item.getInterviewerId()))
+        List<Feedback> receivedPublicReviews = safeFeedback.stream()
+                .filter(item -> Objects.equals(user.getId(), item.getInterviewerId()))
                 .filter(item -> Boolean.TRUE.equals(item.getPublicReview()))
                 .toList();
-        List<UserReport> reportsAgainstUser = reports.stream()
-                .filter(item -> user.getId().equals(item.getReportedUserId()))
+        List<UserReport> reportsAgainstUser = safeReports.stream()
+                .filter(item -> Objects.equals(user.getId(), item.getReportedUserId()))
                 .toList();
 
         double reviewQualityScore = authoredReviews.isEmpty()

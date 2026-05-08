@@ -6270,7 +6270,7 @@ function reportCategoryHint(value) {
   return REPORT_CATEGORY_OPTIONS.find(item => item.value === category)?.hint || '';
 }
 
-function openReportModerationModal(reportId, suggestedStatus = 'REVIEWED') {
+function openReportModerationModal(reportId, suggestedStatus = 'REVIEWED', suggestedNotes = '') {
   const report = adminReports.find(item => item.id === reportId);
   if (!report) {
     toast('Report not found in current queue.', 'error');
@@ -6995,7 +6995,7 @@ function renderAdminReports() {
           <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
           <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
             <option value="">All statuses</option>
-            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE', 'ARCHIVED'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
           </select>
           <select class="input" onchange="setAdminFilter('reports', 'category', this.value)">
             <option value="">All categories</option>
@@ -7246,11 +7246,26 @@ function openReportModerationModal(reportId, suggestedStatus = 'REVIEWED') {
     loading: false,
     reportId,
     status: String(suggestedStatus || report.status || 'REVIEWED').toUpperCase(),
-    notes: report.resolutionNotes || '',
+    notes: report.resolutionNotes || suggestedNotes || '',
     reason: '',
     confirmChecked: false,
   };
   renderModerationDialog();
+}
+
+function suspendReportedUser(userId) {
+  const user = adminUsers.find(item => item.id === userId);
+  if (user) {
+    toggleUserAccess(userId, false);
+    return;
+  }
+  showSection('admin-users');
+  const search = document.getElementById('admin-user-search');
+  if (search) search.value = userId;
+  adminState.users.q = userId;
+  adminState.users.page = 0;
+  loadAdminData(true);
+  toast('User list filtered to the reported account. Open the matching row to suspend or reactivate.', 'success');
 }
 
 function openReviewModerationModal(reviewId, visible) {
@@ -7490,7 +7505,7 @@ function renderModerationDialog() {
         <label class="form-group">
           <span>Decision</span>
           <select class="input" onchange="updateModerationDialogField('status', this.value)">
-            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status}</option>`).join('')}
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE', 'ARCHIVED'].map(status => `<option value="${status}" ${moderationDialogState.status === status ? 'selected' : ''}>${status}</option>`).join('')}
           </select>
         </label>
         <label class="form-group">
@@ -7773,6 +7788,90 @@ function buildAdminAnalyticsQuery() {
   return params.toString();
 }
 
+function emptyAdminPage(page = 0, size = 10) {
+  return { items: [], total: 0, page, size, totalPages: 0 };
+}
+
+function emptyAdminOverview() {
+  return {
+    totalUsers: 0,
+    activeUsers: 0,
+    totalInterviewers: 0,
+    totalInterviewees: 0,
+    totalAdmins: 0,
+    enabledUsers: 0,
+    verifiedInterviewers: 0,
+    flaggedUsers: 0,
+    totalSessions: 0,
+    completedSessions: 0,
+    cancelledSessions: 0,
+    pendingSessions: 0,
+    activeMeetings: 0,
+    upcomingInterviews: 0,
+    disputedSessions: 0,
+    noShowSessions: 0,
+    openReports: 0,
+    reportsPendingReview: 0,
+    visiblePublicReviews: 0,
+    hiddenPublicReviews: 0,
+    flaggedReviews: 0,
+    pendingVerificationRequests: 0,
+    platformAverageRating: 0,
+    completionRate: 0,
+    cancellationRate: 0,
+    averageReviewQualityScore: 0,
+    averageTrustScore: 0,
+    topTopics: [],
+    healthIndicators: [],
+  };
+}
+
+function emptyAdminTrustDashboard() {
+  return {
+    flaggedReviewCount: 0,
+    openReportCount: 0,
+    pendingVerificationCount: 0,
+    flaggedUserCount: 0,
+    averageReviewQualityScore: 0,
+    averageTrustScore: 0,
+    flaggedUsers: [],
+    flaggedReviews: [],
+    verificationQueue: [],
+    recentModeration: [],
+  };
+}
+
+function emptyAdminAnalytics() {
+  return {
+    days: Number(adminState.analytics.days || 30),
+    userGrowthTrend: [],
+    activeUserTrend: [],
+    sessionTrend: [],
+    completedSessionTrend: [],
+    cancellationTrend: [],
+    reviewTrend: [],
+    reportTrend: [],
+    averageRatingTrend: [],
+    trustTrend: [],
+    activeUsers: 0,
+    flaggedUsers: 0,
+    disputedSessions: 0,
+    noShowSessions: 0,
+  };
+}
+
+function emptyAdminOps() {
+  return {
+    platformNotices: [],
+    activeNotices: [],
+    emailTemplates: [],
+    totalNotifications: 0,
+    unreadNotifications: 0,
+    notificationsByType: {},
+    recentNotifications: [],
+  };
+}
+
 async function loadAdminData(force = false) {
   if (!hasAdminRole()) return;
   if (!force && adminOverview && adminTrustDashboard && adminAuditLogPage && adminUsersPage && adminSessionsPage) {
@@ -7795,16 +7894,16 @@ async function loadAdminData(force = false) {
   ];
   const results = await Promise.allSettled(requests);
   const valueAt = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
-  const overview = valueAt(0, adminOverview);
-  const usersPage = valueAt(1, adminUsersPage);
-  const sessionsPage = valueAt(2, adminSessionsPage);
-  const reportsPage = valueAt(3, adminReportsPage);
-  const reviewsPage = valueAt(4, adminReviewsPage);
-  const trustDashboard = valueAt(5, adminTrustDashboard);
-  const auditLogPage = valueAt(6, adminAuditLogPage);
-  const analytics = valueAt(7, adminAnalytics);
-  const prepModules = valueAt(8, adminPrepModules);
-  const ops = valueAt(9, adminOps);
+  const overview = valueAt(0, adminOverview || emptyAdminOverview());
+  const usersPage = valueAt(1, adminUsersPage || emptyAdminPage(adminState.users.page, adminState.users.size));
+  const sessionsPage = valueAt(2, adminSessionsPage || emptyAdminPage(adminState.sessions.page, adminState.sessions.size));
+  const reportsPage = valueAt(3, adminReportsPage || emptyAdminPage(adminState.reports.page, adminState.reports.size));
+  const reviewsPage = valueAt(4, adminReviewsPage || emptyAdminPage(adminState.reviews.page, adminState.reviews.size));
+  const trustDashboard = valueAt(5, adminTrustDashboard || emptyAdminTrustDashboard());
+  const auditLogPage = valueAt(6, adminAuditLogPage || { items: [], page: adminState.audit.page || 0, size: adminState.audit.size || 10, totalElements: 0, totalPages: 0 });
+  const analytics = valueAt(7, adminAnalytics || emptyAdminAnalytics());
+  const prepModules = valueAt(8, adminPrepModules || []);
+  const ops = valueAt(9, adminOps || emptyAdminOps());
   adminOverview = overview || null;
   adminUsersPage = usersPage || null;
   adminSessionsPage = sessionsPage || null;
@@ -7851,12 +7950,16 @@ function renderAdminOverview() {
       metricsHost.innerHTML = [
         statMetric('Total users', adminOverview.totalUsers || 0, 'badge-purple'),
         statMetric('Active users', adminOverview.activeUsers || 0, 'badge-green'),
+        statMetric('Interviewers', adminOverview.totalInterviewers || 0, 'badge-purple'),
+        statMetric('Interviewees', adminOverview.totalInterviewees || 0, 'badge-purple'),
         statMetric('Verified interviewers', adminOverview.verifiedInterviewers || 0, 'badge-green'),
+        statMetric('Total sessions', adminOverview.totalSessions || 0, 'badge-gray'),
         statMetric('Completed sessions', adminOverview.completedSessions || 0, 'badge-green'),
         statMetric('Cancellation rate', `${adminOverview.cancellationRate || 0}%`, 'badge-yellow'),
-        statMetric('Pending reports', adminOverview.openReports || 0, 'badge-red'),
-        statMetric('Flagged users', adminOverview.flaggedUsers || 0, 'badge-red'),
-        statMetric('No-show sessions', adminOverview.noShowSessions || 0, 'badge-yellow'),
+        statMetric('Active meetings', adminOverview.activeMeetings || 0, 'badge-green'),
+        statMetric('Upcoming interviews', adminOverview.upcomingInterviews || adminOverview.pendingSessions || 0, 'badge-yellow'),
+        statMetric('Average rating', adminOverview.platformAverageRating || 0, 'badge-green'),
+        statMetric('Reports pending', adminOverview.reportsPendingReview || adminOverview.openReports || 0, 'badge-red'),
       ].join('');
       if (analyticsHost) {
         analyticsHost.innerHTML = `
@@ -8024,7 +8127,7 @@ function renderAdminReports() {
           <input class="input" value="${esc(adminState.reports.query || '')}" placeholder="Search reports" oninput="setAdminFilter('reports', 'query', this.value)" />
           <select class="input" onchange="setAdminFilter('reports', 'status', this.value)">
             <option value="">All statuses</option>
-            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
+            ${['OPEN', 'REVIEWED', 'ACTIONED', 'DISMISSED', 'DUPLICATE', 'ARCHIVED'].map(status => `<option value="${status}" ${reportStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
           </select>
           <select class="input" onchange="setAdminFilter('reports', 'category', this.value)">
             <option value="">All categories</option>
@@ -8045,8 +8148,10 @@ function renderAdminReports() {
                 ${report.resolutionNotes ? `<p class="admin-note-chip">Last note: ${esc(report.resolutionNotes)}</p>` : ''}
               </div>
               <div class="card-actions">
-                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'REVIEWED')">Review</button>
-                <button class="btn btn-danger btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'ACTIONED')">Escalate</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'REVIEWED', 'Warned user and documented the report context.')">Warn</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'DISMISSED')">Resolve</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="openReportModerationModal('${report.id}', 'ARCHIVED')">Archive</button>
+                ${report.reportedUserId ? `<button class="btn btn-danger btn-sm" type="button" onclick="suspendReportedUser(${jsArg(report.reportedUserId)})">Suspend target</button>` : ''}
               </div>
             </article>
           `).join('') || emptyState('No trust reports in this queue.')}

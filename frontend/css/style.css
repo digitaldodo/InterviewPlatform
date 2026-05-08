@@ -1630,7 +1630,7 @@ body.interviewer-workspace-active .overview-primary-grid {
   background: rgba(255,255,255,0.04);
 }
 
-.admin-only {
+body:not(.admin-workspace-active) .admin-only {
   display: none;
 }
 
