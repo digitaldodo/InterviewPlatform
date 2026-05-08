@@ -137,6 +137,38 @@ public class AdminController {
                 adminService.moderateReview(reviewId, request, currentUser(authentication).getId())));
     }
 
+    @GetMapping("/prep-modules")
+    public ResponseEntity<ApiResponse<java.util.List<AdminDtos.PrepModuleItem>>> prepModules() {
+        return ResponseEntity.ok(ApiResponse.success("Preparation modules fetched", adminService.prepModules()));
+    }
+
+    @PostMapping("/prep-modules")
+    public ResponseEntity<ApiResponse<AdminDtos.PrepModuleItem>> createPrepModule(@RequestBody AdminDtos.PrepModuleRequest request,
+                                                                                   Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Preparation module created",
+                adminService.createPrepModule(request, currentUser(authentication).getId())));
+    }
+
+    @PutMapping("/prep-modules/{moduleId}")
+    public ResponseEntity<ApiResponse<AdminDtos.PrepModuleItem>> updatePrepModule(@PathVariable String moduleId,
+                                                                                   @RequestBody AdminDtos.PrepModuleRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Preparation module updated",
+                adminService.updatePrepModule(moduleId, request)));
+    }
+
+    @PatchMapping("/prep-modules/{moduleId}/visibility")
+    public ResponseEntity<ApiResponse<AdminDtos.PrepModuleItem>> updatePrepModuleVisibility(@PathVariable String moduleId,
+                                                                                            @RequestBody AdminDtos.PrepModuleRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Preparation module visibility updated",
+                adminService.setPrepModuleVisibility(moduleId, request == null ? null : request.getVisibilityStatus())));
+    }
+
+    @DeleteMapping("/prep-modules/{moduleId}")
+    public ResponseEntity<ApiResponse<Void>> deletePrepModule(@PathVariable String moduleId) {
+        adminService.deletePrepModule(moduleId);
+        return ResponseEntity.ok(ApiResponse.<Void>success("Preparation module deleted", null));
+    }
+
     private User currentUser(Authentication authentication) {
         if (authentication == null || !(authentication.getPrincipal() instanceof UserPrincipal principal)) {
             throw new UnauthorizedException("Authentication required");

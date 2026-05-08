@@ -124,7 +124,7 @@ public class ResumeIntelligenceService {
         }
         profile.setVersions(versions);
         profile.setActiveVersionId(version.getId());
-        captureProgress(profile, atsSummary.getAtsScore(), readinessScore, completedModules(sessions, feedback));
+        captureProgress(profile, atsSummary.getAtsScore(), readinessScore);
         profile.setUpdatedAt(Instant.now());
         profileRepository.save(profile);
     }
@@ -167,19 +167,19 @@ public class ResumeIntelligenceService {
             return new PrepDtos.PrepIntelligenceDashboard(
                     null,
                     history,
-                    new PrepDtos.ResumeParsedData(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of()),
-                    new PrepDtos.AtsAnalysis(0, 0, 0, 0, 0, 0, List.of(), List.of(), List.of("Upload a PDF or DOCX resume to start ATS analysis."), Map.of()),
                     null,
-                    trendFromProgress(profile, true),
-                    trendFromProgress(profile, false),
-                    baseReadinessWithoutResume(sessions, feedback),
+                    null,
+                    null,
+                    List.of(),
+                    List.of(),
+                    null,
                     Map.of(),
-                    topicReadinessMap(sessions, feedback, List.of(), List.of()),
-                    defaultRoadmap("No active resume"),
+                    Map.of(),
+                    List.of(),
                     weakAreas(feedback, List.of()),
                     recommendedTopics(sessions, feedback, List.of(), List.of()),
-                    recommendationCardsWithoutResume(sessions, feedback),
-                    completedModules(sessions, feedback)
+                    List.of(),
+                    null
             );
         }
 
@@ -197,13 +197,13 @@ public class ResumeIntelligenceService {
                 trendFromProgress(profile, true),
                 trendFromProgress(profile, false),
                 readiness,
-                skillGapMap(ats.getMissingSkills()),
+                Map.of(),
                 topicReadinessMap(sessions, feedback, parsed.getSkills(), parsed.getTechnologies()),
-                roadmapFromContext(sessions, feedback, ats),
+                List.of(),
                 weakAreas(feedback, ats.getMissingSkills()),
                 recommendedTopics(sessions, feedback, parsed.getSkills(), ats.getMissingSkills()),
                 buildRecommendationCards(active, sessions, feedback, latestMatch),
-                completedModules(sessions, feedback)
+                null
         );
     }
 
@@ -230,7 +230,7 @@ public class ResumeIntelligenceService {
         List<Feedback> feedback = loadFeedbackForSessions(sessions);
         int readiness = computeReadinessScore(active.getAtsSummary().getAtsScore(), sessions, feedback, active.getParsedResume(), active.getAtsSummary());
         active.setInterviewReadinessScore(readiness);
-        captureProgress(profile, active.getAtsSummary().getAtsScore(), readiness, completedModules(sessions, feedback));
+        captureProgress(profile, active.getAtsSummary().getAtsScore(), readiness);
 
         profile.setUpdatedAt(Instant.now());
         profileRepository.save(profile);
@@ -559,12 +559,6 @@ public class ResumeIntelligenceService {
         return clamp(score);
     }
 
-    private int baseReadinessWithoutResume(List<Session> sessions, List<Feedback> feedback) {
-        int completedSessions = (int) sessions.stream().filter(item -> "COMPLETED".equalsIgnoreCase(item.getStatus())).count();
-        double avgFeedback = feedback.stream().mapToInt(Feedback::getRating).average().orElse(0.0);
-        return clamp((int) Math.round((completedSessions * 14) + (avgFeedback * 11) + 18));
-    }
-
     private List<PrepDtos.ScorePoint> trendFromProgress(ResumeIntelligenceProfile profile, boolean atsTrend) {
         return profile.getProgressHistory().stream()
                 .sorted(Comparator.comparing(ResumeIntelligenceProfile.ProgressSnapshot::getCapturedAt))
@@ -648,12 +642,11 @@ public class ResumeIntelligenceService {
                 .orElse(null);
     }
 
-    private void captureProgress(ResumeIntelligenceProfile profile, int atsScore, int readinessScore, int completedModules) {
+    private void captureProgress(ResumeIntelligenceProfile profile, int atsScore, int readinessScore) {
         ResumeIntelligenceProfile.ProgressSnapshot snapshot = new ResumeIntelligenceProfile.ProgressSnapshot();
         snapshot.setCapturedAt(Instant.now());
         snapshot.setAtsScore(atsScore);
         snapshot.setReadinessScore(readinessScore);
-        snapshot.setCompletedPrepModules(completedModules);
 
         List<ResumeIntelligenceProfile.ProgressSnapshot> history = new ArrayList<>(profile.getProgressHistory());
         history.add(snapshot);
@@ -663,72 +656,27 @@ public class ResumeIntelligenceService {
         profile.setProgressHistory(history);
     }
 
-    private int completedModules(List<Session> sessions, List<Feedback> feedback) {
-        int completedSessions = (int) sessions.stream().filter(item -> "COMPLETED".equalsIgnoreCase(item.getStatus())).count();
-        return Math.max(0, (completedSessions * 2) + feedback.size());
-    }
-
-    private Map<String, Integer> skillGapMap(List<String> missingSkills) {
-        if (missingSkills == null || missingSkills.isEmpty()) return Map.of("Core readiness", 82);
-        Map<String, Integer> gaps = new LinkedHashMap<>();
-        int severity = 78;
-        for (String missing : missingSkills.stream().limit(8).toList()) {
-            gaps.put(missing, severity);
-            severity = Math.max(38, severity - 8);
-        }
-        return gaps;
-    }
-
     private Map<String, Integer> topicReadinessMap(List<Session> sessions,
                                                    List<Feedback> feedback,
                                                    List<String> skills,
                                                    List<String> technologies) {
-        Map<String, Integer> readiness = new LinkedHashMap<>();
-        Map<String, Integer> weakMap = weakTopics(feedback);
-        mergeReadiness(readiness, skills, 62);
-        mergeReadiness(readiness, technologies, 58);
-        sessions.forEach(session -> mergeReadiness(readiness, session.getTopics(), "COMPLETED".equalsIgnoreCase(session.getStatus()) ? 6 : 2));
-        weakMap.forEach((topic, penalty) -> readiness.merge(topic, -Math.min(28, penalty), Integer::sum));
-        return readiness.entrySet().stream()
-                .sorted(Map.Entry.<String, Integer>comparingByValue().reversed())
-                .limit(10)
+        Map<String, List<Integer>> ratingsByTopic = new LinkedHashMap<>();
+        for (Feedback item : feedback) {
+            for (Feedback.TopicFeedback topic : item.getTopicFeedback()) {
+                String key = titleCase(topic.getTopic());
+                Integer rating = topic.getRating();
+                if (!key.isBlank() && rating != null && rating > 0) {
+                    ratingsByTopic.computeIfAbsent(key, ignored -> new ArrayList<>()).add(rating);
+                }
+            }
+        }
+        return ratingsByTopic.entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
-                        item -> clamp(item.getValue()),
+                        item -> clamp((int) Math.round(item.getValue().stream().mapToInt(Integer::intValue).average().orElse(0) * 20)),
                         (left, right) -> left,
                         LinkedHashMap::new
                 ));
-    }
-
-    private void mergeReadiness(Map<String, Integer> sink, Collection<String> values, int base) {
-        if (values == null) return;
-        for (String value : values) {
-            String normalized = normalizeText(value).toLowerCase(Locale.ROOT);
-            if (normalized.isBlank()) continue;
-            sink.merge(titleCase(normalized), base, Integer::sum);
-        }
-    }
-
-    private List<PrepDtos.RoadmapStep> roadmapFromContext(List<Session> sessions,
-                                                          List<Feedback> feedback,
-                                                          ResumeIntelligenceProfile.AtsSummary ats) {
-        int completedSessions = (int) sessions.stream().filter(item -> "COMPLETED".equalsIgnoreCase(item.getStatus())).count();
-        List<String> weak = weakAreas(feedback, ats.getMissingSkills());
-        return List.of(
-                new PrepDtos.RoadmapStep(1, "Optimize ATS baseline", "Refine summary, quantified bullets, and keywords for stronger screening.", "Easy", ats.getAtsScore() >= 70 ? "In progress" : "Priority", List.of("Quantified achievements", "Keyword balance", "Formatting checks")),
-                new PrepDtos.RoadmapStep(2, "Role-specific skill gap closure", "Prioritize missing skills and map them to project proof points.", "Medium", ats.getMissingSkills().isEmpty() ? "On track" : "Priority", ats.getMissingSkills().isEmpty() ? List.of("Advanced depth", "Role storytelling") : ats.getMissingSkills().stream().limit(4).toList()),
-                new PrepDtos.RoadmapStep(3, "Targeted mock loops", "Run practice loops for weak topics from medium to hard difficulty.", "Medium", completedSessions >= 4 ? "In progress" : "Queued", weak.isEmpty() ? List.of("System design", "Behavioral", "Coding clarity") : weak.stream().limit(4).toList()),
-                new PrepDtos.RoadmapStep(4, "Company and role sprint", "Finalize company-specific rounds with timed drills and behavioral polish.", "Hard", completedSessions >= 8 ? "Ready" : "Queued", List.of("Google SDE Prep", "Amazon Behavioral Prep", "React Frontend Prep", "System Design Prep"))
-        );
-    }
-
-    private List<PrepDtos.RoadmapStep> defaultRoadmap(String context) {
-        return List.of(
-                new PrepDtos.RoadmapStep(1, "Upload and parse resume", "Upload a PDF or DOCX to unlock ATS and JD matching.", "Easy", "Priority", List.of(context)),
-                new PrepDtos.RoadmapStep(2, "Run ATS analysis", "Review score components and fix missing sections.", "Easy", "Queued", List.of("Completeness", "Keyword diversity")),
-                new PrepDtos.RoadmapStep(3, "Run JD matching", "Paste a target role JD and close missing keyword gaps.", "Medium", "Queued", List.of("Role keywords", "Technology alignment")),
-                new PrepDtos.RoadmapStep(4, "Start prep loops", "Practice weak topics and measure readiness trends over time.", "Medium", "Queued", List.of("Coding", "Behavioral", "System design"))
-        );
     }
 
     private List<String> weakAreas(List<Feedback> feedback, List<String> missingSkills) {
@@ -746,10 +694,6 @@ public class ResumeIntelligenceService {
         topics.addAll(weakAreas(feedback, missingSkills));
         sessions.stream().flatMap(session -> session.getTopics().stream()).limit(6).map(this::titleCase).forEach(topics::add);
         skills.stream().limit(4).map(this::titleCase).forEach(topics::add);
-        topics.add("Google SDE Prep");
-        topics.add("Amazon Behavioral Prep");
-        topics.add("React Frontend Prep");
-        topics.add("System Design Prep");
         return topics.stream().limit(12).toList();
     }
 
@@ -759,24 +703,17 @@ public class ResumeIntelligenceService {
                                                                        PrepDtos.JobMatchResult match) {
         ResumeIntelligenceProfile.AtsSummary ats = active.getAtsSummary();
         List<PrepDtos.RecommendationCard> cards = new ArrayList<>();
-        cards.add(new PrepDtos.RecommendationCard("ATS optimization", "Improve ATS score by strengthening measurable impact and section completeness.", ats.getAtsScore() < 60 ? "High" : "Medium", ats.getRecommendations().stream().limit(3).toList()));
+        if (!ats.getRecommendations().isEmpty()) {
+            cards.add(new PrepDtos.RecommendationCard("Resume improvements", "Recommendations from the parsed resume analysis.", ats.getAtsScore() < 60 ? "High" : "Medium", ats.getRecommendations().stream().limit(3).toList()));
+        }
         List<String> weak = weakAreas(feedback, ats.getMissingSkills());
-        cards.add(new PrepDtos.RecommendationCard("Weak-topic practice", "Run focused drills on weak interview areas and track score recovery.", weak.isEmpty() ? "Medium" : "High", weak.isEmpty() ? List.of("Behavioral structure", "System design communication") : weak.stream().limit(4).toList()));
+        if (!weak.isEmpty()) {
+            cards.add(new PrepDtos.RecommendationCard("Feedback-backed weak areas", "Areas found in interview feedback or missing resume skills.", "High", weak.stream().limit(4).toList()));
+        }
         if (match != null) {
             cards.add(new PrepDtos.RecommendationCard("JD alignment sprint", "Close critical role-match gaps before applications and interviews.", match.matchPercent() < 60 ? "High" : "Medium", match.missingKeywords().isEmpty() ? List.of("Maintain keyword coverage") : match.missingKeywords().stream().limit(4).toList()));
         }
-        int completedSessions = (int) sessions.stream().filter(item -> "COMPLETED".equalsIgnoreCase(item.getStatus())).count();
-        cards.add(new PrepDtos.RecommendationCard("Interview cadence", "Keep a steady practice rhythm to improve readiness confidence over time.", completedSessions < 4 ? "High" : "Medium", List.of("2 role-focused mocks weekly", "1 behavioral review", "1 systems discussion")));
         return cards.stream().limit(4).toList();
-    }
-
-    private List<PrepDtos.RecommendationCard> recommendationCardsWithoutResume(List<Session> sessions, List<Feedback> feedback) {
-        int completed = (int) sessions.stream().filter(item -> "COMPLETED".equalsIgnoreCase(item.getStatus())).count();
-        return List.of(
-                new PrepDtos.RecommendationCard("Upload resume", "Resume intelligence is locked until a PDF or DOCX resume is uploaded.", "High", List.of("Upload latest resume", "Run ATS analysis", "Start JD matching")),
-                new PrepDtos.RecommendationCard("Practice consistency", "Maintain interview momentum while resume analysis is being prepared.", completed < 3 ? "High" : "Medium", List.of("Schedule coding practice", "Run behavioral mock")),
-                new PrepDtos.RecommendationCard("Feedback loop", "Use previous feedback to shape weekly prep goals.", "Medium", weakAreas(feedback, List.of()).stream().limit(4).toList())
-        );
     }
 
     private Map<String, Integer> weakTopics(List<Feedback> feedback) {

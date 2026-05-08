@@ -1934,6 +1934,18 @@ body.interviewer-workspace-active .overview-primary-grid {
   color: var(--muted);
 }
 
+.prep-resource-links {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.prep-resource-links a {
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
 .prep-advanced-shell {
   display: grid;
   gap: 0.8rem;
@@ -2137,6 +2149,20 @@ body.interviewer-workspace-active .overview-primary-grid {
 
 .admin-section-head {
   align-items: center;
+}
+
+.admin-prep-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.admin-prep-form,
+.admin-prep-list {
+  min-width: 0;
+  display: grid;
+  gap: 0.9rem;
 }
 
 .admin-stats-grid {
@@ -4235,7 +4261,8 @@ body.interviewer-workspace-active .overview-primary-grid {
   .prep-skeleton-grid,
   .prep-intel-score-grid,
   .prep-primary-layout,
-  .prep-module-grid {
+  .prep-module-grid,
+  .admin-prep-layout {
     grid-template-columns: 1fr;
   }
 
@@ -4709,6 +4736,7 @@ body.interviewer-workspace-active .overview-primary-grid {
   .prep-primary-layout,
   .prep-signal-grid,
   .prep-module-grid,
+  .admin-prep-layout,
   .prep-resource-list,
   .prep-skeleton-grid,
   .prep-intel-score-grid,

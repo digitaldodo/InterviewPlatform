@@ -63,6 +63,8 @@ let adminReviewsPage = null;
 let adminTrustDashboard = null;
 let adminAuditLogPage = null;
 let adminAnalytics = null;
+let adminPrepModules = [];
+let prepModuleEditingId = null;
 let adminLoading = false;
 let moderationDialogState = null;
 let reportDialogState = null;
@@ -107,7 +109,7 @@ const AVAILABILITY_PREFERENCES = [
   'Late night availability',
   'Early morning availability',
 ];
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit']);
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 let analyticsSummary = null;
@@ -343,7 +345,7 @@ function applyRoleNavigationLabels() {
 }
 
 function routeAllowed(route) {
-  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'profile'].includes(route);
+  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'profile'].includes(route);
   if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
   if (route === 'interviewer') return false;
   if (route.startsWith('admin-')) return false;
@@ -5083,7 +5085,6 @@ function renderResumePanel() {
   if (!host) return;
   const hasResume = Boolean(currentUser?.resumeUrl);
   const updatedLabel = currentUser?.resumeUpdatedAt ? fmtDate(currentUser.resumeUpdatedAt) : '';
-  const resumeQuickWin = (prepHub?.quickWins || []).find(item => (item?.tags || []).some(tag => String(tag).toLowerCase().includes('resume')));
   const active = resumeIntelligence?.activeResume || null;
   const history = Array.isArray(resumeIntelligence?.resumeHistory) ? resumeIntelligence.resumeHistory : [];
   if (resumeIntelligenceLoading && !active && !history.length) {
@@ -5109,7 +5110,6 @@ function renderResumePanel() {
         </div>
       </div>
     ` : '<div class="empty-state"><p>No resume uploaded yet.</p></div>'}
-    ${resumeQuickWin ? `<div class="prep-resume-tip"><strong>${esc(resumeQuickWin.title || 'Resume quick win')}</strong><p>${esc(resumeQuickWin.description || '')}</p></div>` : ''}
     ${history.length > 1 ? `
       <div class="resume-history-wrap">
         <strong>Resume versions</strong>
@@ -5280,9 +5280,8 @@ function renderPrepHistoryPanel() {
   const atsTrend = Array.isArray(resumeIntelligence?.atsScoreTrend) ? resumeIntelligence.atsScoreTrend : [];
   const readinessTrend = Array.isArray(resumeIntelligence?.readinessTrend) ? resumeIntelligence.readinessTrend : [];
   const roadmap = Array.isArray(resumeIntelligence?.roadmap) ? resumeIntelligence.roadmap : [];
-  const completedModules = Number(resumeIntelligence?.completedPrepModules || 0);
   host.innerHTML = `
-    <div class="panel-head"><h2>Progress and history</h2><span class="badge badge-gray">${completedModules} modules</span></div>
+    <div class="panel-head"><h2>Progress and history</h2><span class="badge badge-gray">Real activity only</span></div>
     <div class="prep-history-columns">
       <article class="prep-intel-card">
         <strong>ATS trend</strong>
@@ -5312,7 +5311,7 @@ function renderPrepHistoryPanel() {
               ${(step.focusAreas || []).slice(0, 4).map(item => `<span>${esc(item)}</span>`).join('')}
             </div>
           </div>
-        `).join('') : '<p class="availability-summary-note">Roadmap appears after resume intelligence is available.</p>'}
+        `).join('') : '<p class="availability-summary-note">No preparation roadmap yet. Admin-managed roadmap modules will appear in the category tabs after publication.</p>'}
       </div>
     </article>
   `;
@@ -5467,7 +5466,7 @@ function prepUpcomingSessions() {
 
 function prepNextAction(nextSession) {
   const highPriority = (resumeIntelligence?.recommendations || []).find(item => String(item?.priority || '').toLowerCase() === 'high');
-  const quickWin = (prepHub?.quickWins || [])[0];
+  const module = (prepHub?.modules || [])[0];
   if (!currentUser?.resumeUrl) {
     return {
       badge: 'Resume first',
@@ -5497,19 +5496,19 @@ function prepNextAction(nextSession) {
       onclick: 'openPrepAdvanced("intelligence")',
     };
   }
-  if (quickWin) {
+  if (module) {
     return {
-      badge: quickWin.type || 'Quick win',
-      title: quickWin.title || 'Start one focused practice loop.',
-      description: quickWin.description || 'Pick one short action and keep your preparation momentum moving.',
-      actionLabel: quickWin.actionLabel || 'Start now',
-      onclick: `setPrepCategory(${JSON.stringify(prepCategoryForPrepItem(quickWin))})`,
+      badge: module.category || 'Prep module',
+      title: module.title || 'Open a foundational prep module.',
+      description: module.description || 'Admin-managed modules appear here when published.',
+      actionLabel: 'View module',
+      onclick: `setPrepCategory(${JSON.stringify(prepCategoryForPrepItem(module))})`,
     };
   }
   return {
     badge: 'Setup',
-    title: 'Choose one preparation focus for this week.',
-    description: 'Add topics, book a session, or upload a resume to make this workspace more personalized.',
+    title: 'No preparation modules are published yet.',
+    description: 'Your resume, interviews, and feedback will appear here as real preparation data becomes available.',
     actionLabel: 'Open coding prep',
     onclick: 'setPrepCategory("coding")',
   };
@@ -5519,7 +5518,14 @@ function prepCurrentFocus(nextSession) {
   const weak = Array.isArray(resumeIntelligence?.weakAreas) ? resumeIntelligence.weakAreas : [];
   const recommendedTopics = Array.isArray(resumeIntelligence?.recommendedTopics) ? resumeIntelligence.recommendedTopics : [];
   const primaryTopics = Array.isArray(prepHub?.primaryTopics) ? prepHub.primaryTopics : [];
-  const topic = weak[0] || sessionTopics(nextSession || {})[0] || recommendedTopics[0] || primaryTopics[0] || 'Interview fundamentals';
+  const topic = weak[0] || sessionTopics(nextSession || {})[0] || recommendedTopics[0] || primaryTopics[0] || '';
+  if (!topic) {
+    return {
+      title: 'No focus selected yet',
+      description: 'Add interview topics, upload a resume, or complete an interview to create real prep signals.',
+      category: 'coding',
+    };
+  }
   const category = prepCategoryForTopic(topic);
   const isSystemDesign = String(topic).toLowerCase().includes('system');
   return {
@@ -5589,7 +5595,7 @@ function renderPrepPanels() {
     return;
   }
   if (!prepHub) {
-    resourcesHost.innerHTML = '<h2>Preparation categories</h2>' + emptyState('Personalized preparation data is not available right now.');
+    resourcesHost.innerHTML = '<h2>Preparation categories</h2>' + emptyState('Preparation data is not available right now.');
     return;
   }
   const tabs = prepCategoryTabs();
@@ -5599,7 +5605,7 @@ function renderPrepPanels() {
     <div class="panel-head prep-category-head">
       <div>
         <h2>Preparation categories</h2>
-        <p class="availability-summary-note">Choose one lane at a time. Personalized system modules stay first; core and expert-guided packs sit underneath.</p>
+        <p class="availability-summary-note">Choose one lane at a time. Published modules are admin-managed platform content; analytics only appear when backed by resume, interview, or feedback data.</p>
       </div>
       <span class="badge badge-purple">${esc(prepHub.persona || 'Personalized')}</span>
     </div>
@@ -5632,67 +5638,54 @@ function prepCategoryHeadline(category) {
 function renderPrepCategoryContent(category) {
   const summaryTopics = Array.isArray(prepHub.primaryTopics) ? prepHub.primaryTopics : [];
   const summaryCompanies = Array.isArray(prepHub.targetCompanies) ? prepHub.targetCompanies : [];
-  const quickWins = Array.isArray(prepHub.quickWins) ? prepHub.quickWins : [];
-  const resources = Array.isArray(prepHub.resources) ? prepHub.resources : [];
-  const roleTracks = Array.isArray(prepHub.roleTracks) ? prepHub.roleTracks : [];
-  const companyTracks = Array.isArray(prepHub.companyTracks) ? prepHub.companyTracks : [];
-  const codingTracks = Array.isArray(prepHub.codingTracks) ? prepHub.codingTracks : [];
-  const behavioralTracks = Array.isArray(prepHub.behavioralTracks) ? prepHub.behavioralTracks : [];
-  const allPersonalized = [...quickWins, ...resources];
+  const modules = Array.isArray(prepHub.modules) ? prepHub.modules : [];
 
   if (category === 'coding') {
-    const personalized = prepFilterItems(allPersonalized, ['coding', 'topic', 'practice', 'drill', 'dsa', 'technical']);
+    const codingModules = prepModulesForCategory(modules, ['coding', 'dsa', 'technical']);
     return [
       renderPrepContextStrip(summaryTopics, 'Primary topics', 'Add topics in your profile to sharpen this lane.'),
-      renderPrepModuleGroup('Personalized system modules', 'Primary recommendation surface', personalized.map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
-      renderPrepModuleGroup('Core platform modules', 'Platform-managed foundations', codingTracks.map(item => renderPrepTrackCard(item, 'Core platform')).join('')),
+      renderPrepModuleGroup('Foundational platform modules', 'Admin-managed content', codingModules.map(renderPrepModuleCard).join(''), 'No coding modules available yet. Modules will appear after an admin publishes them.'),
     ].join('');
   }
 
   if (category === 'behavioral') {
-    const personalized = prepFilterItems(allPersonalized, ['behavior', 'intro', 'story', 'impact', 'communication', 'role']);
+    const behavioralModules = prepModulesForCategory(modules, ['behavioral', 'hr rounds', 'communication']);
     return [
-      renderPrepModuleGroup('Personalized system modules', 'Generated from resume, goals, and feedback', personalized.map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
-      renderPrepModuleGroup('Core platform modules', 'Platform-managed behavioral basics', behavioralTracks.map(item => renderPrepTrackCard(item, 'Core platform')).join('')),
-      renderPrepModuleGroup('Role-aware modules', 'Personalized by your target role', roleTracks.map(item => renderPrepTrackCard(item, 'Personalized system')).join('')),
+      renderPrepModuleGroup('Foundational platform modules', 'Admin-managed content', behavioralModules.map(renderPrepModuleCard).join(''), 'No behavioral modules available yet. Modules will appear after an admin publishes them.'),
+      renderFeedbackBackedInsights(),
     ].join('');
   }
 
   if (category === 'resume') {
-    const resumeItems = prepFilterItems(allPersonalized, ['resume', 'ats', 'bullet', 'talking point', 'jd']);
+    const resumeModules = prepModulesForCategory(modules, ['resume']);
     const active = resumeIntelligence?.activeResume || null;
     return [
       renderPrepResumeSummary(active),
-      renderPrepModuleGroup('Personalized system modules', 'Generated from resume analysis and profile context', resumeItems.map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
-      renderPrepModuleGroup('Core platform modules', 'Platform-managed resume foundations', renderStaticPrepModule('Resume foundations', 'Tighten measurable impact, role keywords, and project framing before each interview.', ['Impact metrics', 'Keyword alignment', 'Project clarity'], currentUser?.resumeUrl ? 58 : 18, 'Core platform')),
+      renderPrepModuleGroup('Foundational platform modules', 'Admin-managed content', resumeModules.map(renderPrepModuleCard).join(''), 'No resume modules available yet. Modules will appear after an admin publishes them.'),
     ].join('');
   }
 
   if (category === 'system-design') {
-    const systemTracks = codingTracks.filter(item => prepItemText(item).includes('system') || prepItemText(item).includes('design') || prepItemText(item).includes('architecture'));
-    const personalized = prepFilterItems(allPersonalized, ['system', 'design', 'architecture', 'tradeoff', 'capacity']);
+    const systemModules = prepModulesForCategory(modules, ['system design']);
     return [
-      renderPrepModuleGroup('Personalized system modules', 'Prioritized from weak topics and upcoming sessions', personalized.map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
-      renderPrepModuleGroup('Core platform modules', 'Platform-managed system design fundamentals', (systemTracks.length ? systemTracks : codingTracks.slice(0, 1)).map(item => renderPrepTrackCard(item, 'Core platform')).join('')),
-      renderPrepModuleGroup('Expert-guided modules', 'Mentor-created and interviewer-aligned prep packs', companyTracks.slice(0, 2).map(item => renderPrepTrackCard(item, 'Expert-guided')).join('')),
+      renderPrepModuleGroup('Foundational platform modules', 'Admin-managed content', systemModules.map(renderPrepModuleCard).join(''), 'No system design modules available yet. Modules will appear after an admin publishes them.'),
     ].join('');
   }
 
   if (category === 'company') {
+    const companyModules = prepModulesForCategory(modules, ['company prep']);
     return [
       renderPrepContextStrip(summaryCompanies, 'Company focus', 'Save interviewers or book company-specific sessions to enrich this lane.'),
-      renderPrepModuleGroup('Personalized system modules', 'Generated from booked interviews and saved interviewer signals', prepFilterItems(allPersonalized, ['company', 'loop', 'session', 'brief']).map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
-      renderPrepModuleGroup('Interviewer-created modules', 'Mentor-created and expert-guided content', companyTracks.map(item => renderPrepTrackCard(item, 'Interviewer-authored')).join('')),
+      renderPrepModuleGroup('Foundational platform modules', 'Admin-managed content', companyModules.map(renderPrepModuleCard).join(''), 'No company prep modules available yet. Modules will appear after an admin publishes them.'),
     ].join('');
   }
 
   return [
     renderPrepHistorySummary(),
-    renderPrepModuleGroup('Personalized system modules', 'Generated from feedback history and completed interviews', prepFilterItems(allPersonalized, ['history', 'feedback', 'session', 'reflection', 'debrief']).map(item => renderPrepResourceCard(item, quickWins.includes(item), 'Personalized system')).join('')),
     renderPrepModuleGroup('Advanced insights', 'Collapsed by default to keep the hub calm', `
       <button class="prep-insight-link" type="button" onclick="openPrepAdvanced('history')">
         <strong>Open trends and historical analytics</strong>
-        <span>Readiness trends, ATS history, roadmap, and completed module counts.</span>
+        <span>Only resume uploads, JD matches, completed interviews, and submitted feedback are shown.</span>
       </button>
     `),
   ].join('');
@@ -5707,7 +5700,7 @@ function renderPrepContextStrip(items, title, fallback) {
   `;
 }
 
-function renderPrepModuleGroup(title, label, content) {
+function renderPrepModuleGroup(title, label, content, emptyText = 'No modules available yet.') {
   return `
     <section class="prep-module-group">
       <div class="prep-module-group-head">
@@ -5715,10 +5708,53 @@ function renderPrepModuleGroup(title, label, content) {
         <span>${esc(label)}</span>
       </div>
       <div class="prep-module-grid">
-        ${content || '<div class="empty-state"><p>No modules in this lane yet. Add profile context, book interviews, or complete feedback to generate more specific prep.</p></div>'}
+        ${content || `<div class="empty-state"><p>${esc(emptyText)}</p></div>`}
       </div>
     </section>
   `;
+}
+
+function prepModulesForCategory(modules, categories) {
+  const wanted = categories.map(item => String(item || '').toLowerCase());
+  return (modules || []).filter(module => wanted.includes(String(module.category || '').toLowerCase()));
+}
+
+function renderPrepModuleCard(module) {
+  const resources = Array.isArray(module?.resources) ? module.resources : [];
+  const tags = Array.isArray(module?.tags) ? module.tags : [];
+  return `
+    <article class="prep-track-card prep-card">
+      <div class="prep-card-head">
+        <strong>${esc(module?.title || 'Preparation module')}</strong>
+        <span class="badge badge-gray">${esc(module?.difficulty || 'Foundational')}</span>
+      </div>
+      <p>${esc(module?.description || '')}</p>
+      <div class="tag-row">
+        ${module?.estimatedDurationMinutes ? `<span>${esc(String(module.estimatedDurationMinutes))} min</span>` : ''}
+        ${tags.slice(0, 5).map(tag => `<span>${esc(tag)}</span>`).join('')}
+      </div>
+      ${resources.length ? `
+        <div class="prep-resource-links">
+          ${resources.slice(0, 4).map(link => `<a href="${esc(link.url)}" target="_blank" rel="noreferrer">${esc(link.label || link.url)}</a>`).join('')}
+        </div>
+      ` : ''}
+      <div class="tag-row subtle"><span>Admin-managed</span><span>${esc(module?.category || 'Module')}</span></div>
+    </article>
+  `;
+}
+
+function renderFeedbackBackedInsights() {
+  const weak = Array.isArray(resumeIntelligence?.weakAreas) ? resumeIntelligence.weakAreas : [];
+  if (!feedbackItems.length && !weak.length) {
+    return renderPrepModuleGroup('Interview feedback insights', 'Real interview data', '', 'No interview feedback available yet. Complete interviews to build preparation analytics.');
+  }
+  return renderPrepModuleGroup('Interview feedback insights', 'Real interview data', `
+    <article class="prep-summary-card">
+      <strong>${esc(String(feedbackItems.length))}</strong>
+      <span>feedback items submitted</span>
+    </article>
+    ${weak.length ? `<article class="prep-summary-card"><strong>Weak areas</strong><div class="tag-row">${weak.slice(0, 6).map(item => `<span>${esc(item)}</span>`).join('')}</div></article>` : ''}
+  `);
 }
 
 function renderPrepResumeSummary(active) {
@@ -5738,83 +5774,11 @@ function renderPrepResumeSummary(active) {
 function renderPrepHistorySummary() {
   const completed = sessions.filter(item => String(item?.status || '').toUpperCase() === 'COMPLETED').length;
   const feedbackCount = feedbackItems.length;
-  const completedModules = Number(resumeIntelligence?.completedPrepModules || 0);
   return `
     <div class="prep-summary-grid">
       <article class="prep-summary-card"><strong>${completed}</strong><span>completed interviews</span></article>
       <article class="prep-summary-card"><strong>${feedbackCount}</strong><span>feedback items</span></article>
-      <article class="prep-summary-card"><strong>${completedModules}</strong><span>completed prep modules</span></article>
     </div>
-  `;
-}
-
-function renderStaticPrepModule(title, summary, focusAreas, progress, sourceLabel) {
-  return renderPrepTrackCard({ title, summary, focusAreas, progressPercent: progress, stage: prepStage(progress), signals: [sourceLabel] }, sourceLabel);
-}
-
-function prepFilterItems(items, keywords) {
-  const matches = (items || []).filter(item => keywords.some(keyword => prepItemText(item).includes(keyword)));
-  return matches.length ? matches : (items || []).slice(0, 3);
-}
-
-function prepItemText(item) {
-  return [
-    item?.title,
-    item?.summary,
-    item?.description,
-    item?.type,
-    item?.stage,
-    ...(item?.tags || []),
-    ...(item?.signals || []),
-    ...(item?.focusAreas || []),
-  ].filter(Boolean).join(' ').toLowerCase();
-}
-
-function renderPrepTrackCard(item, sourceLabel = '') {
-  const progress = clampPercent(item?.progressPercent);
-  const stage = item?.stage || prepStage(progress);
-  return `
-    <article class="prep-track-card prep-card">
-      <div class="prep-card-head">
-        <strong>${esc(item?.title || 'Preparation track')}</strong>
-        <span class="badge badge-gray">${esc(stage)}</span>
-      </div>
-      <p>${esc(item?.summary || 'Track summary unavailable.')}</p>
-      <div class="prep-progress-row">
-        <div class="prep-progress"><i style="width:${progress}%"></i></div>
-        <span>${progress}%</span>
-      </div>
-      <div class="tag-row">${(item?.focusAreas || []).slice(0, 6).map(point => `<span>${esc(point)}</span>`).join('')}</div>
-      <div class="tag-row subtle">
-        ${sourceLabel ? `<span>${esc(sourceLabel)}</span>` : ''}
-        ${(item?.signals || []).map(signal => `<span>${esc(signal)}</span>`).join('')}
-      </div>
-    </article>
-  `;
-}
-
-function renderPrepResourceCard(item, isQuickWin, sourceLabel = '') {
-  const progress = clampPercent(item?.progressPercent);
-  const badges = Array.isArray(item?.tags) ? item.tags : [];
-  return `
-    <article class="resource-item prep-resource-card ${isQuickWin ? 'quick-win' : ''}">
-      <div class="prep-card-head">
-        <strong>${esc(item?.title || 'Prep resource')}</strong>
-        <span class="badge ${isQuickWin ? 'badge-green' : 'badge-gray'}">${esc(item?.type || (isQuickWin ? 'Quick win' : 'Resource'))}</span>
-      </div>
-      <p>${esc(item?.description || '')}</p>
-      <div class="prep-progress-row">
-        <div class="prep-progress"><i style="width:${progress}%"></i></div>
-        <span>${progress}%</span>
-      </div>
-      <div class="prep-resource-foot">
-        <div class="tag-row subtle">
-          ${sourceLabel ? `<span>${esc(sourceLabel)}</span>` : ''}
-          ${badges.slice(0, 4).map(tag => `<span>${esc(tag)}</span>`).join('')}
-        </div>
-        <span class="prep-action-label">${esc(item?.actionLabel || 'Open')}</span>
-      </div>
-    </article>
   `;
 }
 
@@ -5833,13 +5797,6 @@ function prepProfileSignature() {
     resumeUpdatedAt: currentUser.resumeUpdatedAt || '',
   };
   return JSON.stringify(data);
-}
-
-function prepStage(progress) {
-  if (progress >= 75) return 'Strong';
-  if (progress >= 50) return 'Building';
-  if (progress >= 30) return 'Foundation';
-  return 'Starting';
 }
 
 function clampPercent(value) {
@@ -7738,6 +7695,7 @@ async function loadAdminData(force = false) {
     api('/api/admin/trust-dashboard'),
     api(`/api/admin/audit-logs?${buildAuditQuery()}`),
     api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
+    api('/api/admin/prep-modules'),
   ];
   const results = await Promise.allSettled(requests);
   const valueAt = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
@@ -7749,6 +7707,7 @@ async function loadAdminData(force = false) {
   const trustDashboard = valueAt(5, adminTrustDashboard);
   const auditLogPage = valueAt(6, adminAuditLogPage);
   const analytics = valueAt(7, adminAnalytics);
+  const prepModules = valueAt(8, adminPrepModules);
   adminOverview = overview || null;
   adminUsersPage = usersPage || null;
   adminSessionsPage = sessionsPage || null;
@@ -7761,6 +7720,7 @@ async function loadAdminData(force = false) {
   adminTrustDashboard = trustDashboard || null;
   adminAuditLogPage = auditLogPage || null;
   adminAnalytics = analytics || null;
+  adminPrepModules = Array.isArray(prepModules) ? prepModules : [];
   const failed = results.find(result => result.status === 'rejected');
   if (failed) {
     toast(failed.reason?.message || 'Could not load some admin data.', 'error');
@@ -7777,6 +7737,7 @@ function renderAdminPanels() {
   renderAdminReports();
   renderAdminAudit();
   renderAdminAnalytics();
+  renderAdminPrepModules();
 }
 
 function renderAdminOverview() {
@@ -8111,6 +8072,203 @@ function renderAdminAnalytics() {
       ${chart('Cancellation trend', adminAnalytics?.cancellationTrend || [])}
     </div>
   `;
+}
+
+function renderAdminPrepModules() {
+  const host = document.getElementById('admin-prep-modules-panel');
+  if (!host) return;
+  const editing = adminPrepModules.find(item => item.id === prepModuleEditingId) || null;
+  const form = prepModuleFormValues(editing);
+  host.innerHTML = `
+    <div class="admin-prep-layout">
+      <form class="admin-prep-form" onsubmit="submitPrepModule(event)">
+        <div class="panel-head">
+          <h2>${editing ? 'Edit module' : 'Create module'}</h2>
+          ${editing ? '<button class="btn btn-ghost btn-sm" type="button" onclick="cancelPrepModuleEdit()">Cancel edit</button>' : ''}
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="prep-module-title">Title</label>
+            <input id="prep-module-title" value="${esc(form.title)}" required placeholder="System design fundamentals" />
+          </div>
+          <div class="form-group">
+            <label for="prep-module-category">Category</label>
+            <select id="prep-module-category">
+              ${prepModuleCategories().map(category => `<option value="${esc(category)}" ${form.category === category ? 'selected' : ''}>${esc(category)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="prep-module-difficulty">Difficulty</label>
+            <select id="prep-module-difficulty">
+              ${['Foundational', 'Intermediate', 'Advanced'].map(level => `<option value="${level}" ${form.difficulty === level ? 'selected' : ''}>${level}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="prep-module-duration">Estimated duration</label>
+            <input id="prep-module-duration" type="number" min="1" step="1" value="${esc(form.estimatedDurationMinutes || '')}" placeholder="45" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="prep-module-description">Description</label>
+          <textarea id="prep-module-description" required placeholder="Describe what candidates will learn and when they should use it.">${esc(form.description)}</textarea>
+        </div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="prep-module-tags">Tags/topics</label>
+            <input id="prep-module-tags" value="${esc((form.tags || []).join(', '))}" placeholder="API design, scalability, tradeoffs" />
+          </div>
+          <div class="form-group">
+            <label for="prep-module-status">Visibility</label>
+            <select id="prep-module-status">
+              ${['DRAFT', 'PUBLISHED', 'ARCHIVED'].map(status => `<option value="${status}" ${form.visibilityStatus === status ? 'selected' : ''}>${status}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="prep-module-resources">Optional resources</label>
+          <textarea id="prep-module-resources" placeholder="Label | https://example.com/resource">${esc((form.resources || []).map(item => `${item.label || ''} | ${item.url || ''}`).join('\n'))}</textarea>
+          <small class="availability-summary-note">One resource per line. Use "Label | URL".</small>
+        </div>
+        <button class="btn btn-primary" type="submit">${editing ? 'Save module' : 'Create module'}</button>
+      </form>
+      <div class="admin-prep-list">
+        <div class="panel-head">
+          <h2>Managed modules</h2>
+          <span class="badge badge-gray">${esc(String(adminPrepModules.length))}</span>
+        </div>
+        <div class="admin-table">
+          ${adminPrepModules.map(module => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(module.title || 'Untitled module')}</strong>
+                  <span class="badge badge-${module.visibilityStatus === 'PUBLISHED' ? 'green' : module.visibilityStatus === 'ARCHIVED' ? 'gray' : 'yellow'}">${esc(module.visibilityStatus || 'DRAFT')}</span>
+                </div>
+                <p>${esc(module.description || '')}</p>
+                <div class="tag-row">
+                  <span>${esc(module.category || 'Uncategorized')}</span>
+                  <span>${esc(module.difficulty || 'Foundational')}</span>
+                  ${module.estimatedDurationMinutes ? `<span>${esc(String(module.estimatedDurationMinutes))} min</span>` : ''}
+                  ${(module.tags || []).slice(0, 4).map(tag => `<span>${esc(tag)}</span>`).join('')}
+                </div>
+                <small>Updated ${esc(fmtDate(module.updatedAt || module.createdAt))}</small>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-outline btn-sm" type="button" onclick="editPrepModule(${jsArg(module.id)})">Edit</button>
+                <button class="btn btn-outline btn-sm" type="button" onclick="togglePrepModulePublish(${jsArg(module.id)}, ${jsArg(module.visibilityStatus === 'PUBLISHED' ? 'DRAFT' : 'PUBLISHED')})">${module.visibilityStatus === 'PUBLISHED' ? 'Unpublish' : 'Publish'}</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="deletePrepModule(${jsArg(module.id)})">Delete</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No preparation modules yet. Create one to publish foundational prep content.')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function prepModuleFormValues(module) {
+  return module || {
+    title: '',
+    description: '',
+    category: 'Coding',
+    difficulty: 'Foundational',
+    tags: [],
+    estimatedDurationMinutes: '',
+    visibilityStatus: 'DRAFT',
+    resources: [],
+  };
+}
+
+function prepModuleCategories() {
+  return ['Coding', 'Behavioral', 'System Design', 'Resume', 'Company Prep', 'HR Rounds', 'Communication'];
+}
+
+function collectPrepModulePayload() {
+  const resources = String(document.getElementById('prep-module-resources')?.value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const parts = line.split('|').map(part => part.trim());
+      return parts.length > 1 ? { label: parts[0], url: parts.slice(1).join('|').trim() } : { label: parts[0], url: parts[0] };
+    })
+    .filter(item => item.url);
+  return {
+    title: String(document.getElementById('prep-module-title')?.value || '').trim(),
+    description: String(document.getElementById('prep-module-description')?.value || '').trim(),
+    category: String(document.getElementById('prep-module-category')?.value || '').trim(),
+    difficulty: String(document.getElementById('prep-module-difficulty')?.value || '').trim(),
+    tags: splitList(document.getElementById('prep-module-tags')?.value || ''),
+    estimatedDurationMinutes: Number(document.getElementById('prep-module-duration')?.value || 0) || null,
+    visibilityStatus: String(document.getElementById('prep-module-status')?.value || 'DRAFT').trim(),
+    resources,
+  };
+}
+
+async function submitPrepModule(event) {
+  event.preventDefault();
+  const payload = collectPrepModulePayload();
+  try {
+    if (prepModuleEditingId) {
+      await api(`/api/admin/prep-modules/${encodeURIComponent(prepModuleEditingId)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      toast('Preparation module updated.', 'success');
+    } else {
+      await api('/api/admin/prep-modules', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      toast('Preparation module created.', 'success');
+    }
+    prepModuleEditingId = null;
+    await loadAdminData(true);
+    prepHubSignature = '';
+    await loadPrepHub();
+  } catch (err) {
+    toast(err.message || 'Could not save preparation module.', 'error');
+  }
+}
+
+function editPrepModule(moduleId) {
+  prepModuleEditingId = moduleId;
+  renderAdminPrepModules();
+  document.getElementById('admin-prep-modules-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function cancelPrepModuleEdit() {
+  prepModuleEditingId = null;
+  renderAdminPrepModules();
+}
+
+async function togglePrepModulePublish(moduleId, visibilityStatus) {
+  try {
+    await api(`/api/admin/prep-modules/${encodeURIComponent(moduleId)}/visibility`, {
+      method: 'PATCH',
+      body: JSON.stringify({ visibilityStatus }),
+    });
+    toast(visibilityStatus === 'PUBLISHED' ? 'Module published.' : 'Module unpublished.', 'success');
+    await loadAdminData(true);
+    prepHubSignature = '';
+    await loadPrepHub();
+  } catch (err) {
+    toast(err.message || 'Could not update module visibility.', 'error');
+  }
+}
+
+async function deletePrepModule(moduleId) {
+  if (!window.confirm('Delete this preparation module?')) return;
+  try {
+    await api(`/api/admin/prep-modules/${encodeURIComponent(moduleId)}`, { method: 'DELETE' });
+    if (prepModuleEditingId === moduleId) prepModuleEditingId = null;
+    toast('Preparation module deleted.', 'success');
+    await loadAdminData(true);
+    prepHubSignature = '';
+    await loadPrepHub();
+  } catch (err) {
+    toast(err.message || 'Could not delete preparation module.', 'error');
+  }
 }
 
 function renderServerPage(section, pageData) {

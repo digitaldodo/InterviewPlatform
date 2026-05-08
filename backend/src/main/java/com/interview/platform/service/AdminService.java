@@ -5,11 +5,13 @@ import com.interview.platform.dto.PageResponse;
 import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.ModerationAuditLog;
+import com.interview.platform.model.PrepModule;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.ModerationAuditLogRepository;
+import com.interview.platform.repository.PrepModuleRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserReportRepository;
 import com.interview.platform.repository.UserRepository;
@@ -48,6 +50,7 @@ public class AdminService {
     private final ModerationAuditLogRepository moderationAuditLogRepository;
     private final TrustSignalService trustSignalService;
     private final CacheInvalidationService cacheInvalidationService;
+    private final PrepModuleRepository prepModuleRepository;
 
     public AdminService(UserRepository userRepository,
                         SessionRepository sessionRepository,
@@ -56,7 +59,8 @@ public class AdminService {
                         ModerationAuditService moderationAuditService,
                         ModerationAuditLogRepository moderationAuditLogRepository,
                         TrustSignalService trustSignalService,
-                        CacheInvalidationService cacheInvalidationService) {
+                        CacheInvalidationService cacheInvalidationService,
+                        PrepModuleRepository prepModuleRepository) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.userReportRepository = userReportRepository;
@@ -65,6 +69,7 @@ public class AdminService {
         this.moderationAuditLogRepository = moderationAuditLogRepository;
         this.trustSignalService = trustSignalService;
         this.cacheInvalidationService = cacheInvalidationService;
+        this.prepModuleRepository = prepModuleRepository;
     }
 
     public AdminDtos.OverviewResponse overview() {
@@ -809,6 +814,119 @@ public class AdminService {
         Map<String, User> userIndex = users.stream().collect(Collectors.toMap(User::getId, user -> user, (left, right) -> left));
         Map<String, Session> sessionIndex = sessions.stream().collect(Collectors.toMap(Session::getId, session -> session, (left, right) -> left));
         return toReviewQueueItem(saved, userIndex, sessionIndex, sessions, reviews, reports);
+    }
+
+    public List<AdminDtos.PrepModuleItem> prepModules() {
+        return prepModuleRepository.findAll().stream()
+                .sorted(Comparator.comparing((PrepModule module) -> module.getUpdatedAt() == null ? Instant.EPOCH : module.getUpdatedAt()).reversed())
+                .map(this::toPrepModuleItem)
+                .toList();
+    }
+
+    public AdminDtos.PrepModuleItem createPrepModule(AdminDtos.PrepModuleRequest request, String adminId) {
+        PrepModule module = new PrepModule();
+        module.setCreatedAt(Instant.now());
+        module.setCreatedByAdminId(adminId);
+        applyPrepModuleRequest(module, request);
+        return toPrepModuleItem(prepModuleRepository.save(module));
+    }
+
+    public AdminDtos.PrepModuleItem updatePrepModule(String moduleId, AdminDtos.PrepModuleRequest request) {
+        PrepModule module = prepModuleRepository.findById(moduleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Preparation module not found"));
+        applyPrepModuleRequest(module, request);
+        return toPrepModuleItem(prepModuleRepository.save(module));
+    }
+
+    public AdminDtos.PrepModuleItem setPrepModuleVisibility(String moduleId, String visibilityStatus) {
+        PrepModule module = prepModuleRepository.findById(moduleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Preparation module not found"));
+        module.setVisibilityStatus(resolvePrepModuleStatus(visibilityStatus));
+        module.setPublishedAt("PUBLISHED".equals(module.getVisibilityStatus()) ? Instant.now() : null);
+        module.setUpdatedAt(Instant.now());
+        return toPrepModuleItem(prepModuleRepository.save(module));
+    }
+
+    public void deletePrepModule(String moduleId) {
+        if (!prepModuleRepository.existsById(moduleId)) {
+            throw new ResourceNotFoundException("Preparation module not found");
+        }
+        prepModuleRepository.deleteById(moduleId);
+    }
+
+    private void applyPrepModuleRequest(PrepModule module, AdminDtos.PrepModuleRequest request) {
+        if (request == null) throw new IllegalArgumentException("Module details are required");
+        module.setTitle(requirePrepText(request.getTitle(), "Module title is required"));
+        module.setDescription(requirePrepText(request.getDescription(), "Module description is required"));
+        module.setCategory(resolvePrepCategory(request.getCategory()));
+        module.setDifficulty(resolvePrepDifficulty(request.getDifficulty()));
+        module.setTags(request.getTags());
+        module.setEstimatedDurationMinutes(request.getEstimatedDurationMinutes());
+        module.setResources(toPrepResourceLinks(request.getResources()));
+        module.setVisibilityStatus(resolvePrepModuleStatus(request.getVisibilityStatus()));
+        module.setPublishedAt("PUBLISHED".equals(module.getVisibilityStatus()) ? (module.getPublishedAt() == null ? Instant.now() : module.getPublishedAt()) : null);
+        module.setUpdatedAt(Instant.now());
+    }
+
+    private List<PrepModule.ResourceLink> toPrepResourceLinks(List<AdminDtos.PrepModuleResourceRequest> requests) {
+        if (requests == null) return List.of();
+        List<PrepModule.ResourceLink> links = new ArrayList<>();
+        for (AdminDtos.PrepModuleResourceRequest request : requests) {
+            String url = normalize(request == null ? null : request.getUrl());
+            if (url == null) continue;
+            PrepModule.ResourceLink link = new PrepModule.ResourceLink();
+            link.setLabel(normalize(request.getLabel()) == null ? url : normalize(request.getLabel()));
+            link.setUrl(url);
+            links.add(link);
+        }
+        return links.stream().limit(8).toList();
+    }
+
+    private AdminDtos.PrepModuleItem toPrepModuleItem(PrepModule module) {
+        return new AdminDtos.PrepModuleItem(
+                module.getId(),
+                module.getTitle(),
+                module.getDescription(),
+                module.getCategory(),
+                module.getDifficulty(),
+                module.getTags(),
+                module.getEstimatedDurationMinutes(),
+                module.getVisibilityStatus(),
+                module.getResources().stream()
+                        .map(item -> new AdminDtos.PrepModuleResourceItem(item.getLabel(), item.getUrl()))
+                        .toList(),
+                module.getCreatedByAdminId(),
+                toIso(module.getCreatedAt()),
+                toIso(module.getUpdatedAt()),
+                toIso(module.getPublishedAt())
+        );
+    }
+
+    private String requirePrepText(String value, String message) {
+        String normalized = normalize(value);
+        if (normalized == null) throw new IllegalArgumentException(message);
+        return normalized;
+    }
+
+    private String resolvePrepCategory(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) throw new IllegalArgumentException("Module category is required");
+        return normalized;
+    }
+
+    private String resolvePrepDifficulty(String value) {
+        String normalized = normalize(value);
+        return normalized == null ? "Foundational" : normalized;
+    }
+
+    private String resolvePrepModuleStatus(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) return "DRAFT";
+        String status = normalized.toUpperCase(Locale.ROOT);
+        if (!Set.of("DRAFT", "PUBLISHED", "ARCHIVED").contains(status)) {
+            throw new IllegalArgumentException("Choose a valid module visibility status");
+        }
+        return status;
     }
 
     private boolean matchesUserQuery(User user, String query) {

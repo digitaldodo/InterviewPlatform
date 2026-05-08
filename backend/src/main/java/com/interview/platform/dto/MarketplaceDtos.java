@@ -114,6 +114,25 @@ public class MarketplaceDtos {
             List<String> tags
     ) {}
 
+    public record PrepModuleResource(
+            String label,
+            String url
+    ) {}
+
+    public record PrepModuleCard(
+            String id,
+            String title,
+            String description,
+            String category,
+            String difficulty,
+            List<String> tags,
+            Integer estimatedDurationMinutes,
+            String visibilityStatus,
+            List<PrepModuleResource> resources,
+            String updatedAt,
+            String publishedAt
+    ) {}
+
     public record PrepHubResponse(
             String persona,
             List<String> primaryTopics,
@@ -123,6 +142,7 @@ public class MarketplaceDtos {
             List<PrepTrack> codingTracks,
             List<PrepTrack> roleTracks,
             List<PrepResource> resources,
-            List<PrepResource> quickWins
+            List<PrepResource> quickWins,
+            List<PrepModuleCard> modules
     ) {}
 }

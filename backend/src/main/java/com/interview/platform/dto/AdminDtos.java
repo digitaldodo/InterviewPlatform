@@ -64,6 +64,65 @@ public class AdminDtos {
         public void setReason(String reason) { this.reason = reason; }
     }
 
+    public static class PrepModuleResourceRequest {
+        private String label;
+        private String url;
+
+        public String getLabel() { return label; }
+        public void setLabel(String label) { this.label = label; }
+        public String getUrl() { return url; }
+        public void setUrl(String url) { this.url = url; }
+    }
+
+    public static class PrepModuleRequest {
+        private String title;
+        private String description;
+        private String category;
+        private String difficulty;
+        private List<String> tags;
+        private Integer estimatedDurationMinutes;
+        private String visibilityStatus;
+        private List<PrepModuleResourceRequest> resources;
+
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getCategory() { return category; }
+        public void setCategory(String category) { this.category = category; }
+        public String getDifficulty() { return difficulty; }
+        public void setDifficulty(String difficulty) { this.difficulty = difficulty; }
+        public List<String> getTags() { return tags; }
+        public void setTags(List<String> tags) { this.tags = tags; }
+        public Integer getEstimatedDurationMinutes() { return estimatedDurationMinutes; }
+        public void setEstimatedDurationMinutes(Integer estimatedDurationMinutes) { this.estimatedDurationMinutes = estimatedDurationMinutes; }
+        public String getVisibilityStatus() { return visibilityStatus; }
+        public void setVisibilityStatus(String visibilityStatus) { this.visibilityStatus = visibilityStatus; }
+        public List<PrepModuleResourceRequest> getResources() { return resources; }
+        public void setResources(List<PrepModuleResourceRequest> resources) { this.resources = resources; }
+    }
+
+    public record PrepModuleResourceItem(
+            String label,
+            String url
+    ) {}
+
+    public record PrepModuleItem(
+            String id,
+            String title,
+            String description,
+            String category,
+            String difficulty,
+            List<String> tags,
+            Integer estimatedDurationMinutes,
+            String visibilityStatus,
+            List<PrepModuleResourceItem> resources,
+            String createdByAdminId,
+            String createdAt,
+            String updatedAt,
+            String publishedAt
+    ) {}
+
     public record TopicCount(String topic, long count) {}
 
     public record TrendPoint(String label, long value) {}

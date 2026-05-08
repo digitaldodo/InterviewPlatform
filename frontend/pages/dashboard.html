@@ -30,6 +30,7 @@
       <button class="nav-link interviewer-only user-workspace" data-section="interviewer" onclick="showSection('interviewer')">Availability & queue</button>
       <button class="nav-link admin-only" data-section="admin-overview" onclick="showSection('admin-overview')">Control Center</button>
       <button class="nav-link admin-only" data-section="admin-analytics" onclick="showSection('admin-analytics')">Analytics</button>
+      <button class="nav-link admin-only" data-section="admin-prep" onclick="showSection('admin-prep')">Prep modules</button>
       <button class="nav-link admin-only" data-section="admin-users" onclick="showSection('admin-users')">Users</button>
       <button class="nav-link admin-only" data-section="admin-sessions" onclick="showSection('admin-sessions')">Sessions</button>
       <button class="nav-link admin-only" data-section="admin-reports" onclick="showSection('admin-reports')">Moderation</button>
@@ -386,6 +387,13 @@
         </select>
       </div>
       <section class="panel admin-panel" id="admin-users-panel"></section>
+    </section>
+
+    <section id="section-admin-prep" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Prep</p><h1>Preparation modules</h1></div>
+      </div>
+      <section class="panel admin-panel" id="admin-prep-modules-panel"></section>
     </section>
 
     <section id="section-admin-sessions" class="dashboard-section admin-only" hidden>
