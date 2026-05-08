@@ -138,4 +138,35 @@ class AdminServicePrepModuleTest {
         assertNotNull(captor.getValue().getUpdatedAt());
         assertFalse(item.createdAt() != null && item.createdAt().isBlank());
     }
+
+    @Test
+    void operationsReturnsSafeEmptyShapeWhenDataIsMissing() {
+        when(notificationRepository.findAll()).thenReturn(List.of());
+        when(platformNoticeRepository.findAllByOrderByUpdatedAtDesc()).thenReturn(List.of());
+
+        AdminDtos.AdminOpsResponse response = adminService.operations();
+
+        assertNotNull(response);
+        assertEquals(0, response.totalNotifications());
+        assertEquals(0, response.unreadNotifications());
+        assertEquals(List.of(), response.platformNotices());
+        assertEquals(List.of(), response.activeNotices());
+        assertEquals(List.of(), response.recentNotifications());
+        assertFalse(response.emailTemplates().isEmpty());
+    }
+
+    @Test
+    void operationsDegradesWhenAggregationSourcesFail() {
+        when(notificationRepository.findAll()).thenThrow(new RuntimeException("notification collection unavailable"));
+        when(platformNoticeRepository.findAllByOrderByUpdatedAtDesc()).thenReturn(null);
+
+        AdminDtos.AdminOpsResponse response = adminService.operations();
+
+        assertNotNull(response);
+        assertEquals(0, response.totalNotifications());
+        assertEquals(0, response.unreadNotifications());
+        assertEquals(List.of(), response.platformNotices());
+        assertEquals(List.of(), response.activeNotices());
+        assertEquals(List.of(), response.recentNotifications());
+    }
 }

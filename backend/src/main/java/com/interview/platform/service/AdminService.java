@@ -43,6 +43,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -95,10 +96,10 @@ public class AdminService {
     }
 
     public AdminDtos.OverviewResponse overview() {
-        List<User> users = userRepository.findAll();
-        List<Session> sessions = sessionRepository.findAll();
-        List<Feedback> reviews = feedbackRepository.findAll();
-        List<UserReport> reports = userReportRepository.findAll();
+        List<User> users = safeAdminList("admin overview users", userRepository::findAll);
+        List<Session> sessions = safeAdminList("admin overview sessions", sessionRepository::findAll);
+        List<Feedback> reviews = safeAdminList("admin overview reviews", feedbackRepository::findAll);
+        List<UserReport> reports = safeAdminList("admin overview reports", userReportRepository::findAll);
         List<Feedback> publicReviews = reviews.stream().filter(item -> Boolean.TRUE.equals(item.getPublicReview())).toList();
 
         long totalUsers = users.size();
@@ -196,10 +197,10 @@ public class AdminService {
         LocalDate today = LocalDate.now(ZoneOffset.UTC);
         LocalDate start = today.minusDays(safeDays - 1L);
 
-        List<User> users = userRepository.findAll();
-        List<Session> sessions = sessionRepository.findAll();
-        List<Feedback> reviews = feedbackRepository.findAll();
-        List<UserReport> reports = userReportRepository.findAll();
+        List<User> users = safeAdminList("admin analytics users", userRepository::findAll);
+        List<Session> sessions = safeAdminList("admin analytics sessions", sessionRepository::findAll);
+        List<Feedback> reviews = safeAdminList("admin analytics reviews", feedbackRepository::findAll);
+        List<UserReport> reports = safeAdminList("admin analytics reports", userReportRepository::findAll);
 
         Map<LocalDate, Long> usersByDay = bucketCounts(users.stream().map(User::getCreatedAt).filter(Objects::nonNull).toList());
         Map<LocalDate, Long> sessionsByDay = bucketCounts(sessions.stream().map(session -> parseSessionInstant(session.getStartTime()).orElse(null)).filter(Objects::nonNull).toList());
@@ -907,8 +908,8 @@ public class AdminService {
     }
 
     public AdminDtos.AdminOpsResponse operations() {
-        List<Notification> notifications = notificationRepository.findAll();
-        List<PlatformNotice> notices = platformNoticeRepository.findAllByOrderByUpdatedAtDesc();
+        List<Notification> notifications = safeAdminList("admin ops notifications", notificationRepository::findAll);
+        List<PlatformNotice> notices = safeAdminList("admin ops platform notices", platformNoticeRepository::findAllByOrderByUpdatedAtDesc);
         List<AdminDtos.PlatformNoticeItem> noticeItems = notices.stream()
                 .filter(Objects::nonNull)
                 .map(this::toPlatformNoticeItem)
@@ -1395,6 +1396,20 @@ public class AdminService {
         return values.stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.groupingBy(instant -> instant.atZone(ZoneOffset.UTC).toLocalDate(), Collectors.counting()));
+    }
+
+    private <T> List<T> safeAdminList(String source, Supplier<List<T>> loader) {
+        try {
+            List<T> items = loader.get();
+            if (items == null) {
+                log.warn("Admin aggregation source={} returned null; using empty list", source);
+                return List.of();
+            }
+            return items.stream().filter(Objects::nonNull).toList();
+        } catch (RuntimeException ex) {
+            log.error("Admin aggregation failed for source={}; using empty list for degraded response", source, ex);
+            return List.of();
+        }
     }
 
     private boolean matchesAuditQuery(ModerationAuditLog log, String query) {
