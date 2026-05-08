@@ -2,13 +2,23 @@ window.addEventListener('DOMContentLoaded', loadPublicProfile);
 
 async function loadPublicProfile() {
   const root = document.getElementById('public-profile-root');
+  if (!root) return;
+  root.innerHTML = renderProfileLoading();
   const username = resolveUsername();
   if (!username) {
     root.innerHTML = renderProfileMessage('interviewer not found', 'We could not find a public interviewer profile for this link.');
     return;
   }
+  if (!isValidPublicUsername(username)) {
+    root.innerHTML = renderProfileMessage('invalid profile link', 'This profile link is not valid. Public usernames use lowercase letters, numbers, dots, underscores, or hyphens.');
+    return;
+  }
   try {
     const profile = await publicApi(`/api/interviewers/public/${encodeURIComponent(username)}`);
+    if (!profile || typeof profile !== 'object' || !String(profile.username || '').trim()) {
+      root.innerHTML = renderProfileMessage('profile unavailable', 'This interviewer profile is unavailable or no longer public.');
+      return;
+    }
     root.innerHTML = renderPublicProfile(profile);
     hydrateProfileSeo(profile);
   } catch (err) {
@@ -34,7 +44,12 @@ function normalizePublicUsername(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function isValidPublicUsername(value) {
+  return /^[a-z0-9._-]{3,24}$/.test(String(value || ''));
+}
+
 function renderPublicProfile(profile) {
+  profile = profile || {};
   const topics = arrayValues(profile.interviewTopics, 4);
   const skills = arrayValues(profile.skills, 6);
   const domains = arrayValues(profile.preferredDomains, 5);
@@ -95,8 +110,8 @@ function renderPublicProfile(profile) {
         <div class="public-slot-list">
           ${availability.map(slot => `
             <div class="public-slot-card">
-              <strong>${esc(formatDate(slot, { weekday: 'short', month: 'short', day: 'numeric' }))}</strong>
-              <span>${esc(formatDate(slot, { hour: 'numeric', minute: '2-digit' }))}</span>
+              <strong>${esc(formatDate(slot?.startTime || slot, { weekday: 'short', month: 'short', day: 'numeric' }))}</strong>
+              <span>${esc(formatDate(slot?.startTime || slot, { hour: 'numeric', minute: '2-digit' }))}</span>
             </div>
           `).join('') || `<div class="empty-state empty-state-rich"><strong>${profile.hasAvailability === false ? 'This interviewer has not added availability yet.' : 'No upcoming availability'}</strong><p>${profile.hasAvailability === false ? 'Check back later after they publish a weekly schedule.' : 'This interviewer is public, but upcoming slots are not currently published.'}</p></div>`}
         </div>
@@ -261,6 +276,15 @@ async function sharePublicProfile() {
 
 function renderProfileMessage(title, message) {
   return `<div class="panel public-profile-not-found"><div class="empty-state empty-state-rich"><strong>${esc(title || 'interviewer not found')}</strong><p>${esc(message)}</p><a class="btn btn-primary btn-sm" href="${esc(marketplaceUrl())}">Return to discovery</a></div></div>`;
+}
+
+function renderProfileLoading() {
+  return `
+    <div class="public-profile-loading">
+      <div class="panel"><div class="empty-state empty-state-rich"><strong>Loading public profile</strong><p>Gathering trust signals, reviews, and live availability.</p></div></div>
+      <div class="public-profile-sections">${skeletonCards(2, 'marketplace-skeleton')}</div>
+    </div>
+  `;
 }
 
 function arrayValues(value, limit = 6) {

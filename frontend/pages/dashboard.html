@@ -19,15 +19,15 @@
       <img class="brand-logo brand-logo-sidebar" src="../assets/brand/interviewprep-logo.png" alt="InterviewPrep" width="1503" height="236" />
     </div>
     <nav class="nav-menu" aria-label="Dashboard navigation">
-      <button class="nav-link active user-workspace" data-section="overview" onclick="showSection('overview')">Home</button>
-      <button class="nav-link interviewee-workspace user-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
-      <button class="nav-link interviewee-workspace user-workspace" data-section="booking" onclick="showSection('booking')">Booking</button>
-      <button class="nav-link user-workspace" data-section="sessions" onclick="showSection('sessions')">Sessions</button>
-      <button class="nav-link user-workspace" data-section="feedback" onclick="showSection('feedback')">Feedback</button>
-      <button class="nav-link interviewee-workspace user-workspace" data-section="career" onclick="showSection('career')">Prep</button>
+      <button class="nav-link active user-workspace" data-section="overview" data-interviewee-label="Candidate home" data-interviewer-label="Interviewer home" onclick="showSection('overview')">Home</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="discover" data-interviewee-label="Discover interviewers" onclick="showSection('discover')">Discover interviewers</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="booking" data-interviewee-label="Book interview" onclick="showSection('booking')">Book interview</button>
+      <button class="nav-link user-workspace" data-section="sessions" data-interviewee-label="My interviews" data-interviewer-label="Scheduled sessions" onclick="showSection('sessions')">Sessions</button>
+      <button class="nav-link user-workspace" data-section="feedback" data-interviewee-label="My feedback" data-interviewer-label="Feedback desk" onclick="showSection('feedback')">Feedback</button>
+      <button class="nav-link interviewee-workspace user-workspace" data-section="career" data-interviewee-label="Preparation hub" onclick="showSection('career')">Preparation hub</button>
       <button class="nav-link user-workspace" data-section="notifications" onclick="showSection('notifications')">Notifications</button>
       <button class="nav-link user-workspace" data-section="profile" onclick="showSection('profile')">Profile</button>
-      <button class="nav-link interviewer-only user-workspace" data-section="interviewer" onclick="showSection('interviewer')">Interviewer</button>
+      <button class="nav-link interviewer-only user-workspace" data-section="interviewer" onclick="showSection('interviewer')">Availability & queue</button>
       <button class="nav-link admin-only" data-section="admin-overview" onclick="showSection('admin-overview')">Control Center</button>
       <button class="nav-link admin-only" data-section="admin-analytics" onclick="showSection('admin-analytics')">Analytics</button>
       <button class="nav-link admin-only" data-section="admin-users" onclick="showSection('admin-users')">Users</button>
@@ -64,13 +64,15 @@
     </header>
 
     <section id="section-overview" class="dashboard-section user-workspace-section">
+      <div id="role-overview-hero" class="role-dashboard-hero"></div>
       <div class="stats-grid">
-        <div class="stat-card"><span id="stat-upcoming">0</span><p>Upcoming</p></div>
-        <div class="stat-card"><span id="stat-completed">0</span><p>Completed</p></div>
-        <div class="stat-card"><span id="stat-rating">-</span><p>Average rating</p></div>
+        <div class="stat-card"><span id="stat-upcoming">0</span><p id="stat-upcoming-label">Upcoming</p></div>
+        <div class="stat-card"><span id="stat-completed">0</span><p id="stat-completed-label">Completed</p></div>
+        <div class="stat-card"><span id="stat-rating">-</span><p id="stat-rating-label">Average rating</p></div>
         <div class="stat-card" id="stat-streak-card" hidden><span id="stat-streak">-</span><p>Practice streak</p></div>
       </div>
       <div id="availability-onboarding-banner"></div>
+      <div id="role-overview-panels"></div>
 
       <div class="content-grid">
         <section class="panel interviewee-workspace">
@@ -195,7 +197,7 @@
 
     <section id="section-sessions" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
-        <div><p class="eyebrow">Sessions</p><h1>Upcoming and history</h1></div>
+        <div><p class="eyebrow" id="sessions-eyebrow">Sessions</p><h1 id="sessions-heading">Upcoming and history</h1></div>
         <button class="btn btn-outline" onclick="loadSessions()">Refresh</button>
       </div>
       <div class="session-filter-row">
@@ -288,11 +290,11 @@
 
     <section id="section-interviewer" class="dashboard-section user-workspace-section" hidden>
       <div class="section-title">
-        <div><p class="eyebrow">Interviewer</p><h1>Requests, calendar, and ratings</h1></div>
+        <div><p class="eyebrow">Interviewer workspace</p><h1>Queue, calendar, and availability</h1></div>
       </div>
       <div class="content-grid">
-        <section class="panel"><h2>Incoming requests</h2><div id="incoming-requests"></div></section>
-        <section class="panel"><h2>Calendar view</h2><div id="calendar-view" class="calendar-view"></div></section>
+        <section class="panel"><div class="panel-head"><h2>Candidate queue</h2><span class="badge badge-yellow">Pending</span></div><div id="incoming-requests"></div></section>
+        <section class="panel"><div class="panel-head"><h2>Schedule snapshot</h2><button class="btn btn-ghost btn-sm" onclick="showSection('sessions')">Open sessions</button></div><div id="calendar-view" class="calendar-view"></div></section>
       </div>
       <section class="panel" id="availability-management-panel"></section>
     </section>
@@ -436,6 +438,7 @@
   <nav class="bottom-nav" aria-label="Mobile navigation">
     <button data-section="overview" onclick="showSection('overview')">Home</button>
     <button data-section="sessions" onclick="showSection('sessions')">Sessions</button>
+    <button class="interviewer-only" data-section="interviewer" onclick="showSection('interviewer')">Queue</button>
     <button class="interviewee-workspace" data-section="discover" onclick="showSection('discover')">Search</button>
     <button class="interviewee-workspace" data-section="career" onclick="showSection('career')">Prep</button>
     <button data-section="profile" onclick="showSection('profile')">Profile</button>

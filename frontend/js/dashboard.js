@@ -224,11 +224,12 @@ function initUi() {
   `;
   renderWorkspaceSwitcher(roles);
   applyWorkspaceVisibility();
+  applyRoleNavigationLabels();
   document.getElementById('primary-action').textContent = activeWorkspace === 'ADMIN'
     ? 'Open console'
     : workspace === 'interviewer'
-      ? 'View requests'
-      : 'Book session';
+      ? 'Manage queue'
+      : 'Book interview';
   renderBookingStep();
   renderResumePanel();
   renderResumeIntelligencePanel();
@@ -323,8 +324,20 @@ function applyWorkspaceVisibility() {
   document.querySelectorAll('.interviewer-only').forEach(el => el.style.display = !isAdmin && isInterviewer ? 'flex' : 'none');
   document.querySelectorAll('.interviewee-workspace').forEach(el => el.style.display = !isAdmin && isInterviewer ? 'none' : '');
   document.body.classList.toggle('interviewer-workspace-active', isInterviewer);
+  document.body.classList.toggle('interviewee-workspace-active', !isAdmin && !isInterviewer);
   document.body.classList.toggle('admin-workspace-active', isAdmin);
   document.querySelector('.bottom-nav')?.classList.toggle('hidden', isAdmin);
+}
+
+function applyRoleNavigationLabels() {
+  const key = activeWorkspace === 'INTERVIEWER' ? 'interviewerLabel' : activeWorkspace === 'INTERVIEWEE' ? 'intervieweeLabel' : '';
+  document.querySelectorAll('.nav-link').forEach(link => {
+    if (key && link.dataset[key]) link.textContent = link.dataset[key];
+  });
+  const sessionsEyebrow = document.getElementById('sessions-eyebrow');
+  const sessionsHeading = document.getElementById('sessions-heading');
+  if (sessionsEyebrow) sessionsEyebrow.textContent = activeWorkspace === 'INTERVIEWER' ? 'Session management' : 'My interviews';
+  if (sessionsHeading) sessionsHeading.textContent = activeWorkspace === 'INTERVIEWER' ? 'Scheduled sessions and candidate history' : 'Upcoming interviews and history';
 }
 
 function routeAllowed(route) {
@@ -1532,6 +1545,11 @@ function renderOverview() {
   const upcomingCount = analyticsSummary?.upcoming ?? upcoming.length;
   const completedCount = analyticsSummary?.completed ?? completed.length;
   const rating = analyticsSummary?.averageRating;
+  renderRoleOverviewHero(upcoming, completed);
+  renderRoleOverviewPanels(upcoming, completed);
+  document.getElementById('stat-upcoming-label').textContent = activeWorkspace === 'INTERVIEWER' ? 'Scheduled' : 'Upcoming';
+  document.getElementById('stat-completed-label').textContent = activeWorkspace === 'INTERVIEWER' ? 'Delivered' : 'Completed';
+  document.getElementById('stat-rating-label').textContent = activeWorkspace === 'INTERVIEWER' ? 'Interviewer rating' : 'Average rating';
   document.getElementById('stat-upcoming').textContent = String(upcomingCount);
   document.getElementById('stat-completed').textContent = String(completedCount);
   document.getElementById('stat-rating').textContent = Number.isFinite(Number(rating)) && Number(rating) > 0 ? Number(rating).toFixed(1) : (ratingValue(currentUser) || '-');
@@ -1543,8 +1561,102 @@ function renderOverview() {
     if (hasPracticeStreak) document.getElementById('stat-streak').textContent = String(Number(streakValue));
   }
   renderAvailabilityOnboardingBanner();
-  document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState('No upcoming sessions.');
+  document.getElementById('upcoming-list').innerHTML = upcoming.slice(0, 4).map(renderSessionCard).join('') || emptyState(activeWorkspace === 'INTERVIEWER' ? 'No scheduled interviews yet.' : 'No upcoming interviews yet.');
   renderSkillProgress();
+}
+
+function renderRoleOverviewHero(upcoming, completed) {
+  const host = document.getElementById('role-overview-hero');
+  if (!host || activeWorkspace === 'ADMIN') return;
+  const isInterviewer = activeWorkspace === 'INTERVIEWER';
+  const next = upcoming[0];
+  const availabilityState = availabilityLoading
+    ? 'Syncing availability'
+    : availabilityError
+      ? 'Availability needs attention'
+      : availabilitySchedules.length
+        ? `${availabilitySchedules.length} weekly windows active`
+        : 'Availability not added';
+  host.innerHTML = isInterviewer
+    ? `
+      <section class="role-hero-card interviewer-role-hero">
+        <div>
+          <span class="badge badge-purple">Interviewer workspace</span>
+          <h2>Run your interview queue with confidence.</h2>
+          <p>Approve candidate requests, keep availability current, join sessions, and submit structured feedback from one focused workspace.</p>
+        </div>
+        <div class="role-hero-actions">
+          <button class="btn btn-primary" type="button" onclick="showSection('interviewer')">Manage availability</button>
+          <button class="btn btn-outline" type="button" onclick="showSection('sessions')">Review schedule</button>
+        </div>
+        <div class="role-hero-meta">
+          <span>${esc(availabilityState)}</span>
+          <span>${esc(next ? `Next: ${fmtDate(next.startTime || next.scheduledAt)}` : 'No next session')}</span>
+        </div>
+      </section>
+    `
+    : `
+      <section class="role-hero-card interviewee-role-hero">
+        <div>
+          <span class="badge badge-green">Interviewee workspace</span>
+          <h2>Prepare, book, and improve faster.</h2>
+          <p>Discover interviewers, reserve realistic sessions, track feedback, and keep your candidate context ready for every mock interview.</p>
+        </div>
+        <div class="role-hero-actions">
+          <button class="btn btn-primary" type="button" onclick="showSection('booking')">Book interview</button>
+          <button class="btn btn-outline" type="button" onclick="showSection('career')">Open prep hub</button>
+        </div>
+        <div class="role-hero-meta">
+          <span>${esc(next ? `Next: ${fmtDate(next.startTime || next.scheduledAt)}` : 'No upcoming interview')}</span>
+          <span>${esc(completed.length ? `${completed.length} completed sessions` : 'Start with your first booking')}</span>
+        </div>
+      </section>
+    `;
+}
+
+function renderRoleOverviewPanels(upcoming, completed) {
+  const host = document.getElementById('role-overview-panels');
+  if (!host || activeWorkspace === 'ADMIN') return;
+  const pending = sessions.filter(item => (item.status || '').toUpperCase() === 'PENDING');
+  const recentCompleted = completed.slice(0, 3);
+  host.innerHTML = activeWorkspace === 'INTERVIEWER'
+    ? `
+      <div class="role-overview-grid">
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Candidate queue</h2><button class="btn btn-ghost btn-sm" onclick="showSection('interviewer')">Manage</button></div>
+          ${pending.slice(0, 3).map(renderSessionCard).join('') || emptyState('No candidates are waiting for approval.')}
+        </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Availability health</h2><button class="btn btn-ghost btn-sm" onclick="openAvailabilityManager()">Edit</button></div>
+          <div class="role-checklist">
+            <div><strong>${availabilitySchedules.length || 0}</strong><span>weekly windows</span></div>
+            <div><strong>${generatedAvailabilitySlots.length || 0}</strong><span>open slots in 14 days</span></div>
+            <div><strong>${recentCompleted.length}</strong><span>recent completed sessions</span></div>
+          </div>
+        </section>
+      </div>
+    `
+    : `
+      <div class="role-overview-grid">
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Candidate prep snapshot</h2><button class="btn btn-ghost btn-sm" onclick="showSection('profile')">Update profile</button></div>
+          <p class="availability-muted">Tell the interviewer what you want them to know about yourself before the meeting.</p>
+          <div class="candidate-context-list">
+            <span>${esc(currentUser.experienceLevel || 'Experience level not set')}</span>
+            <span>${esc(currentUser.company ? `Target: ${currentUser.company}` : 'Target companies not set')}</span>
+            <span>${esc((currentUser.interviewTopics || [])[0] || 'Preferred topics not set')}</span>
+          </div>
+        </section>
+        <section class="panel role-focus-panel">
+          <div class="panel-head"><h2>Preparation flow</h2><button class="btn btn-ghost btn-sm" onclick="showSection('career')">Continue</button></div>
+          <div class="role-checklist">
+            <div><strong>${(currentUser.interviewTopics || []).length}</strong><span>preferred topics</span></div>
+            <div><strong>${(currentUser.favoriteInterviewerIds || []).length}</strong><span>saved interviewers</span></div>
+            <div><strong>${feedbackItems.length}</strong><span>feedback items</span></div>
+          </div>
+        </section>
+      </div>
+    `;
 }
 
 function renderSessions(mode = 'upcoming') {
@@ -1555,7 +1667,18 @@ function renderSessions(mode = 'upcoming') {
     : sessions.filter(item => ['COMPLETED', 'CANCELLED'].includes((item.status || '').toUpperCase()));
   const filtered = base.filter(item => sessionMatchesFilters(item));
   const list = sortSessions(filtered);
-  document.getElementById('sessions-list').innerHTML = list.map(renderSessionCard).join('') || emptyState('No sessions here yet.');
+  document.getElementById('sessions-list').innerHTML = list.map(renderSessionCard).join('') || emptyState(roleSessionEmptyText(mode));
+}
+
+function roleSessionEmptyText(mode) {
+  if (activeWorkspace === 'INTERVIEWER') {
+    return mode === 'upcoming'
+      ? 'No scheduled interviews or pending candidate requests.'
+      : 'Completed and cancelled interviewer sessions will appear here.';
+  }
+  return mode === 'upcoming'
+    ? 'No upcoming interviews yet. Discover an interviewer to book your next session.'
+    : 'Previous interviews will appear here after sessions are completed or cancelled.';
 }
 
 function setSessionSearch(value) {
@@ -2107,9 +2230,9 @@ function collectTopicFeedback() {
 function renderInterviewerPanel() {
   const incoming = sessions.filter(item => (item.status || '').toUpperCase() === 'PENDING');
   const incomingHost = document.getElementById('incoming-requests');
-  if (incomingHost) incomingHost.innerHTML = incoming.map(renderSessionCard).join('') || emptyState('No pending requests.');
+  if (incomingHost) incomingHost.innerHTML = incoming.map(renderSessionCard).join('') || emptyState('No candidates are waiting for approval.');
   const calendar = document.getElementById('calendar-view');
-  if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${new Date(item.startTime).toLocaleDateString()}</strong><span>${esc(sessionTitle(item))}</span></div>`).join('') || emptyState('Your calendar is clear.');
+  if (calendar) calendar.innerHTML = sessions.slice(0, 8).map(item => `<div><strong>${esc(formatShortDate(item.startTime || item.scheduledAt))}</strong><span>${esc(sessionTitle(item))}</span></div>`).join('') || emptyState('Your interviewer calendar is clear.');
   renderInterviewerAvailabilityPanel();
 }
 
@@ -2146,7 +2269,7 @@ function renderInterviewerAvailabilityPanel() {
   const slotsContent = availabilityError
     ? emptyState(availabilityError)
     : generatedAvailabilitySlots.length
-      ? `<div class="availability-slot-list">${generatedAvailabilitySlots.slice(0, 8).map(renderGeneratedSlotItem).join('')}</div>`
+      ? renderGeneratedSlotsPreview(generatedAvailabilitySlots)
       : `<div class="availability-summary-empty">${availabilitySchedules.length ? emptyState('No upcoming generated slots are available yet.') : availabilitySetupEmptyState()}</div>`;
   host.innerHTML = `
     <div class="panel-head">
@@ -2205,8 +2328,8 @@ function renderInterviewerAvailabilityPanel() {
         <div class="availability-slot-card">
           <div class="availability-heading-row">
             <div>
-              <h3>Upcoming generated slots</h3>
-              <p class="availability-summary-note">Pulled from the backend scheduling engine for the next 14 days.</p>
+              <h3>Next bookable openings</h3>
+              <p class="availability-summary-note">Grouped by day to keep the scheduling preview readable. Booking still uses the generated slot engine.</p>
             </div>
             <span class="badge badge-green">${generatedAvailabilitySlots.length} open</span>
           </div>
@@ -2328,6 +2451,44 @@ function renderGeneratedSlotItem(slot) {
       <small>${esc(String(slot.durationMinutes || 0))} min slot</small>
     </article>
   `;
+}
+
+function renderGeneratedSlotsPreview(slots) {
+  const groups = groupSlotsByDate(slots).slice(0, 4);
+  return `
+    <div class="availability-window-list">
+      ${groups.map(group => `
+        <article class="availability-window-card">
+          <div>
+            <strong>${esc(group.label)}</strong>
+            <span>${group.items.length} opening${group.items.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="availability-window-times">
+            ${group.items.slice(0, 3).map(slot => `<span>${esc(formatTimeOnly(slot.startTime))}</span>`).join('')}
+            ${group.items.length > 3 ? `<small>+${group.items.length - 3} more</small>` : ''}
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function groupSlotsByDate(slots) {
+  const map = new Map();
+  (Array.isArray(slots) ? slots : []).forEach(slot => {
+    const start = slot?.startTime || slot;
+    const date = new Date(start);
+    if (!Number.isFinite(date.getTime())) return;
+    const key = date.toISOString().slice(0, 10);
+    if (!map.has(key)) {
+      map.set(key, {
+        label: date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        items: [],
+      });
+    }
+    map.get(key).items.push(slot);
+  });
+  return Array.from(map.values());
 }
 
 function startAvailabilityEdit(id) {
@@ -2651,6 +2812,7 @@ function renderProfile() {
   const profileCompletion = normalizedPercent(currentUser.profileCompletion ?? currentUser.profileCompletionPercent);
   const showIntervieweePreferences = hasIntervieweeRole();
   const showInterviewerSetup = hasInterviewerRole();
+  const isIntervieweeWorkspace = activeWorkspace === 'INTERVIEWEE';
   const interviewerAvailabilityMissing = showInterviewerSetup && !availabilityLoading && !availabilityError && !availabilitySchedules.length;
   const availabilityPreference = intervieweeAvailabilityPreference();
   const availabilityNotes = intervieweeAvailabilityNotes();
@@ -2695,7 +2857,10 @@ function renderProfile() {
     `}
     <div class="divider"></div>
     <form class="profile-form" onsubmit="saveProfile(event)">
-      <h2>Edit profile</h2>
+      <div class="profile-form-head">
+        <h2>${isIntervieweeWorkspace ? 'Candidate profile' : 'Edit profile'}</h2>
+        <p class="availability-summary-note">${isIntervieweeWorkspace ? 'Tell the interviewer what you want them to know about yourself before the session.' : 'Keep your account details, public profile, and scheduling preferences current.'}</p>
+      </div>
       <div class="form-grid">
         <div class="form-group">
           <label for="profile-username">Username</label>
@@ -2719,8 +2884,8 @@ function renderProfile() {
         </div>
       </div>
       <div class="form-group">
-        <label for="profile-bio">Bio/About</label>
-        <textarea id="profile-bio" placeholder="Tell interviewers what you are preparing for">${esc(currentUser.bio || '')}</textarea>
+        <label for="profile-bio">${isIntervieweeWorkspace ? 'About you for interviewers' : 'Public bio/About'}</label>
+        <textarea id="profile-bio" placeholder="${isIntervieweeWorkspace ? 'Tell the interviewer what you want them to know about yourself: goals, background, preparation needs, and any context for the session.' : 'Describe your interviewing background, coaching style, and areas where you help candidates.'}">${esc(currentUser.bio || '')}</textarea>
       </div>
       <div class="form-grid">
         <div class="form-group">
@@ -2735,19 +2900,19 @@ function renderProfile() {
       </div>
       <div class="form-grid">
         <div class="form-group">
-          <label for="profile-company">Company</label>
-          <input id="profile-company" value="${esc(currentUser.company || '')}" placeholder="OpenAI" />
+          <label for="profile-company">${isIntervieweeWorkspace ? 'Target companies' : 'Company'}</label>
+          <input id="profile-company" value="${esc(currentUser.company || '')}" placeholder="${isIntervieweeWorkspace ? 'Google, Amazon, fintech startups' : 'OpenAI'}" />
         </div>
         <div class="form-group">
-          <label for="profile-current-role">Current role / headline</label>
-          <input id="profile-current-role" value="${esc(currentUser.currentRole || '')}" placeholder="Senior Backend Engineer" />
+          <label for="profile-current-role">${isIntervieweeWorkspace ? 'Current role or target role' : 'Current role / headline'}</label>
+          <input id="profile-current-role" value="${esc(currentUser.currentRole || '')}" placeholder="${isIntervieweeWorkspace ? 'New grad backend candidate, SDE II target' : 'Senior Backend Engineer'}" />
         </div>
       </div>
       <div class="form-grid">
         <div class="form-group">
-          <label for="profile-domains">Interview domains</label>
-          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="Backend Engineering, Frontend Engineering, HR" />
-          <small class="field-hint">Broad interview specialization areas.</small>
+          <label for="profile-domains">${isIntervieweeWorkspace ? 'Goal areas' : 'Interview domains'}</label>
+          <input id="profile-domains" value="${esc((currentUser.preferredDomains || []).join(', '))}" placeholder="${isIntervieweeWorkspace ? 'Backend roles, product companies, behavioral confidence' : 'Backend Engineering, Frontend Engineering, HR'}" />
+          <small class="field-hint">${isIntervieweeWorkspace ? 'Broad goals you want the interviewer to understand.' : 'Broad interview specialization areas.'}</small>
         </div>
         <div class="form-group">
           <label for="profile-experience">Experience level</label>
@@ -2768,9 +2933,9 @@ function renderProfile() {
       </div>
       <div class="form-grid">
         <div class="form-group">
-          <label for="profile-topics">Interview topics</label>
+          <label for="profile-topics">${isIntervieweeWorkspace ? 'Preferred topics' : 'Interview topics'}</label>
           <input id="profile-topics" value="${esc((currentUser.interviewTopics || []).join(', '))}" placeholder="System Design, Behavioral, DSA" />
-          <small class="field-hint">Specific technologies and interview subjects.</small>
+          <small class="field-hint">${isIntervieweeWorkspace ? 'Topics you want interviewers to focus on.' : 'Specific technologies and interview subjects.'}</small>
         </div>
         <div class="form-group">
           <label for="profile-durations">Session durations</label>
@@ -2832,8 +2997,8 @@ function renderProfile() {
       ` : ''}
       ${showIntervieweePreferences ? `
         <div class="availability-preference-card">
-          <h3>Interviewee availability preferences</h3>
-          <p class="availability-summary-note">These preferences help recommendations and booking context. Interviewers still control the actual schedulable slots.</p>
+          <h3>Interviewee context</h3>
+          <p class="availability-summary-note">These preferences help recommendations and give interviewers useful context. Interviewers still control the actual schedulable slots.</p>
           <div class="form-grid">
             <div class="form-group">
               <label for="profile-availability-preference">Preferred time window</label>
@@ -2850,8 +3015,8 @@ function renderProfile() {
             </div>
           </div>
           <div class="form-group">
-            <label for="profile-availability-notes">Additional availability notes</label>
-            <textarea id="profile-availability-notes" class="compact-textarea" placeholder="Available after office hours, prefer IST timezone, flexible on weekends">${esc(availabilityNotes)}</textarea>
+            <label for="profile-availability-notes">Notes for interviewer</label>
+            <textarea id="profile-availability-notes" class="compact-textarea" placeholder="Share goals, preferred depth, constraints, or anything the interviewer should know before the session.">${esc(availabilityNotes)}</textarea>
           </div>
         </div>
       ` : ''}
@@ -4471,6 +4636,15 @@ function formatDateTimeRange(startTime, endTime) {
     return `${datePart} • ${startPart}${endPart ? ` - ${endPart}` : ''}`;
   } catch {
     return String(startTime);
+  }
+}
+
+function formatTimeOnly(value) {
+  if (!value) return '--';
+  try {
+    return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return String(value);
   }
 }
 

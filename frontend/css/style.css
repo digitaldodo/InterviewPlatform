@@ -924,6 +924,152 @@ textarea:focus-visible {
   max-width: calc(100vw - 260px);
 }
 
+.role-dashboard-hero {
+  margin-bottom: 1rem;
+}
+
+.role-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: clamp(1rem, 2vw, 1.4rem);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(110, 231, 200, 0.12), rgba(138, 167, 255, 0.07) 48%, rgba(242, 200, 107, 0.08));
+  box-shadow: var(--shadow-soft);
+}
+
+.interviewer-role-hero {
+  background: linear-gradient(135deg, rgba(138, 167, 255, 0.14), rgba(110, 231, 200, 0.07) 52%, rgba(255, 255, 255, 0.035));
+}
+
+.role-hero-card h2 {
+  margin-top: 0.45rem;
+  font-size: clamp(1.55rem, 3vw, 2.35rem);
+}
+
+.role-hero-card p {
+  max-width: 760px;
+  margin-top: 0.45rem;
+}
+
+.role-hero-actions,
+.role-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  justify-content: flex-end;
+}
+
+.role-hero-meta {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
+.role-hero-meta span,
+.candidate-context-list span {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.32rem 0.7rem;
+  color: var(--muted);
+  background: rgba(255,255,255,0.035);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.role-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.role-focus-panel {
+  display: grid;
+  gap: 0.85rem;
+  align-content: start;
+}
+
+.role-checklist {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.role-checklist > div {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.035);
+}
+
+.role-checklist strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.45rem;
+}
+
+.role-checklist span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.candidate-context-list,
+.availability-window-list,
+.availability-window-times,
+.profile-form-head {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.candidate-context-list {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.availability-window-list {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.availability-window-card {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.035);
+}
+
+.availability-window-card strong {
+  display: block;
+  color: var(--text);
+}
+
+.availability-window-card span,
+.availability-window-card small {
+  color: var(--muted);
+}
+
+.availability-window-times {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.availability-window-times span {
+  border: 1px solid rgba(110, 231, 200, 0.18);
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  color: var(--accent);
+  background: rgba(110, 231, 200, 0.08);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
 .topbar,
 .section-title,
 .panel-head {
@@ -3805,6 +3951,19 @@ textarea:focus-visible {
   .prep-intel-score-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .role-hero-card,
+  .role-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .role-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .role-checklist {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 760px) {
@@ -3843,6 +4002,9 @@ textarea:focus-visible {
   .interviewer-grid.compact,
   .session-grid,
   .content-grid,
+  .role-hero-card,
+  .role-overview-grid,
+  .role-checklist,
   .meeting-layout,
   .type-grid,
   .slot-grid,
@@ -3969,6 +4131,10 @@ textarea:focus-visible {
     backdrop-filter: blur(18px);
   }
 
+  body.interviewer-workspace-active .bottom-nav {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
   .bottom-nav button {
     min-height: 58px;
     border: 0;
@@ -3999,6 +4165,7 @@ textarea:focus-visible {
   .card-actions,
   .interviewer-card-footer,
   .booking-card-actions,
+  .role-hero-actions,
   .profile-actions-row,
   .profile-avatar-preview-card,
   .availability-form-actions,
@@ -4010,6 +4177,10 @@ textarea:focus-visible {
 
   .topbar-actions {
     justify-content: stretch;
+  }
+
+  .role-hero-actions .btn {
+    flex: 1 1 auto;
   }
 
   .topbar .topbar-actions .icon-btn {

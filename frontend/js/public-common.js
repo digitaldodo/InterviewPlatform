@@ -9,13 +9,25 @@ function resolvePublicSiteUrl() {
 }
 
 async function publicApi(path, options = {}) {
-  const res = await fetch(`${PUBLIC_API_BASE}${path}`, {
-    ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  });
-  const payload = await readPublicPayload(res);
-  if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
-  return payload?.data ?? payload;
+  if (!PUBLIC_API_BASE) throw new Error('Public API is not configured.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 18000);
+  try {
+    const res = await fetch(`${PUBLIC_API_BASE}${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    });
+    const payload = await readPublicPayload(res);
+    if (!res.ok) throw new Error(payload?.message || `Request failed (${res.status})`);
+    return payload?.data ?? payload;
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('Request timed out. Please try again.');
+    if (err instanceof TypeError) throw new Error('Public profile service is temporarily unavailable.');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function readPublicPayload(res) {
