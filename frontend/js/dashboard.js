@@ -64,6 +64,7 @@ let adminTrustDashboard = null;
 let adminAuditLogPage = null;
 let adminAnalytics = null;
 let adminPrepModules = [];
+let adminOps = null;
 let prepModuleEditingId = null;
 let adminLoading = false;
 let moderationDialogState = null;
@@ -109,7 +110,7 @@ const AVAILABILITY_PREFERENCES = [
   'Late night availability',
   'Early morning availability',
 ];
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit']);
+const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops']);
 const PROFILE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 let bookingState = createBookingState();
 let analyticsSummary = null;
@@ -345,7 +346,7 @@ function applyRoleNavigationLabels() {
 }
 
 function routeAllowed(route) {
-  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'profile'].includes(route);
+  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops', 'profile'].includes(route);
   if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking'].includes(route);
   if (route === 'interviewer') return false;
   if (route.startsWith('admin-')) return false;
@@ -6319,6 +6320,16 @@ function updateModerationDialogField(field, value) {
   renderModerationDialog();
 }
 
+function toggleModerationRole(role, checked) {
+  if (!moderationDialogState || moderationDialogState.kind !== 'user_roles') return;
+  const normalized = String(role || '').trim().toUpperCase();
+  const roles = new Set(Array.isArray(moderationDialogState.roles) ? moderationDialogState.roles : []);
+  if (checked) roles.add(normalized);
+  else roles.delete(normalized);
+  moderationDialogState.roles = Array.from(roles).filter(Boolean);
+  renderModerationDialog();
+}
+
 function continueModerationDialog() {
   if (!moderationDialogState) return;
   if (moderationDialogState.kind === 'report') {
@@ -7192,6 +7203,21 @@ function togglePublicProfileVisibility(userId, publicProfileVisible) {
   renderModerationDialog();
 }
 
+function openUserRoleModal(userId) {
+  const user = adminUsers.find(item => item.id === userId);
+  if (!user) return toast('User not found.', 'error');
+  moderationDialogState = {
+    kind: 'user_roles',
+    step: 'form',
+    loading: false,
+    userId,
+    roles: Array.isArray(user.roles) && user.roles.length ? [...user.roles] : ['INTERVIEWEE'],
+    reason: '',
+    confirmChecked: false,
+  };
+  renderModerationDialog();
+}
+
 function toggleInterviewerVerification(userId, suggestedStatus) {
   const user = adminUsers.find(item => item.id === userId) || (adminTrustDashboard?.verificationQueue || []).find(item => item.userId === userId);
   if (!user) return toast('Interviewer not found.', 'error');
@@ -7252,6 +7278,10 @@ function continueModerationDialog() {
     toast('Add a clear moderation reason.', 'error');
     return;
   }
+  if (moderationDialogState.kind === 'user_roles' && (!Array.isArray(moderationDialogState.roles) || !moderationDialogState.roles.length)) {
+    toast('Select at least one role.', 'error');
+    return;
+  }
   if (moderationDialogState.kind === 'report' && moderationDialogState.status === 'ACTIONED' && String(moderationDialogState.notes || '').trim().length < 8) {
     toast('Add clear action notes before proceeding.', 'error');
     return;
@@ -7274,6 +7304,62 @@ function continueModerationDialog() {
 
 function renderModerationDialog() {
   if (!moderationDialogState) return;
+  if (moderationDialogState.kind === 'user_roles') {
+    const user = adminUsers.find(item => item.id === moderationDialogState.userId);
+    if (!user) return closeModerationDialog();
+    const roleOptions = ['INTERVIEWEE', 'INTERVIEWER', 'ADMIN'];
+    const roles = Array.isArray(moderationDialogState.roles) ? moderationDialogState.roles : [];
+    if (moderationDialogState.step === 'confirm') {
+      modal(`
+        <div class="modal-head">
+          <h2>Confirm role management</h2>
+          <p class="muted">This changes dashboard access and workspace switching for the user.</p>
+        </div>
+        <div class="moderation-summary-list">
+          <div><span>User</span><strong>${esc(accountDisplayName(user))}</strong></div>
+          <div><span>Roles</span><strong>${roles.map(esc).join(', ') || 'None selected'}</strong></div>
+          <div><span>Reason</span><strong>${esc(moderationDialogState.reason)}</strong></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" type="button" onclick="backModerationDialog()">Back</button>
+          <button class="btn btn-primary" type="button" onclick="submitModerationDialog()" ${moderationDialogState.loading ? 'disabled' : ''}>${moderationDialogState.loading ? 'Saving...' : 'Confirm roles'}</button>
+        </div>
+      `);
+      return;
+    }
+    modal(`
+      <div class="modal-head">
+        <h2>Manage user roles</h2>
+        <p class="muted">Select only the workspaces this account should operate.</p>
+      </div>
+      <div class="moderation-form-grid">
+        <div class="form-group">
+          <span>Roles</span>
+          <div class="role-toggle-grid">
+            ${roleOptions.map(role => `
+              <label class="check-row">
+                <input type="checkbox" ${roles.includes(role) ? 'checked' : ''} onchange="toggleModerationRole('${role}', this.checked)" />
+                ${esc(role)}
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <label class="form-group">
+          <span>Audit reason</span>
+          <textarea placeholder="Why does this account need a role change?" oninput="updateModerationDialogField('reason', this.value)">${esc(moderationDialogState.reason || '')}</textarea>
+        </label>
+        <label class="check-row">
+          <input type="checkbox" ${moderationDialogState.confirmChecked ? 'checked' : ''} onchange="updateModerationDialogField('confirmChecked', this.checked)" />
+          I confirm this role change is intentional.
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" type="button" onclick="closeModerationDialog()">Cancel</button>
+        <button class="btn btn-primary" type="button" onclick="continueModerationDialog()">Continue</button>
+      </div>
+    `);
+    return;
+  }
   if (moderationDialogState.kind === 'user') {
     const user = adminUsers.find(item => item.id === moderationDialogState.userId);
     if (!user) return closeModerationDialog();
@@ -7496,6 +7582,15 @@ async function submitModerationDialog() {
         }),
       });
       toast('User moderation updated.', 'success');
+    } else if (moderationDialogState.kind === 'user_roles') {
+      await api(`/api/admin/users/${moderationDialogState.userId}/moderation`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          roles: moderationDialogState.roles,
+          reason: moderationDialogState.reason,
+        }),
+      });
+      toast('User roles updated.', 'success');
     } else if (moderationDialogState.kind === 'verification') {
       await api(`/api/admin/interviewers/${moderationDialogState.userId}/verify`, {
         method: 'PATCH',
@@ -7696,6 +7791,7 @@ async function loadAdminData(force = false) {
     api(`/api/admin/audit-logs?${buildAuditQuery()}`),
     api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
     api('/api/admin/prep-modules'),
+    api('/api/admin/ops'),
   ];
   const results = await Promise.allSettled(requests);
   const valueAt = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
@@ -7708,6 +7804,7 @@ async function loadAdminData(force = false) {
   const auditLogPage = valueAt(6, adminAuditLogPage);
   const analytics = valueAt(7, adminAnalytics);
   const prepModules = valueAt(8, adminPrepModules);
+  const ops = valueAt(9, adminOps);
   adminOverview = overview || null;
   adminUsersPage = usersPage || null;
   adminSessionsPage = sessionsPage || null;
@@ -7721,6 +7818,7 @@ async function loadAdminData(force = false) {
   adminAuditLogPage = auditLogPage || null;
   adminAnalytics = analytics || null;
   adminPrepModules = Array.isArray(prepModules) ? prepModules : [];
+  adminOps = ops || null;
   const failed = results.find(result => result.status === 'rejected');
   if (failed) {
     toast(failed.reason?.message || 'Could not load some admin data.', 'error');
@@ -7736,6 +7834,7 @@ function renderAdminPanels() {
   renderAdminSessions();
   renderAdminReports();
   renderAdminAudit();
+  renderAdminOps();
   renderAdminAnalytics();
   renderAdminPrepModules();
 }
@@ -7841,6 +7940,7 @@ function renderAdminUsers() {
               <div class="card-actions">
                 ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', '${user.interviewerVerified ? 'REJECTED' : user.verificationRequestStatus === 'PENDING' ? 'APPROVED' : 'PENDING'}')">${user.interviewerVerified ? 'Review verification' : 'Manage verification'}</button>` : ''}
                 ${user.roles?.includes?.('INTERVIEWER') ? `<button class="btn btn-outline btn-sm" type="button" onclick="toggleInterviewerVerification('${user.id}', 'NONE')">Reset verification</button>` : ''}
+                <button class="btn btn-outline btn-sm" type="button" onclick="openUserRoleModal('${user.id}')">Roles</button>
                 <button class="btn btn-outline btn-sm" type="button" onclick="togglePublicProfileVisibility('${user.id}', ${user.publicProfileVisible === false ? 'true' : 'false'})">${user.publicProfileVisible === false ? 'Show profile' : 'Hide profile'}</button>
                 <button class="btn ${user.accountEnabled === false ? 'btn-success' : 'btn-danger'} btn-sm" type="button" onclick="toggleUserAccess('${user.id}', ${user.accountEnabled === false ? 'true' : 'false'})">${user.accountEnabled === false ? 'Restore account' : 'Suspend account'}</button>
               </div>
@@ -8029,6 +8129,131 @@ function renderAdminAudit() {
       `).join('') || emptyState('No audit logs found for this query.')}
     </div>
     ${renderAuditPagination()}
+  `;
+}
+
+function renderAdminOps() {
+  const host = document.getElementById('admin-ops-panel');
+  if (!host) return;
+  if (adminLoading && !adminOps) {
+    host.innerHTML = skeletonCards(3);
+    return;
+  }
+  const notices = Array.isArray(adminOps?.platformNotices) ? adminOps.platformNotices : (Array.isArray(adminOps?.activeNotices) ? adminOps.activeNotices : []);
+  const activeNotices = Array.isArray(adminOps?.activeNotices) ? adminOps.activeNotices : notices.filter(item => item.active !== false);
+  const templates = Array.isArray(adminOps?.emailTemplates) ? adminOps.emailTemplates : [];
+  const recentNotifications = Array.isArray(adminOps?.recentNotifications) ? adminOps.recentNotifications : [];
+  const notificationTypes = Object.entries(adminOps?.notificationsByType || {});
+  host.innerHTML = `
+    <div class="admin-trust-summary-grid">
+      <article class="admin-trust-card"><strong>Active notices</strong><span>${esc(String(activeNotices.length))}</span><small>Maintenance banners and platform notices currently active.</small></article>
+      <article class="admin-trust-card"><strong>Total notifications</strong><span>${esc(String(adminOps?.totalNotifications || 0))}</span><small>Notification documents stored in MongoDB.</small></article>
+      <article class="admin-trust-card"><strong>Unread notifications</strong><span>${esc(String(adminOps?.unreadNotifications || 0))}</span><small>Notification queue pressure across users.</small></article>
+      <article class="admin-trust-card"><strong>Email templates</strong><span>${esc(String(templates.length))}</span><small>Operational email flows available in the backend.</small></article>
+    </div>
+    <div class="admin-ops-grid">
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Create notice</h2><span class="badge badge-gray">Ops</span></div>
+        <form class="moderation-form-grid" onsubmit="submitPlatformNotice(event)">
+          <div class="form-grid">
+            <label class="form-group">
+              <span>Type</span>
+              <select class="input" id="ops-notice-type">
+                <option value="NOTICE">Platform notice</option>
+                <option value="ANNOUNCEMENT">Broadcast announcement</option>
+                <option value="MAINTENANCE">Maintenance banner</option>
+              </select>
+            </label>
+            <label class="form-group">
+              <span>Status</span>
+              <select class="input" id="ops-notice-active">
+                <option value="true">Active</option>
+                <option value="false">Draft / inactive</option>
+              </select>
+            </label>
+          </div>
+          <label class="form-group">
+            <span>Title</span>
+            <input id="ops-notice-title" required placeholder="Scheduled maintenance" />
+          </label>
+          <label class="form-group">
+            <span>Message</span>
+            <textarea id="ops-notice-message" required placeholder="Write the exact user-facing notice."></textarea>
+          </label>
+          <label class="check-row">
+            <input id="ops-notice-broadcast" type="checkbox" />
+            Also create an in-app notification for enabled users.
+          </label>
+          <button class="btn btn-primary" type="submit">Save notice</button>
+        </form>
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Platform notices</h2><span class="badge badge-gray">${esc(String(notices.length))}</span></div>
+        <div class="admin-table">
+          ${notices.map(notice => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(notice.title || 'Platform notice')}</strong>
+                  <span class="badge badge-${notice.active === false ? 'gray' : 'green'}">${notice.active === false ? 'Inactive' : 'Active'}</span>
+                </div>
+                <p>${esc(notice.message || '')}</p>
+                <small>${esc(notice.type || 'NOTICE')} • ${esc(fmtDate(notice.startsAt))} → ${esc(fmtDate(notice.endsAt))}</small>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-outline btn-sm" type="button" onclick="togglePlatformNotice(${jsArg(notice.id)}, ${notice.active === false ? 'true' : 'false'})">${notice.active === false ? 'Activate' : 'Deactivate'}</button>
+                <button class="btn btn-danger btn-sm" type="button" onclick="deletePlatformNotice(${jsArg(notice.id)})">Delete</button>
+              </div>
+            </article>
+          `).join('') || emptyState('No active maintenance banners, broadcasts, or platform notices are configured.')}
+        </div>
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Email templates</h2><span class="badge badge-gray">${esc(String(templates.length))}</span></div>
+        <div class="admin-table">
+          ${templates.map(template => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(template.key || 'EMAIL_TEMPLATE')}</strong>
+                  <span class="badge badge-${template.configured ? 'green' : 'yellow'}">${template.configured ? 'Configured' : 'Needs sender'}</span>
+                </div>
+                <p>${esc(template.subject || '')}</p>
+                <small>${esc(template.fromAddress || 'not configured')}</small>
+              </div>
+            </article>
+          `).join('') || emptyState('No backend email templates are registered.')}
+        </div>
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Notification types</h2><span class="badge badge-gray">${esc(String(notificationTypes.length))}</span></div>
+        <div class="admin-topic-bars">
+          ${notificationTypes.map(([type, count]) => `
+            <div class="admin-topic-bar">
+              <span>${esc(type)}</span>
+              <div><i style="width:${Math.max(4, Math.min(100, Number(count || 0) * 8))}%"></i></div>
+              <strong>${esc(String(count || 0))}</strong>
+            </div>
+          `).join('') || emptyState('No notifications have been created yet.')}
+        </div>
+      </article>
+      <article class="admin-moderation-card">
+        <div class="panel-head"><h2>Recent notifications</h2><span class="badge badge-gray">${esc(String(recentNotifications.length))}</span></div>
+        <div class="admin-table">
+          ${recentNotifications.map(item => `
+            <article class="admin-table-row">
+              <div class="admin-row-main">
+                <div class="admin-row-head">
+                  <strong>${esc(item.title || item.type || 'Notification')}</strong>
+                  <span class="badge badge-${item.read ? 'gray' : 'yellow'}">${item.read ? 'Read' : 'Unread'}</span>
+                </div>
+                <small>${esc(item.type || 'GENERAL')} • User ${esc(item.userId || 'unknown')} • ${esc(fmtDate(item.createdAt))}</small>
+              </div>
+            </article>
+          `).join('') || emptyState('No recent notifications found.')}
+        </div>
+      </article>
+    </div>
   `;
 }
 
@@ -8268,6 +8493,55 @@ async function deletePrepModule(moduleId) {
     await loadPrepHub();
   } catch (err) {
     toast(err.message || 'Could not delete preparation module.', 'error');
+  }
+}
+
+function collectPlatformNoticePayload() {
+  return {
+    type: String(document.getElementById('ops-notice-type')?.value || 'NOTICE').trim(),
+    title: String(document.getElementById('ops-notice-title')?.value || '').trim(),
+    message: String(document.getElementById('ops-notice-message')?.value || '').trim(),
+    active: String(document.getElementById('ops-notice-active')?.value || 'true') === 'true',
+    broadcast: Boolean(document.getElementById('ops-notice-broadcast')?.checked),
+  };
+}
+
+async function submitPlatformNotice(event) {
+  event.preventDefault();
+  const payload = collectPlatformNoticePayload();
+  try {
+    await api('/api/admin/ops/notices', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    toast(payload.broadcast ? 'Platform notice saved and broadcast.' : 'Platform notice saved.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not save platform notice.', 'error');
+  }
+}
+
+async function togglePlatformNotice(noticeId, active) {
+  try {
+    await api(`/api/admin/ops/notices/${encodeURIComponent(noticeId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ active }),
+    });
+    toast(active ? 'Platform notice activated.' : 'Platform notice deactivated.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not update platform notice.', 'error');
+  }
+}
+
+async function deletePlatformNotice(noticeId) {
+  if (!window.confirm('Delete this platform notice?')) return;
+  try {
+    await api(`/api/admin/ops/notices/${encodeURIComponent(noticeId)}`, { method: 'DELETE' });
+    toast('Platform notice deleted.', 'success');
+    await loadAdminData(true);
+  } catch (err) {
+    toast(err.message || 'Could not delete platform notice.', 'error');
   }
 }
 

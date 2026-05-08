@@ -71,19 +71,39 @@ public class PrepService {
     private MarketplaceDtos.PrepModuleCard toModuleCard(PrepModule module) {
         return new MarketplaceDtos.PrepModuleCard(
                 module.getId(),
-                module.getTitle(),
-                module.getDescription(),
-                module.getCategory(),
-                module.getDifficulty(),
-                module.getTags(),
+                fallback(module.getTitle(), "Untitled module"),
+                fallback(module.getDescription(), ""),
+                fallback(module.getCategory(), "Uncategorized"),
+                fallback(module.getDifficulty(), "Foundational"),
+                sanitizeList(module.getTags()),
                 module.getEstimatedDurationMinutes(),
                 module.getVisibilityStatus(),
                 module.getResources().stream()
-                        .map(item -> new MarketplaceDtos.PrepModuleResource(item.getLabel(), item.getUrl()))
+                        .filter(Objects::nonNull)
+                        .filter(item -> !normalize(item.getUrl()).isBlank())
+                        .map(item -> new MarketplaceDtos.PrepModuleResource(
+                                normalize(item.getLabel()).isBlank() ? normalize(item.getUrl()) : normalize(item.getLabel()),
+                                normalize(item.getUrl())
+                        ))
                         .toList(),
                 module.getUpdatedAt() == null ? null : module.getUpdatedAt().toString(),
                 module.getPublishedAt() == null ? null : module.getPublishedAt().toString()
         );
+    }
+
+    private String fallback(String value, String fallback) {
+        String normalized = normalize(value);
+        return normalized.isBlank() ? fallback : normalized;
+    }
+
+    private List<String> sanitizeList(List<String> values) {
+        if (values == null) return List.of();
+        return values.stream()
+                .map(this::normalize)
+                .filter(item -> !item.isBlank())
+                .distinct()
+                .limit(12)
+                .toList();
     }
 
     private Map<String, Integer> buildTopicSignal(User user, List<Session> sessions, List<Feedback> feedback) {

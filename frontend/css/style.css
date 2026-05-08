@@ -2304,6 +2304,12 @@ body.interviewer-workspace-active .overview-primary-grid {
   gap: 1rem;
 }
 
+.admin-ops-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
 .admin-moderation-card {
   display: grid;
   gap: 0.9rem;
@@ -2371,6 +2377,12 @@ body.interviewer-workspace-active .overview-primary-grid {
 .moderation-form-grid {
   display: grid;
   gap: 0.85rem;
+}
+
+.role-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
 }
 
 .moderation-summary-list {
@@ -4726,6 +4738,7 @@ body.interviewer-workspace-active .overview-primary-grid {
   .prep-track-grid,
   .admin-stats-grid,
   .admin-moderation-grid,
+  .admin-ops-grid,
   .admin-trust-summary-grid,
   .public-profile-detail-grid,
   .trust-grid,
@@ -4812,6 +4825,10 @@ body.interviewer-workspace-active .overview-primary-grid {
   .public-topic-feedback-card summary {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .role-toggle-grid {
+    grid-template-columns: 1fr;
   }
 
   .admin-user-metrics {

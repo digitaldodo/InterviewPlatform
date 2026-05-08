@@ -34,6 +34,7 @@
       <button class="nav-link admin-only" data-section="admin-users" onclick="showSection('admin-users')">Users</button>
       <button class="nav-link admin-only" data-section="admin-sessions" onclick="showSection('admin-sessions')">Sessions</button>
       <button class="nav-link admin-only" data-section="admin-reports" onclick="showSection('admin-reports')">Moderation</button>
+      <button class="nav-link admin-only" data-section="admin-ops" onclick="showSection('admin-ops')">Platform Ops</button>
       <button class="nav-link admin-only" data-section="admin-audit" onclick="showSection('admin-audit')">Audit Trail</button>
       <button class="nav-link admin-only" data-section="profile" onclick="showSection('profile')">Profile</button>
     </nav>
@@ -437,6 +438,13 @@
         <div><p class="eyebrow">Admin Audit Trail</p><h1>Immutable action history</h1></div>
       </div>
       <section class="panel admin-panel" id="admin-audit-panel"></section>
+    </section>
+
+    <section id="section-admin-ops" class="dashboard-section admin-only" hidden>
+      <div class="section-title admin-section-head">
+        <div><p class="eyebrow">Admin Platform Ops</p><h1>Announcements, notices, and notifications</h1></div>
+      </div>
+      <section class="panel admin-panel" id="admin-ops-panel"></section>
     </section>
 
     <section id="section-admin-analytics" class="dashboard-section admin-only" hidden>

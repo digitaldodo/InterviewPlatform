@@ -10,6 +10,7 @@ public class AdminDtos {
         private Boolean publicProfileVisible;
         @JsonProperty("isPublicProfile")
         private Boolean isPublicProfile;
+        private List<String> roles;
         private String reason;
 
         public Boolean getEnabled() { return enabled; }
@@ -18,6 +19,8 @@ public class AdminDtos {
         public void setPublicProfileVisible(Boolean publicProfileVisible) { this.publicProfileVisible = publicProfileVisible; }
         public Boolean getIsPublicProfile() { return isPublicProfile; }
         public void setIsPublicProfile(Boolean isPublicProfile) { this.isPublicProfile = isPublicProfile; }
+        public List<String> getRoles() { return roles; }
+        public void setRoles(List<String> roles) { this.roles = roles; }
         public String getReason() { return reason; }
         public void setReason(String reason) { this.reason = reason; }
     }
@@ -102,6 +105,31 @@ public class AdminDtos {
         public void setResources(List<PrepModuleResourceRequest> resources) { this.resources = resources; }
     }
 
+    public static class PlatformNoticeRequest {
+        private String type;
+        private String title;
+        private String message;
+        private Boolean active;
+        private String startsAt;
+        private String endsAt;
+        private Boolean broadcast;
+
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
+        public Boolean getActive() { return active; }
+        public void setActive(Boolean active) { this.active = active; }
+        public String getStartsAt() { return startsAt; }
+        public void setStartsAt(String startsAt) { this.startsAt = startsAt; }
+        public String getEndsAt() { return endsAt; }
+        public void setEndsAt(String endsAt) { this.endsAt = endsAt; }
+        public Boolean getBroadcast() { return broadcast; }
+        public void setBroadcast(Boolean broadcast) { this.broadcast = broadcast; }
+    }
+
     public record PrepModuleResourceItem(
             String label,
             String url
@@ -121,6 +149,45 @@ public class AdminDtos {
             String createdAt,
             String updatedAt,
             String publishedAt
+    ) {}
+
+    public record PlatformNoticeItem(
+            String id,
+            String type,
+            String title,
+            String message,
+            Boolean active,
+            String startsAt,
+            String endsAt,
+            String createdByAdminId,
+            String createdAt,
+            String updatedAt
+    ) {}
+
+    public record EmailTemplateItem(
+            String key,
+            String subject,
+            Boolean configured,
+            String fromAddress
+    ) {}
+
+    public record NotificationMonitorItem(
+            String id,
+            String userId,
+            String type,
+            String title,
+            Boolean read,
+            String createdAt
+    ) {}
+
+    public record AdminOpsResponse(
+            List<PlatformNoticeItem> platformNotices,
+            List<PlatformNoticeItem> activeNotices,
+            List<EmailTemplateItem> emailTemplates,
+            long totalNotifications,
+            long unreadNotifications,
+            Map<String, Long> notificationsByType,
+            List<NotificationMonitorItem> recentNotifications
     ) {}
 
     public record TopicCount(String topic, long count) {}

@@ -105,6 +105,33 @@ public class AdminController {
         return ResponseEntity.ok(ApiResponse.success("System diagnostics fetched", operationalDiagnosticsService.snapshot()));
     }
 
+    @GetMapping("/ops")
+    public ResponseEntity<ApiResponse<AdminDtos.AdminOpsResponse>> operations() {
+        return ResponseEntity.ok(ApiResponse.success("Admin operations fetched", adminService.operations()));
+    }
+
+    @PostMapping("/ops/notices")
+    public ResponseEntity<ApiResponse<AdminDtos.PlatformNoticeItem>> createPlatformNotice(@RequestBody AdminDtos.PlatformNoticeRequest request,
+                                                                                          Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Platform notice created",
+                adminService.createPlatformNotice(request, currentUser(authentication).getId())));
+    }
+
+    @PatchMapping("/ops/notices/{noticeId}")
+    public ResponseEntity<ApiResponse<AdminDtos.PlatformNoticeItem>> updatePlatformNotice(@PathVariable String noticeId,
+                                                                                          @RequestBody AdminDtos.PlatformNoticeRequest request,
+                                                                                          Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Platform notice updated",
+                adminService.updatePlatformNotice(noticeId, request, currentUser(authentication).getId())));
+    }
+
+    @DeleteMapping("/ops/notices/{noticeId}")
+    public ResponseEntity<ApiResponse<Void>> deletePlatformNotice(@PathVariable String noticeId,
+                                                                  Authentication authentication) {
+        adminService.deletePlatformNotice(noticeId, currentUser(authentication).getId());
+        return ResponseEntity.ok(ApiResponse.<Void>success("Platform notice deleted", null));
+    }
+
     @PatchMapping("/users/{userId}/moderation")
     public ResponseEntity<ApiResponse<User>> moderateUser(@PathVariable String userId,
                                                           @RequestBody AdminDtos.UserModerationRequest request,
@@ -152,6 +179,13 @@ public class AdminController {
     @PutMapping("/prep-modules/{moduleId}")
     public ResponseEntity<ApiResponse<AdminDtos.PrepModuleItem>> updatePrepModule(@PathVariable String moduleId,
                                                                                    @RequestBody AdminDtos.PrepModuleRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Preparation module updated",
+                adminService.updatePrepModule(moduleId, request)));
+    }
+
+    @PatchMapping("/prep-modules/{moduleId}")
+    public ResponseEntity<ApiResponse<AdminDtos.PrepModuleItem>> patchPrepModule(@PathVariable String moduleId,
+                                                                                  @RequestBody AdminDtos.PrepModuleRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Preparation module updated",
                 adminService.updatePrepModule(moduleId, request)));
     }

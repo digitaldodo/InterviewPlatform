@@ -5,18 +5,26 @@ import com.interview.platform.dto.PageResponse;
 import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.model.Feedback;
 import com.interview.platform.model.ModerationAuditLog;
+import com.interview.platform.model.Notification;
+import com.interview.platform.model.PlatformNotice;
 import com.interview.platform.model.PrepModule;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.model.UserReport;
 import com.interview.platform.repository.FeedbackRepository;
 import com.interview.platform.repository.ModerationAuditLogRepository;
+import com.interview.platform.repository.NotificationRepository;
+import com.interview.platform.repository.PlatformNoticeRepository;
 import com.interview.platform.repository.PrepModuleRepository;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserReportRepository;
 import com.interview.platform.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -39,8 +47,10 @@ import java.util.stream.Collectors;
 
 @Service
 public class AdminService {
+    private static final Logger log = LoggerFactory.getLogger(AdminService.class);
     private static final Set<String> REPORT_STATUSES = Set.of("OPEN", "REVIEWED", "ACTIONED", "DISMISSED", "DUPLICATE");
     private static final Set<String> VERIFICATION_STATUSES = Set.of("NONE", "PENDING", "APPROVED", "REJECTED");
+    private static final Set<String> PREP_MODULE_STATUSES = Set.of("DRAFT", "PUBLISHED", "ARCHIVED");
 
     private final UserRepository userRepository;
     private final SessionRepository sessionRepository;
@@ -51,6 +61,10 @@ public class AdminService {
     private final TrustSignalService trustSignalService;
     private final CacheInvalidationService cacheInvalidationService;
     private final PrepModuleRepository prepModuleRepository;
+    private final NotificationRepository notificationRepository;
+    private final PlatformNoticeRepository platformNoticeRepository;
+    private final boolean emailConfigured;
+    private final String emailFromAddress;
 
     public AdminService(UserRepository userRepository,
                         SessionRepository sessionRepository,
@@ -60,7 +74,11 @@ public class AdminService {
                         ModerationAuditLogRepository moderationAuditLogRepository,
                         TrustSignalService trustSignalService,
                         CacheInvalidationService cacheInvalidationService,
-                        PrepModuleRepository prepModuleRepository) {
+                        PrepModuleRepository prepModuleRepository,
+                        NotificationRepository notificationRepository,
+                        PlatformNoticeRepository platformNoticeRepository,
+                        @Value("${app.sendgrid.api-key:}") String sendgridApiKey,
+                        @Value("${app.sendgrid.from-email:no-reply@interviewprep.local}") String emailFromAddress) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.userReportRepository = userReportRepository;
@@ -70,6 +88,10 @@ public class AdminService {
         this.trustSignalService = trustSignalService;
         this.cacheInvalidationService = cacheInvalidationService;
         this.prepModuleRepository = prepModuleRepository;
+        this.notificationRepository = notificationRepository;
+        this.platformNoticeRepository = platformNoticeRepository;
+        this.emailConfigured = sendgridApiKey != null && !sendgridApiKey.isBlank();
+        this.emailFromAddress = emailFromAddress == null || emailFromAddress.isBlank() ? "not configured" : emailFromAddress.trim();
     }
 
     public AdminDtos.OverviewResponse overview() {
@@ -648,13 +670,20 @@ public class AdminService {
     }
 
     public User updateUserModeration(String userId, AdminDtos.UserModerationRequest request, String adminId) {
+        if (request == null) {
+            throw new IllegalArgumentException("Moderation details are required");
+        }
         User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Map<String, Object> before = stateMap(
                 "enabled", user.getAccountEnabled(),
-                "publicProfileVisible", user.getPublicProfileVisible()
+                "publicProfileVisible", user.getPublicProfileVisible(),
+                "roles", user.getRoles()
         );
         boolean changed = false;
         if (request.getEnabled() != null && !request.getEnabled().equals(user.getAccountEnabled())) {
+            if (userId.equals(adminId) && Boolean.FALSE.equals(request.getEnabled())) {
+                throw new IllegalArgumentException("Admins cannot deactivate their own account");
+            }
             user.setAccountEnabled(request.getEnabled());
             changed = true;
         }
@@ -664,6 +693,21 @@ public class AdminService {
         if (requestedPublicProfile != null && !requestedPublicProfile.equals(user.getPublicProfileVisible())) {
             user.setPublicProfileVisible(requestedPublicProfile);
             changed = true;
+        }
+        if (request.getRoles() != null) {
+            List<String> roles = resolveAdminRoles(request.getRoles());
+            if (userId.equals(adminId) && !roles.contains("ADMIN")) {
+                throw new IllegalArgumentException("Admins cannot remove their own admin role");
+            }
+            if (!roles.equals(user.getRoles())) {
+                user.setRoles(roles);
+                if (!roles.contains("INTERVIEWER")) {
+                    user.setInterviewerVerified(false);
+                    user.setVerificationRequestStatus("NONE");
+                    user.setVerificationApprovedAt(null);
+                }
+                changed = true;
+            }
         }
         if (!changed) {
             return user;
@@ -683,7 +727,8 @@ public class AdminService {
                 before,
                 stateMap(
                         "enabled", saved.getAccountEnabled(),
-                        "publicProfileVisible", saved.getPublicProfileVisible()
+                        "publicProfileVisible", saved.getPublicProfileVisible(),
+                        "roles", saved.getRoles()
                 )
         );
         return saved;
@@ -817,24 +862,31 @@ public class AdminService {
     }
 
     public List<AdminDtos.PrepModuleItem> prepModules() {
-        return prepModuleRepository.findAll().stream()
-                .sorted(Comparator.comparing((PrepModule module) -> module.getUpdatedAt() == null ? Instant.EPOCH : module.getUpdatedAt()).reversed())
-                .map(this::toPrepModuleItem)
-                .toList();
+        try {
+            List<PrepModule> modules = Optional.ofNullable(prepModuleRepository.findAll()).orElse(List.of());
+            return modules.stream()
+                    .filter(Objects::nonNull)
+                    .sorted(Comparator.comparing((PrepModule module) -> module.getUpdatedAt() == null ? Instant.EPOCH : module.getUpdatedAt()).reversed())
+                    .map(this::toPrepModuleItem)
+                    .toList();
+        } catch (DataAccessException ex) {
+            log.error("Failed to fetch admin prep modules from MongoDB", ex);
+            throw ex;
+        }
     }
 
     public AdminDtos.PrepModuleItem createPrepModule(AdminDtos.PrepModuleRequest request, String adminId) {
         PrepModule module = new PrepModule();
         module.setCreatedAt(Instant.now());
         module.setCreatedByAdminId(adminId);
-        applyPrepModuleRequest(module, request);
+        applyPrepModuleRequest(module, request, false);
         return toPrepModuleItem(prepModuleRepository.save(module));
     }
 
     public AdminDtos.PrepModuleItem updatePrepModule(String moduleId, AdminDtos.PrepModuleRequest request) {
         PrepModule module = prepModuleRepository.findById(moduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Preparation module not found"));
-        applyPrepModuleRequest(module, request);
+        applyPrepModuleRequest(module, request, true);
         return toPrepModuleItem(prepModuleRepository.save(module));
     }
 
@@ -854,18 +906,233 @@ public class AdminService {
         prepModuleRepository.deleteById(moduleId);
     }
 
-    private void applyPrepModuleRequest(PrepModule module, AdminDtos.PrepModuleRequest request) {
+    public AdminDtos.AdminOpsResponse operations() {
+        List<Notification> notifications = notificationRepository.findAll();
+        List<PlatformNotice> notices = platformNoticeRepository.findAllByOrderByUpdatedAtDesc();
+        List<AdminDtos.PlatformNoticeItem> noticeItems = notices.stream()
+                .filter(Objects::nonNull)
+                .map(this::toPlatformNoticeItem)
+                .toList();
+        List<AdminDtos.PlatformNoticeItem> activeNoticeItems = notices.stream()
+                .filter(this::isActiveNotice)
+                .map(this::toPlatformNoticeItem)
+                .toList();
+        long unreadNotifications = notifications.stream().filter(item -> item != null && !item.isRead()).count();
+        Map<String, Long> notificationsByType = notifications.stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.groupingBy(item -> normalize(item.getType()) == null ? "GENERAL" : normalize(item.getType()).toUpperCase(Locale.ROOT), Collectors.counting()));
+        List<AdminDtos.NotificationMonitorItem> recentNotifications = notifications.stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing((Notification item) -> item.getCreatedAt() == null ? Instant.EPOCH : item.getCreatedAt()).reversed())
+                .limit(10)
+                .map(item -> new AdminDtos.NotificationMonitorItem(
+                        item.getId(),
+                        item.getUserId(),
+                        normalize(item.getType()) == null ? "GENERAL" : normalize(item.getType()).toUpperCase(Locale.ROOT),
+                        item.getTitle(),
+                        item.isRead(),
+                        toIso(item.getCreatedAt())
+                ))
+                .toList();
+
+        List<AdminDtos.EmailTemplateItem> emailTemplates = List.of(
+                new AdminDtos.EmailTemplateItem("VERIFY_ACCOUNT", "Verify your InterviewPrep account", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("PASSWORD_RESET", "Reset your InterviewPrep password", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("BOOKING_CONFIRMATION", "Your mock interview is booked", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("SESSION_INVITE", "Your interview session is scheduled", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("MEETING_REMINDER", "Your interview room is live", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("SESSION_CANCELLATION", "Interview session cancelled", emailConfigured, emailFromAddress),
+                new AdminDtos.EmailTemplateItem("SESSION_STATUS_UPDATE", "Interview session update", emailConfigured, emailFromAddress)
+        );
+
+        return new AdminDtos.AdminOpsResponse(
+                noticeItems,
+                activeNoticeItems,
+                emailTemplates,
+                notifications.size(),
+                unreadNotifications,
+                notificationsByType,
+                recentNotifications
+        );
+    }
+
+    public AdminDtos.PlatformNoticeItem createPlatformNotice(AdminDtos.PlatformNoticeRequest request, String adminId) {
+        PlatformNotice notice = new PlatformNotice();
+        notice.setCreatedAt(Instant.now());
+        notice.setCreatedByAdminId(adminId);
+        applyPlatformNoticeRequest(notice, request, false);
+        PlatformNotice saved = platformNoticeRepository.save(notice);
+        if (request != null && Boolean.TRUE.equals(request.getBroadcast())) {
+            broadcastPlatformNotice(saved);
+        }
+        moderationAuditService.log(
+                "PLATFORM_NOTICE",
+                saved.getId(),
+                adminId,
+                null,
+                "PLATFORM_NOTICE_CREATED",
+                "Platform notice created",
+                "Created platform notice",
+                Map.of(),
+                stateMap("type", saved.getType(), "title", saved.getTitle(), "active", saved.getActive())
+        );
+        return toPlatformNoticeItem(saved);
+    }
+
+    public AdminDtos.PlatformNoticeItem updatePlatformNotice(String noticeId, AdminDtos.PlatformNoticeRequest request, String adminId) {
+        PlatformNotice notice = platformNoticeRepository.findById(noticeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Platform notice not found"));
+        Map<String, Object> before = stateMap("type", notice.getType(), "title", notice.getTitle(), "active", notice.getActive());
+        applyPlatformNoticeRequest(notice, request, true);
+        PlatformNotice saved = platformNoticeRepository.save(notice);
+        if (request != null && Boolean.TRUE.equals(request.getBroadcast())) {
+            broadcastPlatformNotice(saved);
+        }
+        moderationAuditService.log(
+                "PLATFORM_NOTICE",
+                saved.getId(),
+                adminId,
+                null,
+                "PLATFORM_NOTICE_UPDATED",
+                "Platform notice updated",
+                "Updated platform notice",
+                before,
+                stateMap("type", saved.getType(), "title", saved.getTitle(), "active", saved.getActive())
+        );
+        return toPlatformNoticeItem(saved);
+    }
+
+    public void deletePlatformNotice(String noticeId, String adminId) {
+        PlatformNotice notice = platformNoticeRepository.findById(noticeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Platform notice not found"));
+        platformNoticeRepository.deleteById(noticeId);
+        moderationAuditService.log(
+                "PLATFORM_NOTICE",
+                noticeId,
+                adminId,
+                null,
+                "PLATFORM_NOTICE_DELETED",
+                "Platform notice deleted",
+                "Deleted platform notice",
+                stateMap("type", notice.getType(), "title", notice.getTitle(), "active", notice.getActive()),
+                Map.of()
+        );
+    }
+
+    private void applyPrepModuleRequest(PrepModule module, AdminDtos.PrepModuleRequest request, boolean partial) {
         if (request == null) throw new IllegalArgumentException("Module details are required");
-        module.setTitle(requirePrepText(request.getTitle(), "Module title is required"));
-        module.setDescription(requirePrepText(request.getDescription(), "Module description is required"));
-        module.setCategory(resolvePrepCategory(request.getCategory()));
-        module.setDifficulty(resolvePrepDifficulty(request.getDifficulty()));
-        module.setTags(request.getTags());
-        module.setEstimatedDurationMinutes(request.getEstimatedDurationMinutes());
-        module.setResources(toPrepResourceLinks(request.getResources()));
-        module.setVisibilityStatus(resolvePrepModuleStatus(request.getVisibilityStatus()));
+        if (!partial || request.getTitle() != null) {
+            module.setTitle(requirePrepText(request.getTitle(), "Module title is required"));
+        }
+        if (!partial || request.getDescription() != null) {
+            module.setDescription(requirePrepText(request.getDescription(), "Module description is required"));
+        }
+        if (!partial || request.getCategory() != null) {
+            module.setCategory(resolvePrepCategory(request.getCategory()));
+        }
+        if (!partial || request.getDifficulty() != null) {
+            module.setDifficulty(resolvePrepDifficulty(request.getDifficulty()));
+        }
+        if (!partial || request.getTags() != null) {
+            module.setTags(sanitizePrepTags(request.getTags()));
+        }
+        if (!partial || request.getEstimatedDurationMinutes() != null) {
+            module.setEstimatedDurationMinutes(request.getEstimatedDurationMinutes());
+        }
+        if (!partial || request.getResources() != null) {
+            module.setResources(toPrepResourceLinks(request.getResources()));
+        }
+        if (!partial || request.getVisibilityStatus() != null) {
+            module.setVisibilityStatus(resolvePrepModuleStatus(request.getVisibilityStatus()));
+        }
         module.setPublishedAt("PUBLISHED".equals(module.getVisibilityStatus()) ? (module.getPublishedAt() == null ? Instant.now() : module.getPublishedAt()) : null);
         module.setUpdatedAt(Instant.now());
+    }
+
+    private void applyPlatformNoticeRequest(PlatformNotice notice, AdminDtos.PlatformNoticeRequest request, boolean partial) {
+        if (request == null) throw new IllegalArgumentException("Platform notice details are required");
+        if (!partial || request.getType() != null) {
+            notice.setType(resolveNoticeType(request.getType()));
+        }
+        if (!partial || request.getTitle() != null) {
+            notice.setTitle(requirePrepText(request.getTitle(), "Notice title is required"));
+        }
+        if (!partial || request.getMessage() != null) {
+            notice.setMessage(requirePrepText(request.getMessage(), "Notice message is required"));
+        }
+        if (!partial || request.getActive() != null) {
+            notice.setActive(request.getActive());
+        }
+        if (!partial || request.getStartsAt() != null) {
+            notice.setStartsAt(parseOptionalInstant(request.getStartsAt(), "Notice start time is invalid"));
+        }
+        if (!partial || request.getEndsAt() != null) {
+            notice.setEndsAt(parseOptionalInstant(request.getEndsAt(), "Notice end time is invalid"));
+        }
+        if (notice.getStartsAt() != null && notice.getEndsAt() != null && notice.getEndsAt().isBefore(notice.getStartsAt())) {
+            throw new IllegalArgumentException("Notice end time must be after the start time");
+        }
+        notice.setUpdatedAt(Instant.now());
+    }
+
+    private void broadcastPlatformNotice(PlatformNotice notice) {
+        if (notice == null || normalize(notice.getTitle()) == null || normalize(notice.getMessage()) == null) return;
+        List<Notification> notifications = userRepository.findAll().stream()
+                .filter(user -> !Boolean.FALSE.equals(user.getAccountEnabled()))
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .map(userId -> {
+                    Notification notification = new Notification();
+                    notification.setUserId(userId);
+                    notification.setType("PLATFORM_" + notice.getType());
+                    notification.setTitle(notice.getTitle());
+                    notification.setMessage(notice.getMessage());
+                    notification.setCreatedAt(Instant.now());
+                    notification.setData(Map.of("noticeId", notice.getId(), "noticeType", notice.getType()));
+                    return notification;
+                })
+                .toList();
+        if (!notifications.isEmpty()) {
+            notificationRepository.saveAll(notifications);
+        }
+    }
+
+    private AdminDtos.PlatformNoticeItem toPlatformNoticeItem(PlatformNotice notice) {
+        return new AdminDtos.PlatformNoticeItem(
+                notice.getId(),
+                notice.getType(),
+                notice.getTitle(),
+                notice.getMessage(),
+                isActiveNotice(notice),
+                toIso(notice.getStartsAt()),
+                toIso(notice.getEndsAt()),
+                notice.getCreatedByAdminId(),
+                toIso(notice.getCreatedAt()),
+                toIso(notice.getUpdatedAt())
+        );
+    }
+
+    private boolean isActiveNotice(PlatformNotice notice) {
+        if (notice == null || !Boolean.TRUE.equals(notice.getActive())) return false;
+        Instant now = Instant.now();
+        return (notice.getStartsAt() == null || !notice.getStartsAt().isAfter(now))
+                && (notice.getEndsAt() == null || notice.getEndsAt().isAfter(now));
+    }
+
+    private String resolveNoticeType(String value) {
+        String normalized = normalize(value);
+        if (normalized == null) return "NOTICE";
+        String type = normalized.toUpperCase(Locale.ROOT);
+        if (!Set.of("NOTICE", "ANNOUNCEMENT", "MAINTENANCE").contains(type)) {
+            throw new IllegalArgumentException("Choose a valid platform notice type");
+        }
+        return type;
+    }
+
+    private Instant parseOptionalInstant(String value, String message) {
+        String normalized = normalize(value);
+        if (normalized == null) return null;
+        return parseSessionInstant(normalized).orElseThrow(() -> new IllegalArgumentException(message));
     }
 
     private List<PrepModule.ResourceLink> toPrepResourceLinks(List<AdminDtos.PrepModuleResourceRequest> requests) {
@@ -883,18 +1150,27 @@ public class AdminService {
     }
 
     private AdminDtos.PrepModuleItem toPrepModuleItem(PrepModule module) {
+        List<AdminDtos.PrepModuleResourceItem> resources = module.getResources().stream()
+                .filter(Objects::nonNull)
+                .map(item -> {
+                    String url = normalize(item.getUrl());
+                    if (url == null) return null;
+                    String label = normalize(item.getLabel());
+                    return new AdminDtos.PrepModuleResourceItem(label == null ? url : label, url);
+                })
+                .filter(Objects::nonNull)
+                .toList();
+        String visibilityStatus = safePrepModuleStatus(module.getVisibilityStatus(), module.getId());
         return new AdminDtos.PrepModuleItem(
                 module.getId(),
-                module.getTitle(),
-                module.getDescription(),
-                module.getCategory(),
-                module.getDifficulty(),
-                module.getTags(),
+                Optional.ofNullable(module.getTitle()).orElse("Untitled module"),
+                Optional.ofNullable(module.getDescription()).orElse(""),
+                Optional.ofNullable(module.getCategory()).orElse("Uncategorized"),
+                Optional.ofNullable(module.getDifficulty()).orElse("Foundational"),
+                sanitizePrepTags(module.getTags()),
                 module.getEstimatedDurationMinutes(),
-                module.getVisibilityStatus(),
-                module.getResources().stream()
-                        .map(item -> new AdminDtos.PrepModuleResourceItem(item.getLabel(), item.getUrl()))
-                        .toList(),
+                visibilityStatus,
+                resources,
                 module.getCreatedByAdminId(),
                 toIso(module.getCreatedAt()),
                 toIso(module.getUpdatedAt()),
@@ -919,12 +1195,35 @@ public class AdminService {
         return normalized == null ? "Foundational" : normalized;
     }
 
+    private List<String> sanitizePrepTags(List<String> tags) {
+        if (tags == null) return List.of();
+        List<String> normalized = new ArrayList<>();
+        for (String tag : tags) {
+            String value = normalize(tag);
+            if (value != null && !normalized.contains(value)) {
+                normalized.add(value);
+            }
+        }
+        return normalized.stream().limit(12).toList();
+    }
+
     private String resolvePrepModuleStatus(String value) {
         String normalized = normalize(value);
         if (normalized == null) return "DRAFT";
         String status = normalized.toUpperCase(Locale.ROOT);
-        if (!Set.of("DRAFT", "PUBLISHED", "ARCHIVED").contains(status)) {
+        if (!PREP_MODULE_STATUSES.contains(status)) {
             throw new IllegalArgumentException("Choose a valid module visibility status");
+        }
+        return status;
+    }
+
+    private String safePrepModuleStatus(String value, String moduleId) {
+        String normalized = normalize(value);
+        if (normalized == null) return "DRAFT";
+        String status = normalized.toUpperCase(Locale.ROOT);
+        if (!PREP_MODULE_STATUSES.contains(status)) {
+            log.warn("Prep module {} has invalid visibilityStatus='{}'; returning DRAFT in admin response", moduleId, value);
+            return "DRAFT";
         }
         return status;
     }
@@ -1220,6 +1519,26 @@ public class AdminService {
     private String normalizeRole(String value) {
         String normalized = normalize(value);
         return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
+    }
+
+    private List<String> resolveAdminRoles(List<String> values) {
+        List<String> roles = new ArrayList<>();
+        if (values != null) {
+            for (String value : values) {
+                String role = normalizeRole(value);
+                if (role == null) continue;
+                if (!Set.of("INTERVIEWEE", "INTERVIEWER", "ADMIN").contains(role)) {
+                    throw new IllegalArgumentException("Choose valid user roles");
+                }
+                if (!roles.contains(role)) {
+                    roles.add(role);
+                }
+            }
+        }
+        if (roles.isEmpty()) {
+            throw new IllegalArgumentException("At least one user role is required");
+        }
+        return roles;
     }
 
     private String safe(String value) {
