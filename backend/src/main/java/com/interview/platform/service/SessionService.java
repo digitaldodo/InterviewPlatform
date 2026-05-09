@@ -37,12 +37,14 @@ public class SessionService {
     private final UserRepository userRepository;
     private final NotificationService notificationService;
     private final EmailService emailService;
+    private final CalendarInviteService calendarInviteService;
     private final MeetingProviderService meetingProviderService;
     private final AvailabilitySlotService availabilitySlotService;
     private final CacheInvalidationService cacheInvalidationService;
 
     public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
                           NotificationService notificationService, EmailService emailService,
+                          CalendarInviteService calendarInviteService,
                           MeetingProviderService meetingProviderService,
                           AvailabilitySlotService availabilitySlotService,
                           CacheInvalidationService cacheInvalidationService) {
@@ -50,6 +52,7 @@ public class SessionService {
         this.userRepository = userRepository;
         this.notificationService = notificationService;
         this.emailService = emailService;
+        this.calendarInviteService = calendarInviteService;
         this.meetingProviderService = meetingProviderService;
         this.availabilitySlotService = availabilitySlotService;
         this.cacheInvalidationService = cacheInvalidationService;
@@ -242,6 +245,22 @@ public class SessionService {
 
     public List<MeetingDtos.MeetingProviderOption> getMeetingProviderOptions() {
         return meetingProviderService.providerOptions();
+    }
+
+    public CalendarInviteService.CalendarInvite calendarInviteForSession(String sessionId, User actor) {
+        Session session = requireParticipant(sessionId, actor);
+        User interviewer = userRepository.findById(session.getInterviewerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        User interviewee = userRepository.findById(session.getCandidateId())
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        User recipient = actor != null && actor.getId() != null && actor.getId().equals(interviewer.getId()) ? interviewer : interviewee;
+        String meetingLink = actor != null && actor.getId() != null && actor.getId().equals(interviewer.getId())
+                ? interviewerMeetingLink(session)
+                : session.getJoinUrl();
+        CalendarInviteService.CalendarInviteType type = "CANCELLED".equals(normalizeStatusSafe(session.getStatus()))
+                ? CalendarInviteService.CalendarInviteType.CANCEL
+                : CalendarInviteService.CalendarInviteType.UPDATE;
+        return calendarInviteService.sessionInvite(session, interviewer, interviewee, recipient, meetingLink, type);
     }
 
     public MeetingDtos.MeetingAccessResponse getMeetingAccess(String sessionId, User actor) {
@@ -511,7 +530,15 @@ public class SessionService {
                 session.getStartTime(),
                 session.getMeetingProvider(),
                 session.getJoinUrl(),
-                interviewee.getTimeZone()
+                interviewee.getTimeZone(),
+                calendarInviteService.sessionInvite(
+                        session,
+                        interviewer,
+                        interviewee,
+                        interviewee,
+                        session.getJoinUrl(),
+                        CalendarInviteService.CalendarInviteType.REQUEST
+                )
         );
         emailService.sendSessionInvite(
                 interviewer.getEmail(),
@@ -520,8 +547,16 @@ public class SessionService {
                 session.getTitle(),
                 session.getStartTime(),
                 session.getMeetingProvider(),
-                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
-                interviewer.getTimeZone()
+                interviewerMeetingLink(session),
+                interviewer.getTimeZone(),
+                calendarInviteService.sessionInvite(
+                        session,
+                        interviewer,
+                        interviewee,
+                        interviewer,
+                        interviewerMeetingLink(session),
+                        CalendarInviteService.CalendarInviteType.REQUEST
+                )
         );
     }
 
@@ -534,13 +569,41 @@ public class SessionService {
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
                     if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
-                        emailService.sendSessionCancellation(candidate.getEmail(), session.getTitle(), session.getStartTime(), interviewer.getName(), candidate.getTimeZone());
-                        emailService.sendSessionCancellation(interviewer.getEmail(), session.getTitle(), session.getStartTime(), candidate.getName(), interviewer.getTimeZone());
+                        emailService.sendSessionCancellation(
+                                candidate.getEmail(),
+                                session.getTitle(),
+                                session.getStartTime(),
+                                interviewer.getName(),
+                                candidate.getTimeZone(),
+                                calendarInviteService.sessionInvite(session, interviewer, candidate, candidate, session.getJoinUrl(), CalendarInviteService.CalendarInviteType.CANCEL)
+                        );
+                        emailService.sendSessionCancellation(
+                                interviewer.getEmail(),
+                                session.getTitle(),
+                                session.getStartTime(),
+                                candidate.getName(),
+                                interviewer.getTimeZone(),
+                                calendarInviteService.sessionInvite(session, interviewer, candidate, interviewer, interviewerMeetingLink(session), CalendarInviteService.CalendarInviteType.CANCEL)
+                        );
                     } else {
-                        emailService.sendSessionStatusUpdate(candidate.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(), session.getJoinUrl(), candidate.getTimeZone());
-                        emailService.sendSessionStatusUpdate(interviewer.getEmail(), session.getTitle(), session.getStatus(), session.getStartTime(),
-                                session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
-                                interviewer.getTimeZone());
+                        emailService.sendSessionStatusUpdate(
+                                candidate.getEmail(),
+                                session.getTitle(),
+                                session.getStatus(),
+                                session.getStartTime(),
+                                session.getJoinUrl(),
+                                candidate.getTimeZone(),
+                                calendarInviteService.sessionInvite(session, interviewer, candidate, candidate, session.getJoinUrl(), CalendarInviteService.CalendarInviteType.UPDATE)
+                        );
+                        emailService.sendSessionStatusUpdate(
+                                interviewer.getEmail(),
+                                session.getTitle(),
+                                session.getStatus(),
+                                session.getStartTime(),
+                                interviewerMeetingLink(session),
+                                interviewer.getTimeZone(),
+                                calendarInviteService.sessionInvite(session, interviewer, candidate, interviewer, interviewerMeetingLink(session), CalendarInviteService.CalendarInviteType.UPDATE)
+                        );
                     }
                 }));
     }
@@ -566,6 +629,12 @@ public class SessionService {
         return items.stream()
                 .sorted(Comparator.comparing(this::sessionSortValue))
                 .toList();
+    }
+
+    private String interviewerMeetingLink(Session session) {
+        return session.getHostUrl() == null || session.getHostUrl().isBlank()
+                ? session.getJoinUrl()
+                : session.getHostUrl();
     }
 
     private Session sanitizeSession(Session source) {

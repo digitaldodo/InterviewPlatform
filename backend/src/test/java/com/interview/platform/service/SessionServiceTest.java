@@ -40,6 +40,8 @@ class SessionServiceTest {
     @Mock
     private EmailService emailService;
     @Mock
+    private CalendarInviteService calendarInviteService;
+    @Mock
     private MeetingProviderService meetingProviderService;
     @Mock
     private AvailabilitySlotService availabilitySlotService;

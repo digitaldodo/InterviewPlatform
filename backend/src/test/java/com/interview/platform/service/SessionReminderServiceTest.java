@@ -44,6 +44,8 @@ class SessionReminderServiceTest {
     @Mock
     private EmailService emailService;
     @Mock
+    private CalendarInviteService calendarInviteService;
+    @Mock
     private NotificationService notificationService;
     @Mock
     private MongoTemplate mongoTemplate;
@@ -60,6 +62,7 @@ class SessionReminderServiceTest {
                 sessionRepository,
                 userRepository,
                 emailService,
+                calendarInviteService,
                 notificationService,
                 schedulingTimeService,
                 mongoTemplate,
@@ -95,7 +98,8 @@ class SessionReminderServiceTest {
                 eq("12:30 PM"),
                 eq("UTC"),
                 eq("https://join.example.com"),
-                eq(60)
+                eq(60),
+                any()
         );
         verify(emailService).sendPreInterviewReminder(
                 eq("interviewer@example.com"),
@@ -107,7 +111,8 @@ class SessionReminderServiceTest {
                 eq("12:30 PM"),
                 eq("UTC"),
                 eq("https://host.example.com"),
-                eq(60)
+                eq(60),
+                any()
         );
         verify(mongoTemplate, atLeastOnce()).updateFirst(any(Query.class), any(Update.class), eq(Session.class));
     }
@@ -123,7 +128,7 @@ class SessionReminderServiceTest {
         reminderService.sendDuePreInterviewReminders();
 
         verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Session.class));
-        verify(emailService, never()).sendPreInterviewReminder(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(emailService, never()).sendPreInterviewReminder(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -152,6 +157,7 @@ class SessionReminderServiceTest {
                 any(),
                 any(),
                 any(),
+                any(),
                 any()
         );
         verify(emailService).sendPreInterviewReminder(
@@ -164,7 +170,8 @@ class SessionReminderServiceTest {
                 eq("12:30 PM"),
                 eq("UTC"),
                 eq("https://host.example.com"),
-                eq(60)
+                eq(60),
+                any()
         );
     }
 
@@ -182,7 +189,7 @@ class SessionReminderServiceTest {
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(interviewee));
         doThrow(new EmailDeliveryException("send failed"))
                 .when(emailService)
-                .sendPreInterviewReminder(eq("candidate@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                .sendPreInterviewReminder(eq("candidate@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> reminderService.sendDuePreInterviewReminders());
     }

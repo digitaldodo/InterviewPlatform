@@ -7,11 +7,15 @@ import com.interview.platform.exception.UnauthorizedException;
 import com.interview.platform.model.Session;
 import com.interview.platform.model.User;
 import com.interview.platform.security.UserPrincipal;
+import com.interview.platform.service.CalendarInviteService;
 import com.interview.platform.service.SessionService;
 import org.springframework.security.core.Authentication;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -73,6 +77,15 @@ public class SessionController {
                                                                                             Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Meeting access fetched successfully",
                 sessionService.getMeetingAccess(id, currentUser(authentication))));
+    }
+
+    @GetMapping(value = "/{id}/calendar.ics", produces = "text/calendar")
+    public ResponseEntity<byte[]> downloadCalendarInvite(@PathVariable String id, Authentication authentication) {
+        CalendarInviteService.CalendarInvite invite = sessionService.calendarInviteForSession(id, currentUser(authentication));
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("text/calendar; charset=UTF-8; method=" + invite.method()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + invite.filename() + "\"")
+                .body(invite.content().getBytes(StandardCharsets.UTF_8));
     }
 
     @PostMapping("/{id}/meeting/start")

@@ -38,6 +38,7 @@ public class SessionReminderService {
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final CalendarInviteService calendarInviteService;
     private final NotificationService notificationService;
     private final SchedulingTimeService schedulingTimeService;
     private final MongoTemplate mongoTemplate;
@@ -53,6 +54,7 @@ public class SessionReminderService {
     public SessionReminderService(SessionRepository sessionRepository,
                                   UserRepository userRepository,
                                   EmailService emailService,
+                                  CalendarInviteService calendarInviteService,
                                   NotificationService notificationService,
                                   SchedulingTimeService schedulingTimeService,
                                   MongoTemplate mongoTemplate,
@@ -63,6 +65,7 @@ public class SessionReminderService {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.emailService = emailService;
+        this.calendarInviteService = calendarInviteService;
         this.notificationService = notificationService;
         this.schedulingTimeService = schedulingTimeService;
         this.mongoTemplate = mongoTemplate;
@@ -150,7 +153,15 @@ public class SessionReminderService {
                     intervieweeClock,
                     intervieweeTimezone,
                     session.getJoinUrl(),
-                    session.getDurationMinutes()
+                    session.getDurationMinutes(),
+                    calendarInviteService.sessionInvite(
+                            session,
+                            interviewer,
+                            interviewee,
+                            interviewee,
+                            session.getJoinUrl(),
+                            CalendarInviteService.CalendarInviteType.UPDATE
+                    )
             );
             notificationService.create(
                     session.getCandidateId(),
@@ -174,7 +185,15 @@ public class SessionReminderService {
                     interviewerClock,
                     interviewerTimezone,
                     interviewerMeetingLink(session),
-                    session.getDurationMinutes()
+                    session.getDurationMinutes(),
+                    calendarInviteService.sessionInvite(
+                            session,
+                            interviewer,
+                            interviewee,
+                            interviewer,
+                            interviewerMeetingLink(session),
+                            CalendarInviteService.CalendarInviteType.UPDATE
+                    )
             );
             notificationService.create(
                     session.getInterviewerId(),

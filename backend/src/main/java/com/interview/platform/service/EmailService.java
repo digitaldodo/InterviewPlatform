@@ -6,6 +6,7 @@ import com.sendgrid.Request;
 import com.sendgrid.Response;
 import com.sendgrid.SendGrid;
 import com.sendgrid.helpers.mail.Mail;
+import com.sendgrid.helpers.mail.objects.Attachments;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
 import org.slf4j.Logger;
@@ -14,12 +15,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 
@@ -73,9 +76,16 @@ public class EmailService {
 
     public void sendSessionInvite(String to, String recipientName, String counterpartName, String title,
                                   String startTime, String meetingProvider, String meetingLink, String recipientTimeZone) {
+        sendSessionInvite(to, recipientName, counterpartName, title, startTime, meetingProvider, meetingLink, recipientTimeZone, null);
+    }
+
+    public void sendSessionInvite(String to, String recipientName, String counterpartName, String title,
+                                  String startTime, String meetingProvider, String meetingLink, String recipientTimeZone,
+                                  CalendarInviteService.CalendarInvite calendarInvite) {
         log.info("Preparing session invite email for {}", maskEmail(to));
         send(to, "Your interview session is scheduled",
-                meetingInviteTemplate(recipientName, counterpartName, title, localMeetingTime(startTime, recipientTimeZone), meetingProvider, meetingLink));
+                meetingInviteTemplate(recipientName, counterpartName, title, localMeetingTime(startTime, recipientTimeZone), meetingProvider, meetingLink),
+                calendarInvite);
     }
 
     public void sendMeetingReminder(String to, String title, String startTime, String meetingLink, String counterpartName) {
@@ -91,10 +101,19 @@ public class EmailService {
     public void sendPreInterviewReminder(String to, String recipientName, String interviewerName, String intervieweeName,
                                          List<String> topics, String scheduledDate, String scheduledTime,
                                          String timezone, String meetingLink, Integer durationMinutes) {
+        sendPreInterviewReminder(to, recipientName, interviewerName, intervieweeName, topics, scheduledDate,
+                scheduledTime, timezone, meetingLink, durationMinutes, null);
+    }
+
+    public void sendPreInterviewReminder(String to, String recipientName, String interviewerName, String intervieweeName,
+                                         List<String> topics, String scheduledDate, String scheduledTime,
+                                         String timezone, String meetingLink, Integer durationMinutes,
+                                         CalendarInviteService.CalendarInvite calendarInvite) {
         log.info("Preparing pre-interview reminder email for {}", maskEmail(to));
         send(to, "Your mock interview starts in 30 minutes",
                 preInterviewReminderTemplate(recipientName, interviewerName, intervieweeName, topics, scheduledDate,
-                        scheduledTime, timezone, meetingLink, durationMinutes));
+                        scheduledTime, timezone, meetingLink, durationMinutes),
+                calendarInvite);
     }
 
     public void sendSessionCancellation(String to, String title, String startTime, String counterpartName) {
@@ -102,8 +121,15 @@ public class EmailService {
     }
 
     public void sendSessionCancellation(String to, String title, String startTime, String counterpartName, String recipientTimeZone) {
+        sendSessionCancellation(to, title, startTime, counterpartName, recipientTimeZone, null);
+    }
+
+    public void sendSessionCancellation(String to, String title, String startTime, String counterpartName, String recipientTimeZone,
+                                        CalendarInviteService.CalendarInvite calendarInvite) {
         log.info("Preparing session cancellation email for {}", maskEmail(to));
-        send(to, "Interview session cancelled", cancellationTemplate(title, localMeetingTime(startTime, recipientTimeZone), counterpartName));
+        send(to, "Interview session cancelled",
+                cancellationTemplate(title, localMeetingTime(startTime, recipientTimeZone), counterpartName),
+                calendarInvite);
     }
 
     public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl) {
@@ -111,11 +137,22 @@ public class EmailService {
     }
 
     public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl, String recipientTimeZone) {
+        sendSessionStatusUpdate(to, title, status, startTime, launchUrl, recipientTimeZone, null);
+    }
+
+    public void sendSessionStatusUpdate(String to, String title, String status, String startTime, String launchUrl, String recipientTimeZone,
+                                        CalendarInviteService.CalendarInvite calendarInvite) {
         log.info("Preparing session status email for {}", maskEmail(to));
-        send(to, "Interview session update", sessionStatusTemplate(title, status, localMeetingTime(startTime, recipientTimeZone), launchUrl));
+        send(to, "Interview session update",
+                sessionStatusTemplate(title, status, localMeetingTime(startTime, recipientTimeZone), launchUrl),
+                calendarInvite);
     }
 
     private void send(String to, String subject, String html) {
+        send(to, subject, html, null);
+    }
+
+    private void send(String to, String subject, String html, CalendarInviteService.CalendarInvite calendarInvite) {
         if (apiKey == null || apiKey.isBlank()) {
             log.error("SendGrid API key is not configured. Email '{}' for {} was not sent.", subject, maskEmail(to));
             throw new EmailDeliveryException("Email delivery is not configured. Please contact support.");
@@ -125,6 +162,7 @@ public class EmailService {
             throw new EmailDeliveryException("Email sender is not configured. Please contact support.");
         }
         Mail mail = new Mail(new Email(fromEmail), subject, new Email(to), new Content("text/html", html));
+        addCalendarAttachment(mail, calendarInvite);
         SendGrid sg = new SendGrid(apiKey);
         Request request = new Request();
         try {
@@ -205,6 +243,7 @@ public class EmailService {
                     <p style="color:#a5adbd">Hi %s, your %s session with %s is booked for %s.</p>
                     <p style="color:#a5adbd">Meeting provider: %s</p>
                     <p><a href="%s" style="display:inline-block;background:#6c63ff;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none">Open meeting</a></p>
+                    <p style="color:#a5adbd">An .ics calendar invite is attached. Open it to add this session to Google Calendar, Outlook, Apple Calendar, or your mobile calendar app.</p>
                     <p style="color:#a5adbd">You can also join from your InterviewPrep dashboard.</p>
                   </div>
                 </div>
@@ -229,6 +268,7 @@ public class EmailService {
                   <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
                     <h1 style="margin:0 0 12px">Session cancelled</h1>
                     <p style="color:#a5adbd">%s scheduled for %s with %s has been cancelled.</p>
+                    <p style="color:#a5adbd">Open the attached .ics cancellation file to update supporting calendar apps.</p>
                   </div>
                 </div>
                 """.formatted(safe(title), safe(startTime), safe(counterpartName));
@@ -244,6 +284,7 @@ public class EmailService {
                     <h1 style="margin:0 0 12px">Session update</h1>
                     <p style="color:#a5adbd">%s is now %s. Scheduled time: %s.</p>
                     %s
+                    <p style="color:#a5adbd">Use the attached .ics file to update this event in your calendar.</p>
                   </div>
                 </div>
                 """.formatted(safe(title), safe(status), safe(startTime), button);
@@ -260,6 +301,18 @@ public class EmailService {
         } catch (DateTimeParseException | IllegalArgumentException ignored) {
             return startTime;
         }
+    }
+
+    private void addCalendarAttachment(Mail mail, CalendarInviteService.CalendarInvite calendarInvite) {
+        if (mail == null || calendarInvite == null || calendarInvite.content() == null || calendarInvite.content().isBlank()) {
+            return;
+        }
+        Attachments attachment = new Attachments();
+        attachment.setFilename(calendarInvite.filename());
+        attachment.setType("text/calendar; charset=UTF-8; method=" + calendarInvite.method());
+        attachment.setDisposition("attachment");
+        attachment.setContent(Base64.getEncoder().encodeToString(calendarInvite.content().getBytes(StandardCharsets.UTF_8)));
+        mail.addAttachments(attachment);
     }
 
     private Instant parseMeetingInstant(String startTime) {
@@ -282,7 +335,7 @@ public class EmailService {
         return """
                 <div style="font-family:Inter,Arial,sans-serif;background:#0f1117;color:#e8eaf0;padding:28px">
                   <div style="max-width:560px;margin:auto;background:#171a25;border:1px solid #2e3350;border-radius:12px;padding:28px">
-                    <h1 style="margin:0 0 12px">Your mock interview starts in 30 minutes.</h1>
+                    <h1 style="margin:0 0 12px">Your mock interview starts soon.</h1>
                     <p style="color:#a5adbd">Hi %s, this is a reminder for your upcoming interview session.</p>
                     <div style="background:#11131c;border:1px solid #2e3350;border-radius:10px;padding:16px;margin:20px 0">
                       <p style="margin:0 0 8px"><strong>Interviewer:</strong> %s</p>
@@ -293,6 +346,7 @@ public class EmailService {
                       <p style="margin:0"><strong>Duration:</strong> %s</p>
                     </div>
                     %s
+                    <p style="color:#a5adbd">The attached .ics file can add or refresh this session in your calendar app.</p>
                     <p style="color:#a5adbd">You can also join from your InterviewPrep dashboard.</p>
                   </div>
                 </div>
