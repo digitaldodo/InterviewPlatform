@@ -65,6 +65,7 @@ let adminAuditLogPage = null;
 let adminAnalytics = null;
 let adminPrepModules = [];
 let adminOps = null;
+let calendarConnectionStatus = null;
 let prepModuleEditingId = null;
 let adminLoading = false;
 let moderationDialogState = null;
@@ -235,11 +236,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   refreshDiscoverFilterUi();
   bindFeedbackForm();
   showSection(routeFromHash(), false);
+  consumeCalendarRedirectParams();
   const startupLoads = activeWorkspace === 'ADMIN'
-    ? [loadMeetingProviders(), loadNotifications(), loadAdminData(true)]
+    ? [loadMeetingProviders(), loadNotifications(), loadCalendarStatus(), loadAdminData(true)]
     : [
         loadFilterOptions(),
         loadMeetingProviders(),
+        loadCalendarStatus(),
         loadSessions(),
         loadInterviewers(),
         loadRecommended(),
@@ -561,7 +564,7 @@ function toggleSidebar(forceOpen) {
 }
 
 function routeFromHash() {
-  const value = window.location.hash.replace(/^#\/?/, '');
+  const value = window.location.hash.replace(/^#\/?/, '').split('?')[0];
   if (value && ROUTES.has(value)) return value;
   const pathRoute = {
     '/prep': 'career',
@@ -615,6 +618,17 @@ function showSection(name, updateRoute = true) {
   if (updateRoute && window.location.hash !== `#/${targetRoute}`) {
     history.pushState(null, '', `#/${targetRoute}`);
   }
+}
+
+function consumeCalendarRedirectParams() {
+  const raw = window.location.hash.split('?')[1];
+  if (!raw) return;
+  const params = new URLSearchParams(raw);
+  const status = params.get('calendar');
+  if (!status) return;
+  const message = params.get('message') || (status === 'connected' ? 'Google Calendar connected.' : 'Google Calendar connection failed.');
+  toast(message, status === 'connected' ? 'success' : 'error');
+  history.replaceState(null, '', '#/profile');
 }
 
 function defaultWorkspaceRoute() {
@@ -2821,6 +2835,65 @@ async function loadNotifications() {
   }
 }
 
+async function loadCalendarStatus() {
+  try {
+    calendarConnectionStatus = await api('/api/calendar/status');
+  } catch (err) {
+    calendarConnectionStatus = {
+      provider: 'GOOGLE',
+      configured: false,
+      connected: false,
+      status: 'UNAVAILABLE',
+      lastSyncStatus: 'ERROR',
+      lastSyncMessage: err.message || 'Calendar status unavailable.',
+    };
+  }
+  if (!document.getElementById('section-profile')?.hidden) renderProfile();
+  return calendarConnectionStatus;
+}
+
+async function connectGoogleCalendar() {
+  const btn = document.getElementById('google-calendar-connect-btn');
+  setButtonLoading(btn, true, 'Opening');
+  try {
+    const result = await api('/api/calendar/google/connect', { method: 'POST' });
+    if (!result?.authorizationUrl) throw new Error('Google Calendar authorization URL was not returned.');
+    window.location.href = result.authorizationUrl;
+  } catch (err) {
+    toast(err.message || 'Could not start Google Calendar connection.', 'error');
+    setButtonLoading(btn, false);
+  }
+}
+
+async function syncGoogleCalendar() {
+  const btn = document.getElementById('google-calendar-sync-btn');
+  setButtonLoading(btn, true, 'Syncing');
+  try {
+    const result = await api('/api/calendar/google/sync', { method: 'POST' });
+    toast(result?.message || 'Google Calendar sync finished.', result?.failed ? 'warning' : 'success');
+    await loadCalendarStatus();
+  } catch (err) {
+    toast(err.message || 'Google Calendar sync failed. ICS invites are still available.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+async function disconnectGoogleCalendar() {
+  if (!window.confirm('Disconnect Google Calendar from InterviewPrep? Existing Google Calendar events will remain unless you remove them in Google Calendar.')) return;
+  const btn = document.getElementById('google-calendar-disconnect-btn');
+  setButtonLoading(btn, true, 'Disconnecting');
+  try {
+    await api('/api/calendar/google', { method: 'DELETE' });
+    toast('Google Calendar disconnected.', 'success');
+    await loadCalendarStatus();
+  } catch (err) {
+    toast(err.message || 'Could not disconnect Google Calendar.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
 function renderNotifications(items) {
   const panel = document.getElementById('notification-panel');
   const grouped = groupNotifications(items || []);
@@ -3296,6 +3369,8 @@ function renderProfile() {
     <div class="divider"></div>
     ${roleManagementSection()}
     <div class="divider"></div>
+    ${calendarIntegrationSection()}
+    <div class="divider"></div>
     <form class="profile-form" onsubmit="changePassword(event)">
       <h2>Security</h2>
       <div class="form-grid">
@@ -3361,6 +3436,52 @@ function roleManagementSection() {
             ? '<span class="badge badge-green">Active</span>'
             : '<button class="btn btn-outline btn-sm" id="add-interviewee-role-btn" type="button" onclick="addRoleToAccount(\'INTERVIEWEE\')">Add interviewee role</button>'}
         </article>
+      </div>
+    </section>
+  `;
+}
+
+function calendarIntegrationSection() {
+  const status = calendarConnectionStatus || {};
+  const connected = Boolean(status.connected);
+  const configured = status.configured !== false;
+  const statusLabel = connected ? 'Connected' : configured ? 'Optional' : 'Not configured';
+  const statusClass = connected ? 'badge-green' : configured ? 'badge-yellow' : 'badge-gray';
+  const health = status.lastSyncStatus || status.status || (connected ? 'SYNCED' : 'DISCONNECTED');
+  const message = status.lastSyncMessage || (connected
+    ? 'Interview sessions sync automatically when booking or cancellation changes.'
+    : 'Use ICS invites by default, or connect Google Calendar for automatic event sync.');
+  return `
+    <section class="profile-management-card calendar-integration-card">
+      <div class="calendar-integration-head">
+        <div>
+          <h2>Calendar sync</h2>
+          <p class="availability-summary-note">Google Calendar sync is optional. InterviewPrep still sends ICS invites and reminders if you leave it disconnected.</p>
+        </div>
+        <span class="badge ${statusClass}">${esc(statusLabel)}</span>
+      </div>
+      <div class="calendar-sync-status">
+        <div>
+          <strong>Google Calendar</strong>
+          <span>${esc(connected ? (status.accountEmail || currentUser.email || 'Connected account') : 'Not connected')}</span>
+        </div>
+        <div>
+          <strong>Sync health</strong>
+          <span>${esc(health)}</span>
+        </div>
+        <div>
+          <strong>Last sync</strong>
+          <span>${esc(status.lastSyncAt ? fmtDate(status.lastSyncAt) : 'Not synced yet')}</span>
+        </div>
+      </div>
+      <p class="availability-summary-note">${esc(message)}</p>
+      <div class="calendar-actions">
+        ${connected
+          ? `
+            <button class="btn btn-outline btn-sm" id="google-calendar-sync-btn" type="button" onclick="syncGoogleCalendar()">Sync now</button>
+            <button class="btn btn-danger btn-sm" id="google-calendar-disconnect-btn" type="button" onclick="disconnectGoogleCalendar()">Disconnect</button>
+          `
+          : `<button class="btn btn-primary btn-sm" id="google-calendar-connect-btn" type="button" onclick="connectGoogleCalendar()" ${configured ? '' : 'disabled'}>Connect Google Calendar</button>`}
       </div>
     </section>
   `;

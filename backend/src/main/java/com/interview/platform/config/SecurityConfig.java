@@ -60,6 +60,7 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/health",
                                 "/api/auth/**",
+                                "/api/calendar/google/callback",
                                 "/api/users/register",
                                 "/api/users/login",
                                 "/api/users/username-availability"

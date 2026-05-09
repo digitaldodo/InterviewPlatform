@@ -38,6 +38,7 @@ public class SessionService {
     private final NotificationService notificationService;
     private final EmailService emailService;
     private final CalendarInviteService calendarInviteService;
+    private final CalendarIntegrationService calendarIntegrationService;
     private final MeetingProviderService meetingProviderService;
     private final AvailabilitySlotService availabilitySlotService;
     private final CacheInvalidationService cacheInvalidationService;
@@ -45,6 +46,7 @@ public class SessionService {
     public SessionService(SessionRepository sessionRepository, UserRepository userRepository,
                           NotificationService notificationService, EmailService emailService,
                           CalendarInviteService calendarInviteService,
+                          CalendarIntegrationService calendarIntegrationService,
                           MeetingProviderService meetingProviderService,
                           AvailabilitySlotService availabilitySlotService,
                           CacheInvalidationService cacheInvalidationService) {
@@ -53,6 +55,7 @@ public class SessionService {
         this.notificationService = notificationService;
         this.emailService = emailService;
         this.calendarInviteService = calendarInviteService;
+        this.calendarIntegrationService = calendarIntegrationService;
         this.meetingProviderService = meetingProviderService;
         this.availabilitySlotService = availabilitySlotService;
         this.cacheInvalidationService = cacheInvalidationService;
@@ -151,6 +154,7 @@ public class SessionService {
         cacheInvalidationService.evictAnalyticsForParticipants(saved.getInterviewerId(), saved.getCandidateId());
         cacheInvalidationService.evictInterviewerCaches(saved.getInterviewerId(), interviewer.getUsername());
         notifyCreated(saved, interviewer, interviewee);
+        calendarIntegrationService.syncSessionForParticipantsSafely(saved);
         return sanitizeSession(saved);
     }
 
@@ -240,6 +244,7 @@ public class SessionService {
         cacheInvalidationService.evictAvailabilityCaches(saved.getInterviewerId());
         cacheInvalidationService.evictAnalyticsForParticipants(saved.getInterviewerId(), saved.getCandidateId());
         notifyStatusChanged(saved);
+        calendarIntegrationService.syncSessionForParticipantsSafely(saved);
         return sanitizeSession(saved);
     }
 

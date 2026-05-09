@@ -2828,6 +2828,40 @@ body:not(.admin-workspace-active) .admin-only {
   margin-top: 0.28rem;
 }
 
+.calendar-integration-card {
+  gap: 1rem;
+}
+
+.calendar-integration-head,
+.calendar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.calendar-sync-status {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.calendar-sync-status > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.025);
+}
+
+.calendar-sync-status span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .danger-zone {
   border-color: rgba(255, 107, 122, 0.28);
   background: rgba(255, 107, 122, 0.055);
@@ -4514,6 +4548,10 @@ body:not(.admin-workspace-active) .admin-only {
   }
 
   .role-management-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-sync-status {
     grid-template-columns: 1fr;
   }
 

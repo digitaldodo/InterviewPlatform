@@ -42,6 +42,8 @@ class SessionServiceTest {
     @Mock
     private CalendarInviteService calendarInviteService;
     @Mock
+    private CalendarIntegrationService calendarIntegrationService;
+    @Mock
     private MeetingProviderService meetingProviderService;
     @Mock
     private AvailabilitySlotService availabilitySlotService;
