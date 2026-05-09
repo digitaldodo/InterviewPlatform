@@ -355,15 +355,28 @@ function renderRoleNavigation() {
   const nav = document.querySelector('.nav-menu');
   if (nav) {
     nav.innerHTML = navigationItems().map(item => `
-      <button class="nav-link role-nav-link" data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+      <button class="nav-link role-nav-link" data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button">${esc(item.label)}</button>
     `).join('');
   }
   const bottom = document.querySelector('.bottom-nav');
   if (bottom) {
     bottom.innerHTML = bottomNavigationItems().map(item => `
-      <button data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+      <button data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button">${esc(item.label)}</button>
     `).join('');
   }
+  bindRoleNavigation();
+}
+
+function bindRoleNavigation() {
+  [document.querySelector('.nav-menu'), document.querySelector('.bottom-nav')].forEach(container => {
+    if (!container || container.dataset.navBound === 'true') return;
+    container.dataset.navBound = 'true';
+    container.addEventListener('click', event => {
+      const button = event.target.closest('[data-nav-key]');
+      if (!button || !container.contains(button)) return;
+      runRoleNav(button.dataset.navKey);
+    });
+  });
 }
 
 function navRouteForItem(item) {
