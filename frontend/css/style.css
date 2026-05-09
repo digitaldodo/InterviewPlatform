@@ -838,12 +838,18 @@ textarea:focus-visible {
 
 /* Dashboard */
 .app-shell {
-  display: flex;
+  --dashboard-sidebar-width: clamp(13.5rem, 18vw, 16.25rem);
+  display: grid;
+  grid-template-columns: var(--dashboard-sidebar-width) minmax(0, 1fr);
+  min-height: 100dvh;
+  overflow-x: clip;
 }
 
 .sidebar {
-  width: 260px;
+  width: auto;
+  min-width: 0;
   height: 100vh;
+  height: 100dvh;
   position: sticky;
   top: 0;
   display: flex;
@@ -863,6 +869,10 @@ textarea:focus-visible {
 .nav-menu {
   display: grid;
   gap: 0.35rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
 }
 
 .nav-link {
@@ -877,6 +887,7 @@ textarea:focus-visible {
   cursor: pointer;
   font-weight: 800;
   text-align: left;
+  overflow-wrap: anywhere;
   transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
@@ -891,6 +902,7 @@ textarea:focus-visible {
   margin-top: auto;
   display: grid;
   gap: 0.75rem;
+  flex: 0 0 auto;
 }
 
 .sidebar-user-info {
@@ -918,10 +930,11 @@ textarea:focus-visible {
 }
 
 .dashboard-main {
-  flex: 1;
+  width: 100%;
   min-width: 0;
   padding: clamp(1.1rem, 1.8vw, 1.65rem);
-  max-width: calc(100vw - 260px);
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .dashboard-main .panel,
@@ -1297,7 +1310,7 @@ textarea:focus-visible {
 }
 
 .stats-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
 }
 
 .stat-card {
@@ -2153,7 +2166,7 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-prep-layout {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(min(100%, 20rem), 0.8fr) minmax(min(100%, 26rem), 1.2fr);
   gap: 1rem;
   align-items: start;
 }
@@ -2166,7 +2179,7 @@ body:not(.admin-workspace-active) .admin-only {
 }
 
 .admin-stats-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
 }
 
 .admin-dashboard-shell,
@@ -2178,7 +2191,7 @@ body:not(.admin-workspace-active) .admin-only {
 .admin-insight-grid,
 .admin-chart-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
   gap: 1rem;
 }
 
@@ -2266,7 +2279,7 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-activity-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1rem;
 }
 
@@ -2292,7 +2305,7 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-analytics-hero {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: 1rem;
   margin: 1rem 0;
 }
@@ -2375,7 +2388,7 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-analytics-copy {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
   gap: 0.75rem;
 }
 
@@ -2413,7 +2426,7 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-topic-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 2fr) auto;
+  grid-template-columns: minmax(min(100%, 10rem), 1fr) minmax(min(100%, 8rem), 2fr) auto;
   gap: 0.75rem;
   align-items: center;
   padding: 0.8rem 0.9rem;
@@ -2443,6 +2456,7 @@ body:not(.admin-workspace-active) .admin-only {
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .admin-inline-filters,
@@ -2469,13 +2483,13 @@ body:not(.admin-workspace-active) .admin-only {
 
 .admin-moderation-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1rem;
 }
 
 .admin-ops-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
   gap: 1rem;
 }
 
@@ -2483,10 +2497,21 @@ body:not(.admin-workspace-active) .admin-only {
   display: grid;
   gap: 0.9rem;
   padding: 1rem;
+  min-width: 0;
 }
 
 .admin-table-row {
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.admin-table-row > * {
+  min-width: 0;
+}
+
+.admin-table-row .card-actions {
+  justify-content: flex-end;
+  min-width: min(100%, 14rem);
 }
 
 .admin-row-main {
@@ -4394,12 +4419,11 @@ body:not(.admin-workspace-active) .admin-only {
 }
 
 @media (max-width: 1180px) {
-  .sidebar {
-    width: 232px;
+  .app-shell {
+    --dashboard-sidebar-width: clamp(12.5rem, 20vw, 14.5rem);
   }
 
   .dashboard-main {
-    max-width: calc(100vw - 232px);
     padding: 1rem;
   }
 
@@ -4464,13 +4488,15 @@ body:not(.admin-workspace-active) .admin-only {
 }
 
 @media (min-width: 761px) and (max-width: 980px) {
+  .app-shell {
+    --dashboard-sidebar-width: clamp(11.75rem, 22vw, 13.125rem);
+  }
+
   .sidebar {
-    width: 210px;
     padding: 0.8rem;
   }
 
   .dashboard-main {
-    max-width: calc(100vw - 210px);
     padding: 1rem;
   }
 
@@ -4655,6 +4681,8 @@ body:not(.admin-workspace-active) .admin-only {
 
   .app-shell {
     display: block;
+    min-height: 100dvh;
+    overflow-x: hidden;
   }
 
   .mobile-menu-btn {
@@ -4704,7 +4732,7 @@ body:not(.admin-workspace-active) .admin-only {
   }
 
   .dashboard-main {
-    max-width: none;
+    max-width: 100%;
     padding: 4.35rem 1rem 1rem;
   }
 
@@ -4715,7 +4743,7 @@ body:not(.admin-workspace-active) .admin-only {
     right: 0;
     bottom: 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr));
     border-top: 1px solid var(--line);
     background: rgba(20, 24, 32, 0.96);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -4723,11 +4751,11 @@ body:not(.admin-workspace-active) .admin-only {
   }
 
   body.interviewer-workspace-active .bottom-nav {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr));
   }
 
   body.admin-workspace-active .bottom-nav {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(4rem, 1fr));
   }
 
   .bottom-nav button {

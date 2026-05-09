@@ -111,16 +111,23 @@ const AVAILABILITY_PREFERENCES = [
   'Late night availability',
   'Early morning availability',
 ];
-const ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops']);
+const SECTION_ROUTES = new Set(['overview', 'discover', 'booking', 'sessions', 'meeting', 'feedback', 'career', 'notifications', 'profile', 'interviewer', 'admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops']);
+const ROUTE_ALIASES = {
+  'admin-interviewers': 'admin-users',
+  'admin-moderation': 'admin-reports',
+  'admin-announcements': 'admin-ops',
+  'admin-settings': 'profile',
+};
+const ROUTES = new Set([...SECTION_ROUTES, ...Object.keys(ROUTE_ALIASES)]);
 const ROLE_NAVIGATION = {
   ADMIN: [
     { key: 'admin-dashboard', label: 'Dashboard', section: 'admin-overview' },
     { key: 'admin-analytics', label: 'Analytics', section: 'admin-analytics' },
-    { key: 'admin-users', label: 'Users', section: 'admin-users' },
+    { key: 'admin-users', label: 'Users', section: 'admin-users', action: 'admin-all-users' },
     { key: 'admin-interviewers', label: 'Interviewers', section: 'admin-users', action: 'admin-interviewers' },
     { key: 'admin-sessions', label: 'Sessions', section: 'admin-sessions' },
     { key: 'admin-moderation', label: 'Moderation', section: 'admin-reports', action: 'admin-open-reports' },
-    { key: 'admin-reports', label: 'Reports', section: 'admin-reports' },
+    { key: 'admin-reports', label: 'Reports', section: 'admin-reports', action: 'admin-all-reports' },
     { key: 'admin-prep', label: 'Prep Modules', section: 'admin-prep' },
     { key: 'admin-announcements', label: 'Announcements', section: 'admin-ops', action: 'admin-announcements' },
     { key: 'admin-ops', label: 'Platform Ops', section: 'admin-ops' },
@@ -348,21 +355,32 @@ function renderRoleNavigation() {
   const nav = document.querySelector('.nav-menu');
   if (nav) {
     nav.innerHTML = navigationItems().map(item => `
-      <button class="nav-link role-nav-link" data-nav-key="${esc(item.key)}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+      <button class="nav-link role-nav-link" data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
     `).join('');
   }
   const bottom = document.querySelector('.bottom-nav');
   if (bottom) {
     bottom.innerHTML = bottomNavigationItems().map(item => `
-      <button data-nav-key="${esc(item.key)}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
+      <button data-nav-key="${esc(item.key)}" data-route="${esc(navRouteForItem(item))}" data-section="${esc(item.section)}" type="button" onclick="runRoleNav(${jsArg(item.key)})">${esc(item.label)}</button>
     `).join('');
   }
+}
+
+function navRouteForItem(item) {
+  if (!item) return defaultWorkspaceRoute();
+  if (ROUTES.has(item.key)) return item.key;
+  return item.section || defaultWorkspaceRoute();
 }
 
 function navItemByKey(key) {
   return navigationItems().find(item => item.key === key)
     || bottomNavigationItems().find(item => item.key === key)
     || navigationItems().find(item => item.section === defaultWorkspaceRoute());
+}
+
+function navItemForRoute(route) {
+  return navigationItems().find(item => navRouteForItem(item) === route)
+    || bottomNavigationItems().find(item => navRouteForItem(item) === route);
 }
 
 function navItemForSection(section) {
@@ -374,19 +392,25 @@ function navItemForSection(section) {
 function runRoleNav(key) {
   const item = navItemByKey(key);
   if (!item) return;
-  currentRoleNavKey = item.key;
-  applyRoleNavigationAction(item, 'before');
-  showSection(item.section);
-  applyRoleNavigationAction(item, 'after');
-  syncRoleNavigationActiveState(item.section);
+  showSection(navRouteForItem(item));
 }
 
 function applyRoleNavigationAction(item, phase) {
   if (!item?.action) return;
   if (phase === 'before') {
+    if (item.action === 'admin-all-users') {
+      adminState.users.role = '';
+      adminState.users.page = 0;
+      setInputValue('admin-user-role', '');
+    }
     if (item.action === 'admin-interviewers') {
       adminState.users.role = 'INTERVIEWER';
       adminState.users.page = 0;
+      setInputValue('admin-user-role', 'INTERVIEWER');
+    }
+    if (item.action === 'admin-all-reports') {
+      adminState.reports.status = '';
+      adminState.reports.page = 0;
     }
     if (item.action === 'admin-open-reports') {
       adminState.reports.status = 'OPEN';
@@ -398,8 +422,8 @@ function applyRoleNavigationAction(item, phase) {
     renderSessions('upcoming');
   } else if (item.action === 'sessions-history') {
     renderSessions('history');
-  } else if (item.action === 'admin-interviewers' || item.action === 'admin-open-reports') {
-    loadAdminData(true);
+  } else if (item.action === 'admin-announcements') {
+    document.getElementById('ops-notice-title')?.focus();
   } else if (item.action === 'interviewer-stats') {
     document.getElementById('role-overview-panels')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -476,11 +500,16 @@ function applyRoleNavigationLabels() {
   if (sessionsHeading) sessionsHeading.textContent = activeWorkspace === 'INTERVIEWER' ? 'Scheduled sessions and candidate history' : 'Upcoming interviews and history';
 }
 
+function routeSection(route) {
+  return ROUTE_ALIASES[route] || route;
+}
+
 function routeAllowed(route) {
-  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops', 'profile'].includes(route);
-  if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking', 'career'].includes(route) && !route.startsWith('admin-');
-  if (route === 'interviewer') return false;
-  if (route.startsWith('admin-')) return false;
+  const section = routeSection(route);
+  if (activeWorkspace === 'ADMIN') return ['admin-overview', 'admin-analytics', 'admin-prep', 'admin-users', 'admin-sessions', 'admin-reports', 'admin-audit', 'admin-ops', 'profile'].includes(section);
+  if (activeWorkspace === 'INTERVIEWER') return !['discover', 'booking', 'career'].includes(section) && !route.startsWith('admin-') && !section.startsWith('admin-');
+  if (section === 'interviewer') return false;
+  if (route.startsWith('admin-') || section.startsWith('admin-')) return false;
   return true;
 }
 
@@ -529,12 +558,20 @@ function routeFromHash() {
 }
 
 function showSection(name, updateRoute = true) {
-  let targetName = ROUTES.has(name) ? name : defaultWorkspaceRoute();
-  if (!routeAllowed(targetName)) targetName = defaultWorkspaceRoute();
+  let targetRoute = ROUTES.has(name) ? name : defaultWorkspaceRoute();
+  if (!routeAllowed(targetRoute)) targetRoute = defaultWorkspaceRoute();
+  const targetName = routeSection(targetRoute);
+  const routeItem = navItemForRoute(targetRoute) || navItemForSection(targetName);
+  if (routeItem) {
+    currentRoleNavKey = routeItem.key;
+    applyRoleNavigationAction(routeItem, 'before');
+  }
   const meetingWasVisible = !document.getElementById('section-meeting').hidden;
   if (meetingWasVisible && targetName !== 'meeting') destroyMeetingFrame();
   document.querySelectorAll('.dashboard-section').forEach(section => section.hidden = true);
-  document.getElementById(`section-${targetName}`).hidden = false;
+  const targetSection = document.getElementById(`section-${targetName}`) || document.getElementById(`section-${defaultWorkspaceRoute()}`);
+  if (!targetSection) return;
+  targetSection.hidden = false;
   syncRoleNavigationActiveState(targetName);
   if (targetName === 'booking') renderBookingStep();
   if (targetName === 'discover') refreshDiscoverFilterUi();
@@ -554,14 +591,16 @@ function showSection(name, updateRoute = true) {
     renderPrepPanels();
   }
   if (targetName.startsWith('admin-')) {
-    loadAdminData();
+    const forceAdminLoad = ['admin-all-users', 'admin-interviewers', 'admin-all-reports', 'admin-open-reports'].includes(routeItem?.action);
+    loadAdminData(forceAdminLoad);
     renderAdminPanels();
   }
   document.querySelector('.topbar')?.classList.toggle('compact', targetName !== 'overview');
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
   syncShellState();
-  if (updateRoute && window.location.hash !== `#/${targetName}`) {
-    history.pushState(null, '', `#/${targetName}`);
+  applyRoleNavigationAction(routeItem, 'after');
+  if (updateRoute && window.location.hash !== `#/${targetRoute}`) {
+    history.pushState(null, '', `#/${targetRoute}`);
   }
 }
 
@@ -8135,14 +8174,27 @@ async function loadAdminData(force = false) {
 
 function renderAdminPanels() {
   if (!hasAdminRole()) return;
-  renderAdminOverview();
-  renderAdminUsers();
-  renderAdminSessions();
-  renderAdminReports();
-  renderAdminAudit();
-  renderAdminOps();
-  renderAdminAnalytics();
-  renderAdminPrepModules();
+  safeRenderAdminPanel('overview', renderAdminOverview, ['admin-metrics-grid', 'admin-analytics-panel', 'admin-live-sessions-panel']);
+  safeRenderAdminPanel('users', renderAdminUsers, ['admin-users-panel']);
+  safeRenderAdminPanel('sessions', renderAdminSessions, ['admin-sessions-panel']);
+  safeRenderAdminPanel('reports', renderAdminReports, ['admin-reports-panel']);
+  safeRenderAdminPanel('audit trail', renderAdminAudit, ['admin-audit-panel']);
+  safeRenderAdminPanel('platform operations', renderAdminOps, ['admin-ops-panel']);
+  safeRenderAdminPanel('analytics', renderAdminAnalytics, ['admin-analytics-detail-panel']);
+  safeRenderAdminPanel('prep modules', renderAdminPrepModules, ['admin-prep-modules-panel']);
+}
+
+function safeRenderAdminPanel(label, renderer, hostIds) {
+  try {
+    renderer();
+  } catch (err) {
+    console.error(`Admin ${label} render failed`, err);
+    hostIds.forEach(id => {
+      const host = document.getElementById(id);
+      if (host) host.innerHTML = emptyState(`Could not render ${label}. Refresh the admin data and try again.`);
+    });
+    toast(`Could not render ${label}.`, 'error');
+  }
 }
 
 function latestTrendValue(list) {
