@@ -47,6 +47,11 @@ public class User {
     private String avatarUrl;
     private String language;
     private String timeZone;
+    private String preferredMeetingProvider = "JITSI";
+    private Boolean emailRemindersEnabled = true;
+    private Boolean inAppRemindersEnabled = true;
+    private Boolean calendarAutoSyncEnabled = true;
+    private List<Integer> reminderOffsetsMinutes = new ArrayList<>(List.of(1440, 60, 30, 10));
     private List<String> preferredDomains = new ArrayList<>();
     private List<String> interviewTopics = new ArrayList<>();
     private List<Integer> sessionDurations = new ArrayList<>();
@@ -214,6 +219,50 @@ public class User {
 
     public String getTimeZone() { return timeZone; }
     public void setTimeZone(String timeZone) { this.timeZone = trimToNull(timeZone); }
+    public String getPreferredMeetingProvider() {
+        return preferredMeetingProvider == null || preferredMeetingProvider.isBlank() ? "JITSI" : preferredMeetingProvider;
+    }
+    public void setPreferredMeetingProvider(String preferredMeetingProvider) {
+        String value = trimToNull(preferredMeetingProvider);
+        this.preferredMeetingProvider = value == null ? "JITSI" : value.trim().toUpperCase();
+    }
+    public Boolean getEmailRemindersEnabled() { return emailRemindersEnabled == null || emailRemindersEnabled; }
+    public void setEmailRemindersEnabled(Boolean emailRemindersEnabled) {
+        this.emailRemindersEnabled = emailRemindersEnabled == null || emailRemindersEnabled;
+    }
+    public Boolean getInAppRemindersEnabled() { return inAppRemindersEnabled == null || inAppRemindersEnabled; }
+    public void setInAppRemindersEnabled(Boolean inAppRemindersEnabled) {
+        this.inAppRemindersEnabled = inAppRemindersEnabled == null || inAppRemindersEnabled;
+    }
+    public Boolean getCalendarAutoSyncEnabled() { return calendarAutoSyncEnabled == null || calendarAutoSyncEnabled; }
+    public void setCalendarAutoSyncEnabled(Boolean calendarAutoSyncEnabled) {
+        this.calendarAutoSyncEnabled = calendarAutoSyncEnabled == null || calendarAutoSyncEnabled;
+    }
+    public List<Integer> getReminderOffsetsMinutes() {
+        if (reminderOffsetsMinutes == null || reminderOffsetsMinutes.isEmpty()) {
+            reminderOffsetsMinutes = new ArrayList<>(List.of(1440, 60, 30, 10));
+        }
+        List<Integer> normalized = new ArrayList<>();
+        for (Integer value : reminderOffsetsMinutes) {
+            if (value == null || !List.of(1440, 60, 30, 10).contains(value)) continue;
+            if (!normalized.contains(value)) normalized.add(value);
+        }
+        if (normalized.isEmpty()) normalized.addAll(List.of(1440, 60, 30, 10));
+        reminderOffsetsMinutes = normalized;
+        return reminderOffsetsMinutes;
+    }
+    public void setReminderOffsetsMinutes(List<Integer> reminderOffsetsMinutes) {
+        List<Integer> normalized = new ArrayList<>();
+        if (reminderOffsetsMinutes != null) {
+            for (Integer value : reminderOffsetsMinutes) {
+                if (value == null || !List.of(1440, 60, 30, 10).contains(value)) continue;
+                if (!normalized.contains(value)) normalized.add(value);
+            }
+        }
+        this.reminderOffsetsMinutes = normalized.isEmpty()
+                ? new ArrayList<>(List.of(1440, 60, 30, 10))
+                : normalized;
+    }
 
     public List<String> getPreferredDomains() { return preferredDomains; }
     public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains == null ? new ArrayList<>() : preferredDomains; }

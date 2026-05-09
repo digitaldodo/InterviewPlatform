@@ -385,13 +385,22 @@ public class AdminDtos {
             int activeUsersWithEmitters
     ) {}
 
+    public record CalendarOpsDiagnostics(
+            long connectedProviders,
+            long disconnectedOrErrorProviders,
+            long syncFailures,
+            long reminderDeliveryFailures,
+            long schedulingAnomalies
+    ) {}
+
     public record SystemDiagnosticsResponse(
             String capturedAt,
             JvmDiagnostics jvm,
             List<CacheDiagnostics> caches,
             Map<String, Object> rateLimits,
             NotificationDiagnostics notifications,
-            com.interview.platform.service.SessionReminderService.ReminderDiagnostics reminders
+            com.interview.platform.service.SessionReminderService.ReminderDiagnostics reminders,
+            CalendarOpsDiagnostics calendarOps
     ) {}
 
     public record OverviewResponse(

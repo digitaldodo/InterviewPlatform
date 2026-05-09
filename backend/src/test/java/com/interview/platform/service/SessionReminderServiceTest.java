@@ -69,7 +69,8 @@ class SessionReminderServiceTest {
                 true,
                 30,
                 100,
-                5
+                5,
+                "https://interviewprep.example"
         );
     }
 
@@ -79,7 +80,7 @@ class SessionReminderServiceTest {
         User interviewer = user("int-1", "Interviewer", "interviewer@example.com");
         User interviewee = user("cand-1", "Candidate", "candidate@example.com");
 
-        when(sessionRepository.findByStatusAndPreInterviewReminderSentAtIsNull(eq("CONFIRMED"), any(Pageable.class)))
+        when(sessionRepository.findByStatus(eq("CONFIRMED"), any(Pageable.class)))
                 .thenReturn(List.of(session));
         when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Session.class)))
                 .thenReturn(session);
@@ -99,6 +100,8 @@ class SessionReminderServiceTest {
                 eq("UTC"),
                 eq("https://join.example.com"),
                 eq(60),
+                eq("30 minutes"),
+                eq("https://interviewprep.example/pages/dashboard.html#/sessions?sessionId=session-1"),
                 any()
         );
         verify(emailService).sendPreInterviewReminder(
@@ -112,6 +115,8 @@ class SessionReminderServiceTest {
                 eq("UTC"),
                 eq("https://host.example.com"),
                 eq(60),
+                eq("30 minutes"),
+                eq("https://interviewprep.example/pages/dashboard.html#/sessions?sessionId=session-1"),
                 any()
         );
         verify(mongoTemplate, atLeastOnce()).updateFirst(any(Query.class), any(Update.class), eq(Session.class));
@@ -122,23 +127,24 @@ class SessionReminderServiceTest {
         Session session = dueSession();
         session.setStartTime("2026-05-07T12:45:00Z");
 
-        when(sessionRepository.findByStatusAndPreInterviewReminderSentAtIsNull(eq("CONFIRMED"), any(Pageable.class)))
+        when(sessionRepository.findByStatus(eq("CONFIRMED"), any(Pageable.class)))
                 .thenReturn(List.of(session));
 
         reminderService.sendDuePreInterviewReminders();
 
         verify(mongoTemplate, never()).findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Session.class));
-        verify(emailService, never()).sendPreInterviewReminder(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(emailService, never()).sendPreInterviewReminder(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void doesNotResendRecipientReminderThatAlreadyHasTimestamp() {
         Session session = dueSession();
         session.setIntervieweeReminderSentAt(Instant.parse("2026-05-07T11:59:00Z"));
+        session.setReminderDispatchKeys(List.of("cand-1:EMAIL:30", "cand-1:IN_APP:30"));
         User interviewer = user("int-1", "Interviewer", "interviewer@example.com");
         User interviewee = user("cand-1", "Candidate", "candidate@example.com");
 
-        when(sessionRepository.findByStatusAndPreInterviewReminderSentAtIsNull(eq("CONFIRMED"), any(Pageable.class)))
+        when(sessionRepository.findByStatus(eq("CONFIRMED"), any(Pageable.class)))
                 .thenReturn(List.of(session));
         when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Session.class)))
                 .thenReturn(session);
@@ -158,6 +164,8 @@ class SessionReminderServiceTest {
                 any(),
                 any(),
                 any(),
+                any(),
+                any(),
                 any()
         );
         verify(emailService).sendPreInterviewReminder(
@@ -171,6 +179,8 @@ class SessionReminderServiceTest {
                 eq("UTC"),
                 eq("https://host.example.com"),
                 eq(60),
+                eq("30 minutes"),
+                eq("https://interviewprep.example/pages/dashboard.html#/sessions?sessionId=session-1"),
                 any()
         );
     }
@@ -181,7 +191,7 @@ class SessionReminderServiceTest {
         User interviewer = user("int-1", "Interviewer", "interviewer@example.com");
         User interviewee = user("cand-1", "Candidate", "candidate@example.com");
 
-        when(sessionRepository.findByStatusAndPreInterviewReminderSentAtIsNull(eq("CONFIRMED"), any(Pageable.class)))
+        when(sessionRepository.findByStatus(eq("CONFIRMED"), any(Pageable.class)))
                 .thenReturn(List.of(session));
         when(mongoTemplate.findAndModify(any(Query.class), any(Update.class), any(FindAndModifyOptions.class), eq(Session.class)))
                 .thenReturn(session);
@@ -189,7 +199,7 @@ class SessionReminderServiceTest {
         when(userRepository.findById("cand-1")).thenReturn(Optional.of(interviewee));
         doThrow(new EmailDeliveryException("send failed"))
                 .when(emailService)
-                .sendPreInterviewReminder(eq("candidate@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+                .sendPreInterviewReminder(eq("candidate@example.com"), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
 
         assertDoesNotThrow(() -> reminderService.sendDuePreInterviewReminders());
     }

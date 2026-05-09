@@ -21,7 +21,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -35,7 +37,7 @@ public class CalendarIntegrationService {
     private final SessionRepository sessionRepository;
     private final UserRepository userRepository;
     private final CalendarTokenCryptoService tokenCryptoService;
-    private final GoogleCalendarClient googleCalendarClient;
+    private final List<CalendarProviderGateway> providers;
     private final SecretKey stateKey;
     private final String frontendUrl;
 
@@ -44,7 +46,7 @@ public class CalendarIntegrationService {
                                       SessionRepository sessionRepository,
                                       UserRepository userRepository,
                                       CalendarTokenCryptoService tokenCryptoService,
-                                      GoogleCalendarClient googleCalendarClient,
+                                      List<CalendarProviderGateway> providers,
                                       @Value("${app.calendar.oauth-state-secret:${app.jwt.secret}}") String stateSecret,
                                       @Value("${app.frontend-url:http://localhost:5500}") String frontendUrl) {
         this.connectionRepository = connectionRepository;
@@ -52,7 +54,9 @@ public class CalendarIntegrationService {
         this.sessionRepository = sessionRepository;
         this.userRepository = userRepository;
         this.tokenCryptoService = tokenCryptoService;
-        this.googleCalendarClient = googleCalendarClient;
+        this.providers = providers.stream()
+                .sorted(Comparator.comparing(CalendarProviderGateway::getProviderKey))
+                .toList();
         String normalized = stateSecret == null || stateSecret.length() < 32
                 ? "change-this-development-oauth-state-secret"
                 : stateSecret;
@@ -61,11 +65,12 @@ public class CalendarIntegrationService {
     }
 
     public CalendarDtos.CalendarConnectionStatus googleStatus(User user) {
+        CalendarProviderGateway provider = provider(GOOGLE);
         Optional<CalendarConnection> connection = connectionRepository.findByProviderAndUserId(GOOGLE, user.getId());
         return connection
                 .map(item -> new CalendarDtos.CalendarConnectionStatus(
                         GOOGLE,
-                        googleCalendarClient.configured(),
+                        provider.isConfigured(),
                         "CONNECTED".equals(item.getStatus()),
                         item.getStatus(),
                         item.getAccountEmail(),
@@ -76,20 +81,35 @@ public class CalendarIntegrationService {
                 ))
                 .orElseGet(() -> new CalendarDtos.CalendarConnectionStatus(
                         GOOGLE,
-                        googleCalendarClient.configured(),
+                        provider.isConfigured(),
                         false,
                         "DISCONNECTED",
                         null,
                         null,
                         null,
                         null,
-                        googleCalendarClient.configured() ? "Google Calendar is not connected." : "Google Calendar is not configured."
+                        provider.isConfigured() ? "Google Calendar is not connected." : "Google Calendar is not configured."
                 ));
+    }
+
+    public CalendarDtos.CalendarSettingsResponse settings(User user) {
+        List<CalendarDtos.CalendarProviderOption> providerOptions = providers.stream()
+                .map(provider -> providerStatus(provider, user))
+                .toList();
+        return new CalendarDtos.CalendarSettingsResponse(
+                providerOptions,
+                user.getTimeZone(),
+                user.getPreferredMeetingProvider(),
+                user.getEmailRemindersEnabled(),
+                user.getInAppRemindersEnabled(),
+                user.getCalendarAutoSyncEnabled(),
+                user.getReminderOffsetsMinutes()
+        );
     }
 
     public CalendarDtos.CalendarConnectResponse googleConnect(User user) {
         String state = signedState(user.getId());
-        return new CalendarDtos.CalendarConnectResponse(googleCalendarClient.authorizationUrl(state));
+        return new CalendarDtos.CalendarConnectResponse(provider(GOOGLE).authorizationUrl(state));
     }
 
     public String handleGoogleCallback(String code, String state, String error) {
@@ -99,7 +119,8 @@ public class CalendarIntegrationService {
         try {
             String userId = parseStateUserId(state);
             User user = userRepository.findById(userId).orElseThrow(() -> new IllegalArgumentException("User not found"));
-            GoogleCalendarClient.TokenResponse token = googleCalendarClient.exchangeCode(code);
+            CalendarProviderGateway provider = provider(GOOGLE);
+            CalendarProviderGateway.CalendarTokenResponse token = provider.exchangeCode(code);
             CalendarConnection connection = connectionRepository.findByProviderAndUserId(GOOGLE, userId).orElseGet(CalendarConnection::new);
             Instant now = Instant.now();
             connection.setUserId(userId);
@@ -110,7 +131,7 @@ public class CalendarIntegrationService {
                 connection.setEncryptedRefreshToken(tokenCryptoService.encrypt(token.refreshToken()));
             }
             connection.setAccessTokenExpiresAt(now.plusSeconds(Math.max(60, token.expiresInSeconds() - 60L)));
-            connection.setScopes(token.scope() == null || token.scope().isBlank() ? GoogleCalendarClient.SCOPE : token.scope());
+            connection.setScopes(token.scope() == null || token.scope().isBlank() ? provider.scope() : token.scope());
             connection.setStatus("CONNECTED");
             connection.setConnectedAt(connection.getConnectedAt() == null ? now : connection.getConnectedAt());
             connection.setUpdatedAt(now);
@@ -127,8 +148,9 @@ public class CalendarIntegrationService {
 
     public CalendarDtos.CalendarSyncResponse disconnectGoogle(User user) {
         connectionRepository.findByProviderAndUserId(GOOGLE, user.getId()).ifPresent(connection -> {
-            googleCalendarClient.revoke(tokenCryptoService.decrypt(connection.getEncryptedRefreshToken()));
-            googleCalendarClient.revoke(tokenCryptoService.decrypt(connection.getEncryptedAccessToken()));
+            CalendarProviderGateway provider = provider(GOOGLE);
+            provider.revoke(tokenCryptoService.decrypt(connection.getEncryptedRefreshToken()));
+            provider.revoke(tokenCryptoService.decrypt(connection.getEncryptedAccessToken()));
         });
         eventSyncRepository.deleteByProviderAndUserId(GOOGLE, user.getId());
         connectionRepository.deleteByProviderAndUserId(GOOGLE, user.getId());
@@ -179,20 +201,24 @@ public class CalendarIntegrationService {
             return;
         }
         User user = userRepository.findById(userId).orElseThrow(() -> new IllegalStateException("Calendar user not found"));
+        if (!user.getCalendarAutoSyncEnabled()) {
+            return;
+        }
         User interviewer = userRepository.findById(session.getInterviewerId()).orElseThrow(() -> new IllegalStateException("Interviewer not found"));
         User interviewee = userRepository.findById(session.getCandidateId()).orElseThrow(() -> new IllegalStateException("Interviewee not found"));
         String accessToken = accessToken(connection);
+        CalendarProviderGateway provider = provider(GOOGLE);
         CalendarEventSync eventSync = eventSyncRepository.findByProviderAndUserIdAndSessionId(GOOGLE, userId, session.getId()).orElseGet(CalendarEventSync::new);
         eventSync.setProvider(GOOGLE);
         eventSync.setUserId(userId);
         eventSync.setSessionId(session.getId());
         try {
             if ("CANCELLED".equalsIgnoreCase(session.getStatus())) {
-                googleCalendarClient.deleteEvent(accessToken, eventSync.getExternalEventId());
+                provider.deleteEvent(accessToken, eventSync.getExternalEventId());
                 eventSync.setStatus("CANCELLED");
             } else {
                 String meetingLink = userId.equals(session.getInterviewerId()) ? interviewerMeetingLink(session) : session.getJoinUrl();
-                String eventId = googleCalendarClient.upsertEvent(accessToken, eventSync.getExternalEventId(), session, interviewer, interviewee, user, meetingLink);
+                String eventId = provider.upsertEvent(accessToken, eventSync.getExternalEventId(), session, interviewer, interviewee, user, meetingLink);
                 eventSync.setExternalEventId(eventId);
                 eventSync.setStatus("SYNCED");
             }
@@ -223,7 +249,7 @@ public class CalendarIntegrationService {
                 throw new IllegalStateException("Google Calendar refresh token is unavailable");
             }
             try {
-                GoogleCalendarClient.TokenResponse refreshed = googleCalendarClient.refresh(refreshToken);
+                CalendarProviderGateway.CalendarTokenResponse refreshed = provider(connection.getProvider()).refresh(refreshToken);
                 connection.setEncryptedAccessToken(tokenCryptoService.encrypt(refreshed.accessToken()));
                 connection.setAccessTokenExpiresAt(Instant.now().plusSeconds(Math.max(60, refreshed.expiresInSeconds() - 60L)));
                 connection.setStatus("CONNECTED");
@@ -292,6 +318,43 @@ public class CalendarIntegrationService {
 
     private String redirectUrl(String status, String message) {
         return frontendUrl + "/pages/dashboard.html#/profile?calendar=" + url(status) + "&message=" + url(message);
+    }
+
+    private CalendarDtos.CalendarProviderOption providerStatus(CalendarProviderGateway provider, User user) {
+        Optional<CalendarConnection> connection = connectionRepository.findByProviderAndUserId(provider.getProviderKey(), user.getId());
+        return connection
+                .map(item -> new CalendarDtos.CalendarProviderOption(
+                        provider.getProviderKey(),
+                        provider.getLabel(),
+                        provider.isConfigured(),
+                        "CONNECTED".equals(item.getStatus()),
+                        item.getStatus(),
+                        item.getAccountEmail(),
+                        item.getConnectedAt(),
+                        item.getLastSyncAt(),
+                        item.getLastSyncStatus(),
+                        item.getLastSyncMessage()
+                ))
+                .orElseGet(() -> new CalendarDtos.CalendarProviderOption(
+                        provider.getProviderKey(),
+                        provider.getLabel(),
+                        provider.isConfigured(),
+                        false,
+                        "DISCONNECTED",
+                        null,
+                        null,
+                        null,
+                        null,
+                        provider.isConfigured() ? provider.getLabel() + " is not connected." : provider.getLabel() + " is not configured."
+                ));
+    }
+
+    private CalendarProviderGateway provider(String providerKey) {
+        String key = providerKey == null || providerKey.isBlank() ? GOOGLE : providerKey.trim().toUpperCase(Locale.ROOT);
+        return providers.stream()
+                .filter(provider -> provider.getProviderKey().equals(key))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(key + " calendar provider is not available"));
     }
 
     private String interviewerMeetingLink(Session session) {

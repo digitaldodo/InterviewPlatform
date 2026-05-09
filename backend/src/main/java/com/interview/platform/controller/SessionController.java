@@ -67,6 +67,18 @@ public class SessionController {
         return ResponseEntity.ok(ApiResponse.success("Session status updated successfully", updatedSession));
     }
 
+    @PatchMapping("/{id}/reschedule")
+    public ResponseEntity<ApiResponse<Session>> rescheduleSession(@PathVariable String id,
+                                                                  @RequestBody Map<String, String> request,
+                                                                  Authentication authentication) {
+        Integer durationMinutes = null;
+        if (request.get("durationMinutes") != null && !request.get("durationMinutes").isBlank()) {
+            durationMinutes = Integer.parseInt(request.get("durationMinutes"));
+        }
+        Session updatedSession = sessionService.rescheduleSession(id, request.get("startTime"), durationMinutes, currentUser(authentication));
+        return ResponseEntity.ok(ApiResponse.success("Session rescheduled successfully", updatedSession));
+    }
+
     @GetMapping("/meeting-providers")
     public ResponseEntity<ApiResponse<List<MeetingDtos.MeetingProviderOption>>> getMeetingProviders() {
         return ResponseEntity.ok(ApiResponse.success("Meeting providers fetched successfully", sessionService.getMeetingProviderOptions()));

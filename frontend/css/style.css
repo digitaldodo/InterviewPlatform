@@ -2862,6 +2862,36 @@ body:not(.admin-workspace-active) .admin-only {
   overflow-wrap: anywhere;
 }
 
+.calendar-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.calendar-preference-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.calendar-preference-panel > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  padding: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.025);
+}
+
+.timezone-summary {
+  margin-top: 0.25rem;
+  color: var(--muted);
+  font-size: 0.83rem;
+  overflow-wrap: anywhere;
+}
+
 .danger-zone {
   border-color: rgba(255, 107, 122, 0.28);
   background: rgba(255, 107, 122, 0.055);
@@ -4548,6 +4578,16 @@ body:not(.admin-workspace-active) .admin-only {
   }
 
   .role-management-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-preference-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .calendar-sync-status,
+  .calendar-settings-grid,
+  .calendar-preference-panel {
     grid-template-columns: 1fr;
   }
 

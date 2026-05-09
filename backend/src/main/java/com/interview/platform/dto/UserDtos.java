@@ -22,6 +22,11 @@ public class UserDtos {
         private List<String> skills;
         private String language;
         private String timeZone;
+        private String preferredMeetingProvider;
+        private Boolean emailRemindersEnabled;
+        private Boolean inAppRemindersEnabled;
+        private Boolean calendarAutoSyncEnabled;
+        private List<Integer> reminderOffsetsMinutes;
         private List<String> preferredDomains;
         private List<String> interviewTopics;
         private List<Integer> sessionDurations;
@@ -53,6 +58,16 @@ public class UserDtos {
         public void setLanguage(String language) { this.language = language; }
         public String getTimeZone() { return timeZone; }
         public void setTimeZone(String timeZone) { this.timeZone = timeZone; }
+        public String getPreferredMeetingProvider() { return preferredMeetingProvider; }
+        public void setPreferredMeetingProvider(String preferredMeetingProvider) { this.preferredMeetingProvider = preferredMeetingProvider; }
+        public Boolean getEmailRemindersEnabled() { return emailRemindersEnabled; }
+        public void setEmailRemindersEnabled(Boolean emailRemindersEnabled) { this.emailRemindersEnabled = emailRemindersEnabled; }
+        public Boolean getInAppRemindersEnabled() { return inAppRemindersEnabled; }
+        public void setInAppRemindersEnabled(Boolean inAppRemindersEnabled) { this.inAppRemindersEnabled = inAppRemindersEnabled; }
+        public Boolean getCalendarAutoSyncEnabled() { return calendarAutoSyncEnabled; }
+        public void setCalendarAutoSyncEnabled(Boolean calendarAutoSyncEnabled) { this.calendarAutoSyncEnabled = calendarAutoSyncEnabled; }
+        public List<Integer> getReminderOffsetsMinutes() { return reminderOffsetsMinutes; }
+        public void setReminderOffsetsMinutes(List<Integer> reminderOffsetsMinutes) { this.reminderOffsetsMinutes = reminderOffsetsMinutes; }
         public List<String> getPreferredDomains() { return preferredDomains; }
         public void setPreferredDomains(List<String> preferredDomains) { this.preferredDomains = preferredDomains; }
         public List<String> getInterviewTopics() { return interviewTopics; }

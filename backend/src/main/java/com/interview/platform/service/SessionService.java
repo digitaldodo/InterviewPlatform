@@ -7,6 +7,8 @@ import com.interview.platform.model.User;
 import com.interview.platform.exception.ResourceNotFoundException;
 import com.interview.platform.repository.SessionRepository;
 import com.interview.platform.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -23,6 +25,7 @@ import java.util.Set;
 
 @Service
 public class SessionService {
+    private static final Logger log = LoggerFactory.getLogger(SessionService.class);
 
     private static final Set<String> VALID_STATUSES = new HashSet<>(Arrays.asList(
             "PENDING", "CONFIRMED", "COMPLETED", "CANCELLED"
@@ -143,8 +146,11 @@ public class SessionService {
         );
         session.setStartTime(bookingResolution.startTime());
         session.setDurationMinutes(bookingResolution.durationMinutes());
-        preventConflictingBooking(session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes());
-        preventDuplicateCandidateBooking(session.getCandidateId(), session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes());
+        if (session.getMeetingProvider() == null || session.getMeetingProvider().isBlank()) {
+            session.setMeetingProvider(interviewee.getPreferredMeetingProvider());
+        }
+        preventConflictingBooking(session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes(), null);
+        preventDuplicateCandidateBooking(session.getCandidateId(), session.getInterviewerId(), session.getStartTime(), session.getDurationMinutes(), null);
         meetingProviderService.provision(session, interviewer, interviewee);
         session.setCreatedAt(Instant.now());
         session.setUpdatedAt(Instant.now());
@@ -202,6 +208,46 @@ public class SessionService {
         return sanitizeSession(requireParticipant(id, actor));
     }
 
+    public Session rescheduleSession(String id, String startTime, Integer durationMinutes, User actor) {
+        Session session = requireParticipant(id, actor);
+        String status = normalizeStatusSafe(session.getStatus());
+        if (!"PENDING".equals(status) && !"CONFIRMED".equals(status)) {
+            throw new IllegalArgumentException("Only pending or confirmed sessions can be rescheduled");
+        }
+        if (startTime == null || startTime.isBlank()) {
+            throw new IllegalArgumentException("Start time is required");
+        }
+        User interviewer = userRepository.findById(session.getInterviewerId())
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
+        User interviewee = userRepository.findById(session.getCandidateId())
+                .orElseThrow(() -> new ResourceNotFoundException("Interviewee not found"));
+        AvailabilitySlotService.BookingResolution bookingResolution = availabilitySlotService.resolveRequestedBooking(
+                session.getInterviewerId(),
+                startTime,
+                durationMinutes == null ? session.getDurationMinutes() : durationMinutes
+        );
+        preventConflictingBooking(session.getInterviewerId(), bookingResolution.startTime(), bookingResolution.durationMinutes(), session.getId());
+        preventDuplicateCandidateBooking(session.getCandidateId(), session.getInterviewerId(), bookingResolution.startTime(), bookingResolution.durationMinutes(), session.getId());
+        String oldStart = session.getStartTime();
+        session.setStartTime(bookingResolution.startTime());
+        session.setDurationMinutes(bookingResolution.durationMinutes());
+        session.setMeetingStatus("SCHEDULED");
+        session.setRescheduledAt(Instant.now());
+        session.setUpdatedAt(Instant.now());
+        session.setReminderDispatchKeys(new java.util.ArrayList<>());
+        session.setPreInterviewReminderSentAt(null);
+        session.setPreInterviewReminderClaimedAt(null);
+        session.setInterviewerReminderSentAt(null);
+        session.setIntervieweeReminderSentAt(null);
+        ensureMeetingProvisioned(session, interviewer, interviewee);
+        Session saved = sessionRepository.save(session);
+        cacheInvalidationService.evictAvailabilityCaches(saved.getInterviewerId());
+        cacheInvalidationService.evictAnalyticsForParticipants(saved.getInterviewerId(), saved.getCandidateId());
+        notifyRescheduled(saved, oldStart, interviewer, interviewee);
+        calendarIntegrationService.syncSessionForParticipantsSafely(saved);
+        return sanitizeSession(saved);
+    }
+
     public Session updateSessionStatus(String id, String status, User actor) {
         Session session = requireParticipant(id, actor);
         String normalizedStatus = normalizeStatus(status);
@@ -227,6 +273,7 @@ public class SessionService {
             if (session.getMeetingEndedAt() == null) {
                 session.setMeetingEndedAt(Instant.now());
             }
+            session.setCancelledAt(Instant.now());
         } else if ("CONFIRMED".equals(normalizedStatus)) {
             User interviewer = userRepository.findById(session.getInterviewerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Interviewer not found"));
@@ -439,13 +486,16 @@ public class SessionService {
         return normalized;
     }
 
-    private void preventConflictingBooking(String interviewerId, String startTime, Integer durationMinutes) {
+    private void preventConflictingBooking(String interviewerId, String startTime, Integer durationMinutes, String excludedSessionId) {
         List<Session> activeSessions = sessionRepository.findByInterviewerIdAndStatusIn(interviewerId, List.of("PENDING", "CONFIRMED"));
         Optional<Instant> requestedStart = parseSessionTime(startTime);
         Instant requestedEnd = requestedStart
                 .map(value -> value.plusSeconds((long) effectiveDurationMinutes(durationMinutes) * 60))
                 .orElse(null);
         for (Session existing : activeSessions) {
+            if (excludedSessionId != null && excludedSessionId.equals(existing.getId())) {
+                continue;
+            }
             if (startTime.equals(existing.getStartTime())) {
                 throw new IllegalArgumentException("That slot is no longer available");
             }
@@ -461,13 +511,16 @@ public class SessionService {
         }
     }
 
-    private void preventDuplicateCandidateBooking(String candidateId, String interviewerId, String startTime, Integer durationMinutes) {
+    private void preventDuplicateCandidateBooking(String candidateId, String interviewerId, String startTime, Integer durationMinutes, String excludedSessionId) {
         List<Session> activeSessions = sessionRepository.findByCandidateIdAndStatusIn(candidateId, List.of("PENDING", "CONFIRMED"));
         Optional<Instant> requestedStart = parseSessionTime(startTime);
         Instant requestedEnd = requestedStart
                 .map(value -> value.plusSeconds((long) effectiveDurationMinutes(durationMinutes) * 60))
                 .orElse(null);
         for (Session existing : activeSessions) {
+            if (excludedSessionId != null && excludedSessionId.equals(existing.getId())) {
+                continue;
+            }
             if (interviewerId.equals(existing.getInterviewerId()) && startTime.equals(existing.getStartTime())) {
                 throw new IllegalArgumentException("You have already booked this slot");
             }
@@ -527,7 +580,7 @@ public class SessionService {
                 "Your " + session.getTitle() + " session request was sent.");
         notificationService.create(session.getInterviewerId(), "SESSION_REQUESTED", "New interview request",
                 "You have a new " + session.getTitle() + " interview request.");
-        emailService.sendSessionInvite(
+        safeEmail(() -> emailService.sendSessionInvite(
                 interviewee.getEmail(),
                 interviewee.getName(),
                 interviewer.getName(),
@@ -544,8 +597,8 @@ public class SessionService {
                         session.getJoinUrl(),
                         CalendarInviteService.CalendarInviteType.REQUEST
                 )
-        );
-        emailService.sendSessionInvite(
+        ), "candidate booking invite", session);
+        safeEmail(() -> emailService.sendSessionInvite(
                 interviewer.getEmail(),
                 interviewer.getName(),
                 interviewee.getName(),
@@ -562,7 +615,34 @@ public class SessionService {
                         interviewerMeetingLink(session),
                         CalendarInviteService.CalendarInviteType.REQUEST
                 )
-        );
+        ), "interviewer booking invite", session);
+    }
+
+    private void notifyRescheduled(Session session, String oldStart, User interviewer, User interviewee) {
+        notificationService.create(session.getCandidateId(), "SESSION_RESCHEDULED", "Interview rescheduled",
+                "Your " + session.getTitle() + " session moved from " + oldStart + " to " + session.getStartTime() + ".",
+                java.util.Map.of("sessionId", session.getId(), "oldStartTime", oldStart, "startTime", session.getStartTime(), "route", "sessions"));
+        notificationService.create(session.getInterviewerId(), "SESSION_RESCHEDULED", "Interview rescheduled",
+                "The " + session.getTitle() + " session moved from " + oldStart + " to " + session.getStartTime() + ".",
+                java.util.Map.of("sessionId", session.getId(), "oldStartTime", oldStart, "startTime", session.getStartTime(), "route", "sessions"));
+        safeEmail(() -> emailService.sendSessionStatusUpdate(
+                interviewee.getEmail(),
+                session.getTitle(),
+                "RESCHEDULED",
+                session.getStartTime(),
+                session.getJoinUrl(),
+                interviewee.getTimeZone(),
+                calendarInviteService.sessionInvite(session, interviewer, interviewee, interviewee, session.getJoinUrl(), CalendarInviteService.CalendarInviteType.UPDATE)
+        ), "candidate reschedule update", session);
+        safeEmail(() -> emailService.sendSessionStatusUpdate(
+                interviewer.getEmail(),
+                session.getTitle(),
+                "RESCHEDULED",
+                session.getStartTime(),
+                interviewerMeetingLink(session),
+                interviewer.getTimeZone(),
+                calendarInviteService.sessionInvite(session, interviewer, interviewee, interviewer, interviewerMeetingLink(session), CalendarInviteService.CalendarInviteType.UPDATE)
+        ), "interviewer reschedule update", session);
     }
 
     private void notifyStatusChanged(Session session) {
@@ -574,24 +654,24 @@ public class SessionService {
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
                     if ("CANCELLED".equals(normalizeStatusSafe(session.getStatus()))) {
-                        emailService.sendSessionCancellation(
+                        safeEmail(() -> emailService.sendSessionCancellation(
                                 candidate.getEmail(),
                                 session.getTitle(),
                                 session.getStartTime(),
                                 interviewer.getName(),
                                 candidate.getTimeZone(),
                                 calendarInviteService.sessionInvite(session, interviewer, candidate, candidate, session.getJoinUrl(), CalendarInviteService.CalendarInviteType.CANCEL)
-                        );
-                        emailService.sendSessionCancellation(
+                        ), "candidate cancellation", session);
+                        safeEmail(() -> emailService.sendSessionCancellation(
                                 interviewer.getEmail(),
                                 session.getTitle(),
                                 session.getStartTime(),
                                 candidate.getName(),
                                 interviewer.getTimeZone(),
                                 calendarInviteService.sessionInvite(session, interviewer, candidate, interviewer, interviewerMeetingLink(session), CalendarInviteService.CalendarInviteType.CANCEL)
-                        );
+                        ), "interviewer cancellation", session);
                     } else {
-                        emailService.sendSessionStatusUpdate(
+                        safeEmail(() -> emailService.sendSessionStatusUpdate(
                                 candidate.getEmail(),
                                 session.getTitle(),
                                 session.getStatus(),
@@ -599,8 +679,8 @@ public class SessionService {
                                 session.getJoinUrl(),
                                 candidate.getTimeZone(),
                                 calendarInviteService.sessionInvite(session, interviewer, candidate, candidate, session.getJoinUrl(), CalendarInviteService.CalendarInviteType.UPDATE)
-                        );
-                        emailService.sendSessionStatusUpdate(
+                        ), "candidate status update", session);
+                        safeEmail(() -> emailService.sendSessionStatusUpdate(
                                 interviewer.getEmail(),
                                 session.getTitle(),
                                 session.getStatus(),
@@ -608,7 +688,7 @@ public class SessionService {
                                 interviewerMeetingLink(session),
                                 interviewer.getTimeZone(),
                                 calendarInviteService.sessionInvite(session, interviewer, candidate, interviewer, interviewerMeetingLink(session), CalendarInviteService.CalendarInviteType.UPDATE)
-                        );
+                        ), "interviewer status update", session);
                     }
                 }));
     }
@@ -622,12 +702,21 @@ public class SessionService {
                 java.util.Map.of("sessionId", session.getId(), "startTime", session.getStartTime(), "route", "meeting"));
         userRepository.findById(session.getCandidateId()).ifPresent(candidate ->
                 userRepository.findById(session.getInterviewerId()).ifPresent(interviewer -> {
-                    emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName(), candidate.getTimeZone());
-                    emailService.sendMeetingReminder(interviewer.getEmail(), session.getTitle(), session.getStartTime(),
+                    safeEmail(() -> emailService.sendMeetingReminder(candidate.getEmail(), session.getTitle(), session.getStartTime(), session.getJoinUrl(), interviewer.getName(), candidate.getTimeZone()), "candidate live meeting reminder", session);
+                    safeEmail(() -> emailService.sendMeetingReminder(interviewer.getEmail(), session.getTitle(), session.getStartTime(),
                             session.getHostUrl() == null || session.getHostUrl().isBlank() ? session.getJoinUrl() : session.getHostUrl(),
                             candidate.getName(),
-                            interviewer.getTimeZone());
+                            interviewer.getTimeZone()), "interviewer live meeting reminder", session);
                 }));
+    }
+
+    private void safeEmail(Runnable action, String label, Session session) {
+        try {
+            action.run();
+        } catch (RuntimeException ex) {
+            String sessionId = session == null ? "unknown" : session.getId();
+            log.warn("Email delivery failed safely for {} session {}: {}", label, sessionId, ex.getMessage());
+        }
     }
 
     private List<Session> sortSessions(List<Session> items) {
@@ -665,6 +754,11 @@ public class SessionService {
         view.setPreInterviewReminderClaimedAt(source.getPreInterviewReminderClaimedAt());
         view.setInterviewerReminderSentAt(source.getInterviewerReminderSentAt());
         view.setIntervieweeReminderSentAt(source.getIntervieweeReminderSentAt());
+        view.setReminderDispatchKeys(source.getReminderDispatchKeys());
+        view.setLastReminderFailureAt(source.getLastReminderFailureAt());
+        view.setLastReminderFailureMessage(source.getLastReminderFailureMessage());
+        view.setRescheduledAt(source.getRescheduledAt());
+        view.setCancelledAt(source.getCancelledAt());
         view.setCreatedAt(source.getCreatedAt());
         view.setUpdatedAt(source.getUpdatedAt());
         return view;

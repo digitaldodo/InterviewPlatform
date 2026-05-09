@@ -14,6 +14,7 @@ public interface SessionRepository extends MongoRepository<Session, String> {
     List<Session> findByInterviewerIdOrCandidateId(String interviewerId, String candidateId);
     List<Session> findByCandidateIdAndStatusIn(String candidateId, List<String> statuses);
     List<Session> findByInterviewerIdAndStatusIn(String interviewerId, List<String> statuses);
+    List<Session> findByStatus(String status, Pageable pageable);
     List<Session> findByStatusAndPreInterviewReminderSentAtIsNull(String status, Pageable pageable);
     boolean existsByInterviewerIdAndStartTimeAndStatusIn(String interviewerId, String startTime, List<String> statuses);
 }

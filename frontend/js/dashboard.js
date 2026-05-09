@@ -65,7 +65,9 @@ let adminAuditLogPage = null;
 let adminAnalytics = null;
 let adminPrepModules = [];
 let adminOps = null;
+let adminDiagnostics = null;
 let calendarConnectionStatus = null;
+let calendarSettings = null;
 let prepModuleEditingId = null;
 let adminLoading = false;
 let moderationDialogState = null;
@@ -202,7 +204,10 @@ function createBookingState() {
 }
 
 function preferredMeetingProvider() {
-  return meetingProviders.find(item => item.isDefault)?.key || meetingProviders[0]?.key || DEFAULT_MEETING_PROVIDERS[0].key;
+  const preferred = currentUser?.preferredMeetingProvider || calendarSettings?.preferredMeetingProvider;
+  const providers = meetingProviders.length ? meetingProviders : DEFAULT_MEETING_PROVIDERS;
+  if (preferred && providers.some(item => item.key === preferred && item.enabled !== false)) return preferred;
+  return providers.find(item => item.isDefault)?.key || providers[0]?.key || DEFAULT_MEETING_PROVIDERS[0].key;
 }
 
 async function ensureStoredTimezone() {
@@ -1558,15 +1563,27 @@ function renderBookingSelectionBanner() {
   const interviewer = bookingState.interviewer;
   if (!interviewer) return '';
   const label = accountDisplayName(interviewer) || 'Selected interviewer';
+  const slot = selectedBookingSlot();
+  const timezoneNote = renderTimezoneSummary(slot?.startTime, interviewer);
   return `
     <div class="booking-selection-banner">
       ${avatarMarkup(interviewer, 'avatar avatar-compact')}
       <div>
         <strong>${esc(label)}</strong>
         <p>${esc(interviewerMetaLine(interviewer))}</p>
+        ${timezoneNote}
       </div>
     </div>
   `;
+}
+
+function renderTimezoneSummary(startTime, interviewer) {
+  const yourZone = currentUser?.timeZone || browserTimezone() || 'UTC';
+  const interviewerZone = interviewer?.timeZone || 'UTC';
+  if (!startTime) {
+    return `<p class="timezone-summary">Your timezone: ${esc(yourZone)} • Interviewer timezone: ${esc(interviewerZone)}</p>`;
+  }
+  return `<p class="timezone-summary">Your timezone: ${esc(yourZone)} (${esc(formatInTimezone(startTime, yourZone))}) • Interviewer timezone: ${esc(interviewerZone)} (${esc(formatInTimezone(startTime, interviewerZone))})</p>`;
 }
 
 function emptyBookingMessage() {
@@ -2017,6 +2034,7 @@ function renderSessionCard(session) {
       </div>
       <div class="topic-chip-row">${topicTags(sessionTopics(session))}</div>
       <p>${fmtDate(session.startTime || session.scheduledAt)}</p>
+      <p class="timezone-summary">${esc(sessionTimezoneLine(session, participant))}</p>
       <div class="session-meta-row">
         <span class="badge badge-${meetingStatusClass(meetingStatus)}">${meetingStatusText(meetingStatus)}</span>
         <span class="badge badge-${meetingRoomStateClass(roomState.state)}">${esc(roomState.badge)}</span>
@@ -2028,6 +2046,7 @@ function renderSessionCard(session) {
         ${canOpenMeeting ? `<button class="btn btn-primary btn-sm" onclick="openMeeting('${session.id}', ${autoStart ? 'true' : 'false'})">${esc(joinLabel)}</button>` : ''}
         ${canConfirm ? `<button class="btn btn-success btn-sm" onclick="updateSession('${session.id}','confirm')">Approve</button>` : ''}
         ${canShowComplete ? `<button class="btn btn-outline btn-sm" title="${esc(completeState.message)}" ${completeState.enabled ? `onclick="updateSession('${session.id}','complete')"` : 'disabled'}>Complete</button>` : ''}
+        ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-outline btn-sm" onclick="openRescheduleSession('${session.id}')">Reschedule</button>` : ''}
         ${['PENDING', 'CONFIRMED'].includes(status) ? `<button class="btn btn-danger btn-sm" onclick="updateSession('${session.id}','cancel')">Cancel</button>` : ''}
       </div>
     </article>
@@ -2835,9 +2854,71 @@ async function loadNotifications() {
   }
 }
 
+async function openRescheduleSession(id) {
+  const session = sessions.find(item => item.id === id);
+  if (!session) return;
+  modal(`
+    <div class="modal-head">
+      <h2>Reschedule interview</h2>
+      <p class="muted">${esc(sessionTitle(session))} • ${esc(fmtDate(session.startTime))}</p>
+    </div>
+    <div id="reschedule-slot-list">${skeletonCards(3)}</div>
+  `);
+  try {
+    const slots = await api(`/api/interviewers/${session.interviewerId}/slots?days=14&includeUnavailable=true`);
+    const openSlots = normalizeBookingSlots(slots)
+      .filter(slot => slot.status !== 'BOOKED' && slot.startTime !== session.startTime)
+      .slice(0, 18);
+    document.getElementById('reschedule-slot-list').innerHTML = openSlots.length
+      ? `<div class="slot-grid">${openSlots.map(slot => `
+          <button class="booking-slot-card" type="button" onclick="submitRescheduleSession('${session.id}', '${slot.startTime}', ${Number(slot.durationMinutes || session.durationMinutes || 45)})">
+            <strong>${esc(formatSlotTime(slot.startTime))}</strong>
+            <span>${esc(formatDateTimeRange(slot.startTime, slot.endTime))}</span>
+            <small>${esc(renderTimezoneSummary(slot.startTime, interviewerDirectory.get(session.interviewerId) || {}).replace(/<[^>]+>/g, ''))}</small>
+          </button>
+        `).join('')}</div>`
+      : emptyState('No open slots are available for rescheduling right now.');
+  } catch (err) {
+    document.getElementById('reschedule-slot-list').innerHTML = emptyState(err.message || 'Could not load reschedule slots.');
+  }
+}
+
+async function submitRescheduleSession(id, startTime, durationMinutes) {
+  try {
+    await api(`/api/sessions/${id}/reschedule`, {
+      method: 'PATCH',
+      body: JSON.stringify({ startTime, durationMinutes: String(durationMinutes || 45) }),
+    });
+    closeModal();
+    toast('Session rescheduled and calendar updates queued.', 'success');
+    await loadSessions();
+    await loadNotifications();
+  } catch (err) {
+    toast(err.message || 'Could not reschedule this session.', 'error');
+  }
+}
+
+function sessionTimezoneLine(session, participant) {
+  const start = session?.startTime || session?.scheduledAt;
+  const yourZone = currentUser?.timeZone || browserTimezone() || 'UTC';
+  const otherZone = participant?.timeZone || (activeWorkspace === 'INTERVIEWER' ? session?.candidateTimeZone : session?.interviewerTimeZone) || 'Not set';
+  const converted = start ? formatInTimezone(start, yourZone) : 'Flexible';
+  return `Your timezone: ${yourZone} • ${activeWorkspace === 'INTERVIEWER' ? 'Interviewee' : 'Interviewer'} timezone: ${otherZone} • Converted session time: ${converted}`;
+}
+
 async function loadCalendarStatus() {
   try {
-    calendarConnectionStatus = await api('/api/calendar/status');
+    calendarSettings = await api('/api/calendar/settings');
+    const google = (calendarSettings?.providers || []).find(item => item.provider === 'GOOGLE') || null;
+    calendarConnectionStatus = google || await api('/api/calendar/status');
+    currentUser = {
+      ...currentUser,
+      preferredMeetingProvider: calendarSettings?.preferredMeetingProvider || currentUser?.preferredMeetingProvider,
+      emailRemindersEnabled: calendarSettings?.emailRemindersEnabled,
+      inAppRemindersEnabled: calendarSettings?.inAppRemindersEnabled,
+      calendarAutoSyncEnabled: calendarSettings?.calendarAutoSyncEnabled,
+      reminderOffsetsMinutes: calendarSettings?.reminderOffsetsMinutes || currentUser?.reminderOffsetsMinutes,
+    };
   } catch (err) {
     calendarConnectionStatus = {
       provider: 'GOOGLE',
@@ -2847,6 +2928,7 @@ async function loadCalendarStatus() {
       lastSyncStatus: 'ERROR',
       lastSyncMessage: err.message || 'Calendar status unavailable.',
     };
+    calendarSettings = calendarSettings || null;
   }
   if (!document.getElementById('section-profile')?.hidden) renderProfile();
   return calendarConnectionStatus;
@@ -3443,6 +3525,7 @@ function roleManagementSection() {
 
 function calendarIntegrationSection() {
   const status = calendarConnectionStatus || {};
+  const settings = calendarSettings || {};
   const connected = Boolean(status.connected);
   const configured = status.configured !== false;
   const statusLabel = connected ? 'Connected' : configured ? 'Optional' : 'Not configured';
@@ -3451,12 +3534,16 @@ function calendarIntegrationSection() {
   const message = status.lastSyncMessage || (connected
     ? 'Interview sessions sync automatically when booking or cancellation changes.'
     : 'Use ICS invites by default, or connect Google Calendar for automatic event sync.');
+  const reminderOffsets = settings.reminderOffsetsMinutes || currentUser?.reminderOffsetsMinutes || [1440, 60, 30, 10];
+  const providers = meetingProviders.length ? meetingProviders : DEFAULT_MEETING_PROVIDERS;
+  const preferredProvider = currentUser?.preferredMeetingProvider || settings.preferredMeetingProvider || preferredMeetingProvider();
+  const timezone = currentUser?.timeZone || settings.defaultTimezone || browserTimezone();
   return `
     <section class="profile-management-card calendar-integration-card">
       <div class="calendar-integration-head">
         <div>
-          <h2>Calendar sync</h2>
-          <p class="availability-summary-note">Google Calendar sync is optional. InterviewPrep still sends ICS invites and reminders if you leave it disconnected.</p>
+          <h2>Calendar settings</h2>
+          <p class="availability-summary-note">Manage providers, reminders, timezone, sync behavior, and meeting defaults from one place. ICS remains the fallback for every session.</p>
         </div>
         <span class="badge ${statusClass}">${esc(statusLabel)}</span>
       </div>
@@ -3475,6 +3562,37 @@ function calendarIntegrationSection() {
         </div>
       </div>
       <p class="availability-summary-note">${esc(message)}</p>
+      <div class="calendar-settings-grid">
+        <div class="form-group">
+          <label for="calendar-settings-timezone">Default timezone</label>
+          <input id="calendar-settings-timezone" value="${esc(timezone)}" placeholder="Asia/Kolkata" />
+          <small>Your timezone: ${esc(timezone || 'Browser timezone not detected')}</small>
+        </div>
+        <div class="form-group">
+          <label for="calendar-settings-meeting-provider">Meeting provider</label>
+          <select id="calendar-settings-meeting-provider">
+            ${providers.map(provider => `<option value="${esc(provider.key)}" ${provider.key === preferredProvider ? 'selected' : ''}>${esc(provider.label || provider.key)}</option>`).join('')}
+          </select>
+          <small>Jitsi stays the default. Zoom and Meet can be added later through the provider layer.</small>
+        </div>
+      </div>
+      <div class="calendar-preference-panel">
+        <div>
+          <strong>Reminder channels</strong>
+          <label class="check-row"><input id="calendar-email-reminders" type="checkbox" ${settings.emailRemindersEnabled === false || currentUser?.emailRemindersEnabled === false ? '' : 'checked'} /> Email reminders</label>
+          <label class="check-row"><input id="calendar-inapp-reminders" type="checkbox" ${settings.inAppRemindersEnabled === false || currentUser?.inAppRemindersEnabled === false ? '' : 'checked'} /> In-app notifications</label>
+        </div>
+        <div>
+          <strong>Reminder timing</strong>
+          ${[1440, 60, 30, 10].map(offset => `
+            <label class="check-row"><input class="calendar-reminder-offset" type="checkbox" value="${offset}" ${reminderOffsets.includes(offset) ? 'checked' : ''} /> ${esc(reminderOffsetLabel(offset))}</label>
+          `).join('')}
+        </div>
+        <div>
+          <strong>Sync preference</strong>
+          <label class="check-row"><input id="calendar-auto-sync" type="checkbox" ${settings.calendarAutoSyncEnabled === false || currentUser?.calendarAutoSyncEnabled === false ? '' : 'checked'} /> Automatically sync connected calendars</label>
+        </div>
+      </div>
       <div class="calendar-actions">
         ${connected
           ? `
@@ -3482,9 +3600,36 @@ function calendarIntegrationSection() {
             <button class="btn btn-danger btn-sm" id="google-calendar-disconnect-btn" type="button" onclick="disconnectGoogleCalendar()">Disconnect</button>
           `
           : `<button class="btn btn-primary btn-sm" id="google-calendar-connect-btn" type="button" onclick="connectGoogleCalendar()" ${configured ? '' : 'disabled'}>Connect Google Calendar</button>`}
+        <button class="btn btn-outline btn-sm" id="calendar-settings-save-btn" type="button" onclick="saveCalendarSettings()">Save calendar settings</button>
       </div>
     </section>
   `;
+}
+
+async function saveCalendarSettings() {
+  const btn = document.getElementById('calendar-settings-save-btn');
+  setButtonLoading(btn, true, 'Saving');
+  try {
+    const offsets = [...document.querySelectorAll('.calendar-reminder-offset:checked')].map(input => Number(input.value));
+    const payload = {
+      timeZone: val('calendar-settings-timezone') || browserTimezone(),
+      preferredMeetingProvider: val('calendar-settings-meeting-provider') || 'JITSI',
+      emailRemindersEnabled: Boolean(document.getElementById('calendar-email-reminders')?.checked),
+      inAppRemindersEnabled: Boolean(document.getElementById('calendar-inapp-reminders')?.checked),
+      calendarAutoSyncEnabled: Boolean(document.getElementById('calendar-auto-sync')?.checked),
+      reminderOffsetsMinutes: offsets.length ? offsets : [30],
+    };
+    const updated = await api('/api/users/me/profile', { method: 'PUT', body: JSON.stringify(payload) });
+    currentUser = updated;
+    localStorage.setItem('ip_user', JSON.stringify(updated));
+    await loadCalendarStatus();
+    bookingState.meetingProvider = preferredMeetingProvider();
+    toast('Calendar settings saved.', 'success');
+  } catch (err) {
+    toast(err.message || 'Calendar settings could not be saved.', 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
 }
 
 function deleteAccountSection() {
@@ -4817,6 +4962,16 @@ function val(id) {
   return document.getElementById(id)?.value?.trim() || '';
 }
 
+function browserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+}
+
+function reminderOffsetLabel(minutes) {
+  if (Number(minutes) === 1440) return '24 hours before';
+  if (Number(minutes) === 60) return '1 hour before';
+  return `${minutes} minutes before`;
+}
+
 function initials(user) {
   const name = accountDisplayName(user);
   return name.split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
@@ -5038,6 +5193,22 @@ function formatTimeOnly(value) {
 function fmtDate(value) {
   if (!value) return 'Flexible';
   try { return new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }); } catch { return value; }
+}
+
+function formatInTimezone(value, timeZone) {
+  if (!value) return 'Flexible';
+  try {
+    return new Date(value).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: timeZone || 'UTC',
+      timeZoneName: 'short',
+    });
+  } catch {
+    return fmtDate(value);
+  }
 }
 
 function countdown(value) {
@@ -8271,6 +8442,7 @@ async function loadAdminData(force = false) {
     api(`/api/admin/analytics?${buildAdminAnalyticsQuery()}`),
     api('/api/admin/prep-modules'),
     api('/api/admin/ops'),
+    api('/api/admin/system-diagnostics'),
   ];
   const results = await Promise.allSettled(requests);
   const valueAt = (index, fallback) => results[index].status === 'fulfilled' ? results[index].value : fallback;
@@ -8284,6 +8456,7 @@ async function loadAdminData(force = false) {
   const analytics = valueAt(7, adminAnalytics || emptyAdminAnalytics());
   const prepModules = valueAt(8, adminPrepModules || []);
   const ops = valueAt(9, adminOps || emptyAdminOps());
+  const diagnostics = valueAt(10, adminDiagnostics || null);
   adminOverview = overview || null;
   adminUsersPage = usersPage || null;
   adminSessionsPage = sessionsPage || null;
@@ -8298,6 +8471,7 @@ async function loadAdminData(force = false) {
   adminAnalytics = analytics || null;
   adminPrepModules = Array.isArray(prepModules) ? prepModules : [];
   adminOps = ops || null;
+  adminDiagnostics = diagnostics || null;
   const failed = results.find(result => result.status === 'rejected');
   if (failed) {
     toast(failed.reason?.message || 'Could not load some admin data.', 'error');
@@ -8756,12 +8930,17 @@ function renderAdminOps() {
   const templates = Array.isArray(adminOps?.emailTemplates) ? adminOps.emailTemplates : [];
   const recentNotifications = Array.isArray(adminOps?.recentNotifications) ? adminOps.recentNotifications : [];
   const notificationTypes = Object.entries(adminOps?.notificationsByType || {});
+  const calendarOps = adminDiagnostics?.calendarOps || {};
   host.innerHTML = `
     <div class="admin-trust-summary-grid">
       <article class="admin-trust-card"><strong>Active notices</strong><span>${esc(String(activeNotices.length))}</span><small>Maintenance banners and platform notices currently active.</small></article>
       <article class="admin-trust-card"><strong>Total notifications</strong><span>${esc(String(adminOps?.totalNotifications || 0))}</span><small>Notification documents stored in MongoDB.</small></article>
       <article class="admin-trust-card"><strong>Unread notifications</strong><span>${esc(String(adminOps?.unreadNotifications || 0))}</span><small>Notification queue pressure across users.</small></article>
       <article class="admin-trust-card"><strong>Email templates</strong><span>${esc(String(templates.length))}</span><small>Operational email flows available in the backend.</small></article>
+      <article class="admin-trust-card"><strong>Calendar sync failures</strong><span>${esc(String(calendarOps.syncFailures || 0))}</span><small>Provider sync rows in error without OAuth token exposure.</small></article>
+      <article class="admin-trust-card"><strong>Reminder failures</strong><span>${esc(String(calendarOps.reminderDeliveryFailures || 0))}</span><small>Sessions with failed reminder delivery attempts.</small></article>
+      <article class="admin-trust-card"><strong>Provider issues</strong><span>${esc(String(calendarOps.disconnectedOrErrorProviders || 0))}</span><small>Disconnected or error-state calendar connections.</small></article>
+      <article class="admin-trust-card"><strong>Scheduling anomalies</strong><span>${esc(String(calendarOps.schedulingAnomalies || 0))}</span><small>Sessions missing essential scheduling or meeting data.</small></article>
     </div>
     <div class="admin-ops-grid">
       <article class="admin-moderation-card">

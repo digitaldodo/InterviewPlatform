@@ -46,6 +46,11 @@ public class Session {
     private Instant preInterviewReminderClaimedAt;
     private Instant interviewerReminderSentAt;
     private Instant intervieweeReminderSentAt;
+    private List<String> reminderDispatchKeys = new ArrayList<>();
+    private Instant lastReminderFailureAt;
+    private String lastReminderFailureMessage;
+    private Instant rescheduledAt;
+    private Instant cancelledAt;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -152,6 +157,18 @@ public class Session {
     public void setInterviewerReminderSentAt(Instant interviewerReminderSentAt) { this.interviewerReminderSentAt = interviewerReminderSentAt; }
     public Instant getIntervieweeReminderSentAt() { return intervieweeReminderSentAt; }
     public void setIntervieweeReminderSentAt(Instant intervieweeReminderSentAt) { this.intervieweeReminderSentAt = intervieweeReminderSentAt; }
+    public List<String> getReminderDispatchKeys() { return reminderDispatchKeys == null ? new ArrayList<>() : reminderDispatchKeys; }
+    public void setReminderDispatchKeys(List<String> reminderDispatchKeys) {
+        this.reminderDispatchKeys = reminderDispatchKeys == null ? new ArrayList<>() : new ArrayList<>(reminderDispatchKeys);
+    }
+    public Instant getLastReminderFailureAt() { return lastReminderFailureAt; }
+    public void setLastReminderFailureAt(Instant lastReminderFailureAt) { this.lastReminderFailureAt = lastReminderFailureAt; }
+    public String getLastReminderFailureMessage() { return lastReminderFailureMessage; }
+    public void setLastReminderFailureMessage(String lastReminderFailureMessage) { this.lastReminderFailureMessage = trimToNull(lastReminderFailureMessage); }
+    public Instant getRescheduledAt() { return rescheduledAt; }
+    public void setRescheduledAt(Instant rescheduledAt) { this.rescheduledAt = rescheduledAt; }
+    public Instant getCancelledAt() { return cancelledAt; }
+    public void setCancelledAt(Instant cancelledAt) { this.cancelledAt = cancelledAt; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

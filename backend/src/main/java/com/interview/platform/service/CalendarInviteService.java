@@ -54,6 +54,8 @@ public class CalendarInviteService {
         lines.add("METHOD:" + method);
         lines.add("X-WR-CALNAME:" + escapeText("InterviewPrep Sessions"));
         lines.add("X-WR-TIMEZONE:" + recipientZone.getId());
+        lines.add("X-INTERVIEWPREP-BRAND:" + escapeText("InterviewPrep"));
+        lines.add("X-INTERVIEWPREP-SESSION-ID:" + escapeText(stableSessionId(session)));
         lines.add("BEGIN:VEVENT");
         lines.add("UID:" + uid(session));
         lines.add("DTSTAMP:" + formatUtc(schedulingTimeService.nowInstant()));
@@ -62,6 +64,15 @@ public class CalendarInviteService {
         lines.add("SEQUENCE:" + sequence(session, type));
         lines.add("STATUS:" + status);
         lines.add("TRANSP:OPAQUE");
+        lines.add("CATEGORIES:" + escapeText("InterviewPrep,Mock Interview"));
+        lines.add("X-INTERVIEWPREP-MEETING-PROVIDER:" + escapeText(session == null || session.getMeetingProvider() == null ? "JITSI" : session.getMeetingProvider()));
+        lines.add("X-INTERVIEWPREP-UPDATED-AT:" + escapeText(session == null || session.getUpdatedAt() == null ? "" : session.getUpdatedAt().toString()));
+        if (session != null && session.getCancelledAt() != null) {
+            lines.add("X-INTERVIEWPREP-CANCELLED-AT:" + escapeText(session.getCancelledAt().toString()));
+        }
+        if (session != null && session.getRescheduledAt() != null) {
+            lines.add("X-INTERVIEWPREP-RESCHEDULED-AT:" + escapeText(session.getRescheduledAt().toString()));
+        }
         lines.add("SUMMARY:" + escapeText(title));
         if (meetingLink != null && !meetingLink.isBlank()) {
             lines.add("LOCATION:" + escapeText(meetingLink));
@@ -102,12 +113,15 @@ public class CalendarInviteService {
                 "",
                 lifecycle,
                 "Session: " + title(session),
-                "Interviewer: " + displayName(interviewer),
-                "Interviewee: " + displayName(interviewee),
+                "Interviewer: " + displayName(interviewer) + " (role: interviewer)",
+                "Interviewee: " + displayName(interviewee) + " (role: interviewee)",
                 "Topics: " + topics,
                 "Local time: " + DISPLAY_FORMATTER.format(localStart) + " - " + DISPLAY_FORMATTER.format(localEnd),
                 "Timezone: " + recipientZone.getId(),
                 meetingLink == null || meetingLink.isBlank() ? "Meeting link: Available from your InterviewPrep dashboard." : "Meeting link: " + meetingLink,
+                "Meeting provider: " + (session == null || session.getMeetingProvider() == null ? "JITSI" : session.getMeetingProvider()),
+                session == null || session.getCancelledAt() == null ? "" : "Cancelled at: " + session.getCancelledAt(),
+                session == null || session.getRescheduledAt() == null ? "" : "Rescheduled at: " + session.getRescheduledAt(),
                 "Dashboard: " + dashboardLink,
                 "",
                 "If anything looks wrong, contact InterviewPrep support from your dashboard before the session starts."

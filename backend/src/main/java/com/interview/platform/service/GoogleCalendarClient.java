@@ -17,14 +17,20 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
 
 @Service
 public class GoogleCalendarClient {
     static final String PROVIDER = "GOOGLE";
     static final String SCOPE = "https://www.googleapis.com/auth/calendar.events";
+    private static final DateTimeFormatter DISPLAY_FORMATTER =
+            DateTimeFormatter.ofPattern("EEE, MMM d, yyyy 'at' h:mm a z", Locale.ENGLISH);
 
     private final ObjectMapper objectMapper;
     private final SchedulingTimeService schedulingTimeService;
@@ -205,7 +211,7 @@ public class GoogleCalendarClient {
         String timeZone = recipient.getTimeZone() == null || recipient.getTimeZone().isBlank() ? "UTC" : recipient.getTimeZone();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("summary", "InterviewPrep: " + safeTitle(session));
-        body.put("description", eventDescription(session, interviewer, interviewee, meetingLink));
+        body.put("description", eventDescription(session, interviewer, interviewee, recipient, meetingLink, start, end));
         body.put("location", meetingLink == null ? "" : meetingLink);
         body.put("start", Map.of("dateTime", OffsetDateTime.ofInstant(start, java.time.ZoneOffset.UTC).toString(), "timeZone", timeZone));
         body.put("end", Map.of("dateTime", OffsetDateTime.ofInstant(end, java.time.ZoneOffset.UTC).toString(), "timeZone", timeZone));
@@ -214,23 +220,50 @@ public class GoogleCalendarClient {
         body.put("source", Map.of("title", "InterviewPrep", "url", dashboardUrl(session)));
         body.put("extendedProperties", Map.of("private", Map.of(
                 "interviewprepSessionId", session.getId() == null ? "" : session.getId(),
-                "interviewprepProvider", "GOOGLE"
+                "interviewprepProvider", "GOOGLE",
+                "interviewprepMeetingProvider", session.getMeetingProvider() == null ? "JITSI" : session.getMeetingProvider(),
+                "interviewprepStatus", session.getStatus() == null ? "" : session.getStatus(),
+                "interviewprepUpdatedAt", session.getUpdatedAt() == null ? "" : session.getUpdatedAt().toString(),
+                "interviewprepCancelledAt", session.getCancelledAt() == null ? "" : session.getCancelledAt().toString(),
+                "interviewprepRescheduledAt", session.getRescheduledAt() == null ? "" : session.getRescheduledAt().toString()
         )));
         return body;
     }
 
-    private String eventDescription(Session session, User interviewer, User interviewee, String meetingLink) {
+    private String eventDescription(Session session, User interviewer, User interviewee, User recipient,
+                                    String meetingLink, Instant start, Instant end) {
+        ZoneId zone = recipientZone(recipient);
+        ZonedDateTime localStart = start.atZone(zone);
+        ZonedDateTime localEnd = end.atZone(zone);
         return String.join("\n",
                 "InterviewPrep mock interview",
                 "",
+                "This calendar event was created by InterviewPrep. Booking, reschedule, and cancellation changes are synced from the platform when connected.",
                 "Session: " + safeTitle(session),
-                "Interviewer: " + displayName(interviewer),
-                "Interviewee: " + displayName(interviewee),
+                "Interviewer: " + displayName(interviewer) + " (role: interviewer)",
+                "Interviewee: " + displayName(interviewee) + " (role: interviewee)",
                 "Topics: " + String.join(", ", session.getTopics()),
+                "Local time: " + DISPLAY_FORMATTER.format(localStart) + " - " + DISPLAY_FORMATTER.format(localEnd),
+                "Timezone: " + zone.getId(),
                 session.getNotes() == null || session.getNotes().isBlank() ? "" : "Notes: " + session.getNotes(),
                 meetingLink == null || meetingLink.isBlank() ? "Meeting link: Open from InterviewPrep." : "Meeting link: " + meetingLink,
+                "Meeting provider: " + (session.getMeetingProvider() == null || session.getMeetingProvider().isBlank() ? "JITSI" : session.getMeetingProvider()),
+                session.getCancelledAt() == null ? "" : "Cancelled at: " + session.getCancelledAt(),
+                session.getRescheduledAt() == null ? "" : "Rescheduled at: " + session.getRescheduledAt(),
                 "Dashboard: " + dashboardUrl(session)
         ).replaceAll("\n{3,}", "\n\n");
+    }
+
+    private ZoneId recipientZone(User recipient) {
+        String timeZone = recipient == null ? null : recipient.getTimeZone();
+        if (timeZone == null || timeZone.isBlank()) {
+            return ZoneId.of("UTC");
+        }
+        try {
+            return ZoneId.of(timeZone.trim());
+        } catch (RuntimeException ignored) {
+            return ZoneId.of("UTC");
+        }
     }
 
     private String dashboardUrl(Session session) {

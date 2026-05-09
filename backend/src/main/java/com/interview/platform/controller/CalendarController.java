@@ -33,6 +33,12 @@ public class CalendarController {
                 calendarIntegrationService.googleStatus(currentUser(authentication))));
     }
 
+    @GetMapping("/settings")
+    public ResponseEntity<ApiResponse<CalendarDtos.CalendarSettingsResponse>> settings(Authentication authentication) {
+        return ResponseEntity.ok(ApiResponse.success("Calendar settings fetched",
+                calendarIntegrationService.settings(currentUser(authentication))));
+    }
+
     @PostMapping("/google/connect")
     public ResponseEntity<ApiResponse<CalendarDtos.CalendarConnectResponse>> connectGoogle(Authentication authentication) {
         return ResponseEntity.ok(ApiResponse.success("Google authorization URL created",

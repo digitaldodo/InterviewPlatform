@@ -131,6 +131,21 @@ public class UserService {
         if (request.getTimeZone() != null) {
             user.setTimeZone(trimToNull(request.getTimeZone()));
         }
+        if (request.getPreferredMeetingProvider() != null) {
+            user.setPreferredMeetingProvider(request.getPreferredMeetingProvider());
+        }
+        if (request.getEmailRemindersEnabled() != null) {
+            user.setEmailRemindersEnabled(request.getEmailRemindersEnabled());
+        }
+        if (request.getInAppRemindersEnabled() != null) {
+            user.setInAppRemindersEnabled(request.getInAppRemindersEnabled());
+        }
+        if (request.getCalendarAutoSyncEnabled() != null) {
+            user.setCalendarAutoSyncEnabled(request.getCalendarAutoSyncEnabled());
+        }
+        if (request.getReminderOffsetsMinutes() != null) {
+            user.setReminderOffsetsMinutes(request.getReminderOffsetsMinutes());
+        }
         if (request.getPreferredDomains() != null) {
             user.setPreferredDomains(cleanList(request.getPreferredDomains()));
         }
